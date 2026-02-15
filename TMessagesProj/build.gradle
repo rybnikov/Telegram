@@ -215,7 +215,7 @@ android {
         }
     }
 
-    namespace 'org.telegram.messenger'
+    namespace 'com.rbnkv.foldogram'
 }
 
 
