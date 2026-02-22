@@ -73,10 +73,10 @@ import me.vkryl.android.animator.FactorAnimator;
 
 public class MainTabsActivity extends ViewPagerActivity implements NotificationCenter.NotificationCenterDelegate, FactorAnimator.Target {
     public static final int TABS_COUNT = 4;
-    private static final int POSITION_CHATS = 0;
-    private static final int POSITION_CONTACTS = 1;
-    private static final int POSITION_CALLS_OR_SETTINGS = 2;
-    private static final int POSITION_PROFILE = 3;
+    public static final int POSITION_CHATS = 0;
+    public static final int POSITION_CONTACTS = 1;
+    public static final int POSITION_CALLS_OR_SETTINGS = 2;
+    public static final int POSITION_PROFILE = 3;
 
     private static final int INDEX_CHATS = 0;
     private static final int INDEX_CONTACTS = 1;
@@ -734,6 +734,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             }
         } else if (id == NotificationCenter.contactsPermissionBadgeCheck) {
             checkContactsTabBadge();
+        } else if (id == NotificationCenter.hideBottomPanelChanged) {
+            checkUi_tabsPosition();
+            checkUi_fadeView();
         }
     }
 
@@ -750,6 +753,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.appUpdateAvailable);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.appUpdateLoading);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needSetDayNightTheme);
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.hideBottomPanelChanged);
 
         return super.onFragmentCreate();
     }
@@ -767,6 +771,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.appUpdateAvailable);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.appUpdateLoading);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.hideBottomPanelChanged);
 
         super.onFragmentDestroy();
     }
@@ -791,10 +796,13 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         fadeView.setAlpha(alpha);
         fadeView.setTranslationY(isProfile * dp(48));
-        fadeView.setVisibility(alpha > 0 ? View.VISIBLE : View.GONE);
+        fadeView.setVisibility(alpha > 0 && !SharedConfig.hideBottomPanel ? View.VISIBLE : View.GONE);
     }
 
     private void checkUi_tabsPosition() {
+        if (tabsView == null || updateLayoutWrapper == null) {
+            return;
+        }
         final boolean isUpdateLayoutVisible = updateLayoutWrapper.isUpdateLayoutVisible();
         final int updateLayoutHeight = isUpdateLayoutVisible ? dp(UpdateLayoutWrapper.HEIGHT) : 0;
         final int normalY = -(updateLayoutHeight);
@@ -809,7 +817,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         tabsView.setClickable(factor > 1);
         tabsView.setEnabled(factor > 1);
         tabsView.setAlpha(factor);
-        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);
+        tabsView.setVisibility(factor > 0 && !SharedConfig.hideBottomPanel ? View.VISIBLE : View.GONE);
     }
 
     private void checkUi_callTabVisible(boolean callTabsVisible, boolean animated) {
@@ -836,6 +844,17 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         @Override
         public void setTabsVisible(boolean visible) {
             animatorTabsVisible.setValue(visible, true);
+        }
+
+        @Override
+        public void selectTab(int position) {
+            if (viewPager != null) {
+                if (viewPager.isManualScrolling() || viewPager.isTouch()) {
+                    return;
+                }
+                MainTabsActivity.this.selectTab(position, true);
+                viewPager.scrollToPosition(position);
+            }
         }
     }
 
