@@ -781,7 +781,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     public void onBackCancelled() {
                         started = false;
                         invoked = false;
-
                         if (AndroidUtilities.isTablet()) return;
                         if (actionBarLayout != null) {
                             actionBarLayout.onBackCancelled();
@@ -8256,6 +8255,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     if (lastFragment.onBackPressed(true)) {
                         lastFragment.finishFragment();
                     }
+                } else if (actionBarLayout.getFragmentStack().isEmpty()) {
+                    onFinish();
+                    finish();
                 } else {
                     actionBarLayout.onBackPressed();
                 }
