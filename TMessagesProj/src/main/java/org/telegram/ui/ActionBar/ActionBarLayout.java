@@ -545,6 +545,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     private int startedTrackingX;
     private int startedTrackingY;
     protected boolean animationInProgress;
+    private long animationInProgressStartTime;
     private VelocityTracker velocityTracker;
     private View layoutToIgnore;
     private boolean beginTrackingSent;
@@ -944,7 +945,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
-        return animationInProgress || checkTransitionAnimation() || onTouchEvent(ev);
+        return (animationInProgress && animationInProgressStartTime >= System.currentTimeMillis() - 1500) || checkTransitionAnimation() || onTouchEvent(ev);
     }
 
     @Override
@@ -1470,6 +1471,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             if (backAnimator != null) {
                 backAnimator.end();
                 backAnimator = null;
+            } else if (animationInProgressStartTime < System.currentTimeMillis() - 1500) {
+                animationInProgress = false;
+                startedTracking = false;
             } else {
                 return;
             }
@@ -1606,11 +1610,22 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         backAnimatorIsBack = backAnimation;
         animatorSet.start();
         animationInProgress = true;
+        animationInProgressStartTime = System.currentTimeMillis();
         layoutToIgnore = containerViewBack;
     }
 
     @Override
     public void onBackPressed() {
+        if (animationInProgress && animationInProgressStartTime < System.currentTimeMillis() - 1500) {
+            if (backAnimator != null) {
+                backAnimator.end();
+                backAnimator = null;
+            }
+            animationInProgress = false;
+            startedTracking = false;
+            predictiveBackInProgress = false;
+            predictiveInput = false;
+        }
         if (transitionAnimationPreviewMode || startedTracking || checkTransitionAnimation() || fragmentsStack.isEmpty()) {
             return;
         }
