@@ -203,8 +203,7 @@ public class DrawerLayoutContainer extends FrameLayout {
         }
 
         final Insets insets = lastWindowInsetsCompat.getInsets(WindowInsetsCompat.Type.ime()
-            | WindowInsetsCompat.Type.systemBars()
-            | WindowInsetsCompat.Type.displayCutout());
+            | WindowInsetsCompat.Type.systemBars());
 
         if (insets.bottom > 0) {
             backgroundPaint.setColor(behindKeyboardColor);
@@ -270,8 +269,7 @@ public class DrawerLayoutContainer extends FrameLayout {
 
         final MarginLayoutParams lp = (MarginLayoutParams) child.getLayoutParams();
         final Insets systemInsetsWithIme = insets.getInsets(WindowInsetsCompat.Type.ime()
-                | WindowInsetsCompat.Type.systemBars()
-                | WindowInsetsCompat.Type.displayCutout());
+                | WindowInsetsCompat.Type.systemBars());
 
         final boolean changed = lp.topMargin != 0 || lp.bottomMargin != 0
                 || lp.leftMargin != systemInsetsWithIme.left
