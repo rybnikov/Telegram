@@ -530,13 +530,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         actionBarLayout.setDrawerLayoutContainer(drawerLayoutContainer);
         actionBarLayout.setFragmentStack(mainFragmentsStack);
         actionBarLayout.setFragmentStackChangedListener(() -> {
-            // Track ownership of fragments in the stack
-            final int taskId = getTaskId();
-            for (BaseFragment fragment : mainFragmentsStack) {
-                if (!fragmentOwnerTaskIds.containsKey(fragment)) {
-                    fragmentOwnerTaskIds.put(fragment, taskId);
-                }
-            }
+            trackFragmentOwnership(mainFragmentsStack);
             checkSystemBarColors(true, false);
             if (getLastFragment() != null && getLastFragment().getLastStoryViewer() != null) {
                 getLastFragment().getLastStoryViewer().updatePlayingMode();
@@ -982,14 +976,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
             rightActionBarLayout = new ActionBarLayout(this, false);
             rightActionBarLayout.setFragmentStack(rightFragmentsStack);
-            rightActionBarLayout.setFragmentStackChangedListener(() -> {
-                final int taskId = getTaskId();
-                for (BaseFragment fragment : rightFragmentsStack) {
-                    if (!fragmentOwnerTaskIds.containsKey(fragment)) {
-                        fragmentOwnerTaskIds.put(fragment, taskId);
-                    }
-                }
-            });
+            rightActionBarLayout.setFragmentStackChangedListener(() -> trackFragmentOwnership(rightFragmentsStack));
             rightActionBarLayout.setDelegate(this);
             launchLayout.addView(rightActionBarLayout.getView());
 
@@ -1036,14 +1023,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             layersActionBarLayout.setBackgroundView(shadowTablet);
             layersActionBarLayout.setUseAlphaAnimations(true);
             layersActionBarLayout.setFragmentStack(layerFragmentsStack);
-            layersActionBarLayout.setFragmentStackChangedListener(() -> {
-                final int taskId = getTaskId();
-                for (BaseFragment fragment : layerFragmentsStack) {
-                    if (!fragmentOwnerTaskIds.containsKey(fragment)) {
-                        fragmentOwnerTaskIds.put(fragment, taskId);
-                    }
-                }
-            });
+            layersActionBarLayout.setFragmentStackChangedListener(() -> trackFragmentOwnership(layerFragmentsStack));
             layersActionBarLayout.setDelegate(this);
             layersActionBarLayout.setDrawerLayoutContainer(drawerLayoutContainer);
 
@@ -1064,7 +1044,73 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 drawerLayoutContainer.addView(actionBarLayout.getView(), new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             }
         }
+        trackFragmentOwnership(mainFragmentsStack);
+        trackFragmentOwnership(rightFragmentsStack);
+        trackFragmentOwnership(layerFragmentsStack);
         FloatingDebugController.setActive(this, SharedConfig.isFloatingDebugActive, false);
+    }
+
+    private void trackFragmentOwnership(List<BaseFragment> fragmentsStack) {
+        final int taskId = getTaskId();
+        for (BaseFragment fragment : fragmentsStack) {
+            if (!fragmentOwnerTaskIds.containsKey(fragment)) {
+                fragmentOwnerTaskIds.put(fragment, taskId);
+            }
+        }
+    }
+
+    private void destroyOwnedFragments(List<BaseFragment> fragmentsStack) {
+        if (fragmentsStack == null || fragmentsStack.isEmpty()) {
+            return;
+        }
+        final int myTaskId = getTaskId();
+        ArrayList<BaseFragment> toRemove = new ArrayList<>();
+        for (BaseFragment fragment : fragmentsStack) {
+            Integer ownerTaskId = fragmentOwnerTaskIds.get(fragment);
+            if (ownerTaskId != null && ownerTaskId == myTaskId) {
+                toRemove.add(fragment);
+            }
+        }
+        for (BaseFragment fragment : toRemove) {
+            fragment.onFragmentDestroy();
+            fragmentsStack.remove(fragment);
+            fragmentOwnerTaskIds.remove(fragment);
+        }
+    }
+
+    private boolean hasOtherLaunchActivityInstanceInAppTasks() {
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            if (am == null) {
+                return false;
+            }
+            final int myTaskId = getTaskId();
+            final String launchClassName = LaunchActivity.class.getName();
+            final List<ActivityManager.AppTask> tasks = am.getAppTasks();
+            if (tasks == null) {
+                return false;
+            }
+            for (int i = 0, size = tasks.size(); i < size; i++) {
+                ActivityManager.AppTask task = tasks.get(i);
+                if (task == null) {
+                    continue;
+                }
+                ActivityManager.RecentTaskInfo info = task.getTaskInfo();
+                if (info == null || info.id == myTaskId) {
+                    continue;
+                }
+                Intent baseIntent = info.baseIntent;
+                if (baseIntent == null || baseIntent.getComponent() == null) {
+                    continue;
+                }
+                if (launchClassName.equals(baseIntent.getComponent().getClassName())) {
+                    return true;
+                }
+            }
+        } catch (Throwable t) {
+            FileLog.e(t);
+        }
+        return false;
     }
 
     public void addOnUserLeaveHintListener(Runnable callback) {
@@ -6724,10 +6770,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onDestroy() {
-        // Skip global teardown if other LaunchActivity instances exist (e.g. from share intents)
-        // to avoid destroying their static fragment stacks
-        final boolean hasOtherLaunchActivityInstance = !isChangingConfigurations() && hasOtherLaunchActivityInstanceInAppTasks();
-        final boolean allowGlobalUiTeardown = !isChangingConfigurations() && !hasOtherLaunchActivityInstance;
+        // Only tear down global singletons if this is the active instance, not a config-change
+        // recreation, and there is no parallel LaunchActivity task still alive.
+        final boolean allowGlobalUiTeardown = instance == this
+                && !isChangingConfigurations()
+                && !hasOtherLaunchActivityInstanceInAppTasks();
 
         isActive = false;
         unregisterReceiver(batteryReceiver);
@@ -6796,59 +6843,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((OnBackInvokedCallback) onBackInvokedCallback);
             }
         }
-        // Remove only fragments owned by this instance to prevent memory leaks
-        // while avoiding cross-instance fragment destruction
-        final int myTaskId = getTaskId();
-
-        // Clean up mainFragmentsStack
-        if (actionBarLayout != null) {
-            java.util.List<BaseFragment> toRemove = new java.util.ArrayList<>();
-            for (BaseFragment fragment : mainFragmentsStack) {
-                Integer ownerTaskId = fragmentOwnerTaskIds.get(fragment);
-                if (ownerTaskId != null && ownerTaskId == myTaskId) {
-                    toRemove.add(fragment);
-                }
-            }
-            for (BaseFragment fragment : toRemove) {
-                fragment.onFragmentDestroy();
-                mainFragmentsStack.remove(fragment);
-                fragmentOwnerTaskIds.remove(fragment);
-            }
-        }
-
-        // Clean up tablet layouts
+        destroyOwnedFragments(mainFragmentsStack);
         if (AndroidUtilities.isTablet()) {
-            // Clean up rightFragmentsStack
-            if (rightActionBarLayout != null) {
-                java.util.List<BaseFragment> toRemove = new java.util.ArrayList<>();
-                for (BaseFragment fragment : rightFragmentsStack) {
-                    Integer ownerTaskId = fragmentOwnerTaskIds.get(fragment);
-                    if (ownerTaskId != null && ownerTaskId == myTaskId) {
-                        toRemove.add(fragment);
-                    }
-                }
-                for (BaseFragment fragment : toRemove) {
-                    fragment.onFragmentDestroy();
-                    rightFragmentsStack.remove(fragment);
-                    fragmentOwnerTaskIds.remove(fragment);
-                }
-            }
-
-            // Clean up layerFragmentsStack
-            if (layersActionBarLayout != null) {
-                java.util.List<BaseFragment> toRemove = new java.util.ArrayList<>();
-                for (BaseFragment fragment : layerFragmentsStack) {
-                    Integer ownerTaskId = fragmentOwnerTaskIds.get(fragment);
-                    if (ownerTaskId != null && ownerTaskId == myTaskId) {
-                        toRemove.add(fragment);
-                    }
-                }
-                for (BaseFragment fragment : toRemove) {
-                    fragment.onFragmentDestroy();
-                    layerFragmentsStack.remove(fragment);
-                    fragmentOwnerTaskIds.remove(fragment);
-                }
-            }
+            destroyOwnedFragments(rightFragmentsStack);
+            destroyOwnedFragments(layerFragmentsStack);
         }
         super.onDestroy();
         onFinish();
@@ -6860,41 +6858,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && frameMetricsOverlayView != null) {
             frameMetricsOverlayView.detach();
         }
-    }
-
-    private boolean hasOtherLaunchActivityInstanceInAppTasks() {
-        try {
-            ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
-            if (am == null) {
-                return false;
-            }
-            final int myTaskId = getTaskId();
-            final String launchClassName = LaunchActivity.class.getName();
-            final java.util.List<ActivityManager.AppTask> tasks = am.getAppTasks();
-            if (tasks == null) {
-                return false;
-            }
-            for (int i = 0, size = tasks.size(); i < size; i++) {
-                ActivityManager.AppTask task = tasks.get(i);
-                if (task == null) {
-                    continue;
-                }
-                ActivityManager.RecentTaskInfo info = task.getTaskInfo();
-                if (info == null || info.id == myTaskId) {
-                    continue;
-                }
-                Intent baseIntent = info.baseIntent;
-                if (baseIntent == null || baseIntent.getComponent() == null) {
-                    continue;
-                }
-                if (launchClassName.equals(baseIntent.getComponent().getClassName())) {
-                    return true;
-                }
-            }
-        } catch (Throwable t) {
-            FileLog.e(t);
-        }
-        return false;
     }
 
     @Override

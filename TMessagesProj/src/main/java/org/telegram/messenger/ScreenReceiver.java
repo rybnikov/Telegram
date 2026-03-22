@@ -28,7 +28,16 @@ public class ScreenReceiver extends BroadcastReceiver {
             if (BuildVars.LOGS_ENABLED) {
                 FileLog.d("screen on");
             }
-            ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, true);
+            if (ApplicationLoader.isAnyInteractiveInterfaceActive()) {
+                ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, true);
+            } else {
+                // Fold/wake can deliver SCREEN_ON before interactive flags are lifted.
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (ApplicationLoader.isScreenOn && ApplicationLoader.isAnyInteractiveInterfaceActive()) {
+                        ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, true);
+                    }
+                }, 700);
+            }
             ApplicationLoader.isScreenOn = true;
         }
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.screenStateChanged);
