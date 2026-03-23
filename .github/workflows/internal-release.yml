@@ -10,10 +10,15 @@ concurrency:
   group: android-internal-release
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   build-and-upload:
+    if: ${{ github.actor == 'rybnikov' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    environment: play-internal
     env:
       TELEGRAM_APP_ID: ${{ secrets.TELEGRAM_APP_ID }}
       TELEGRAM_APP_HASH: ${{ secrets.TELEGRAM_APP_HASH }}
@@ -118,11 +123,16 @@ jobs:
       - name: Build release bundle
         run: ./gradlew :TMessagesProj_App:bundleAfatRelease
 
-      - name: Upload release bundle artifact
+      - name: Generate release checksums
+        shell: bash
+        run: |
+          sha256sum TMessagesProj_App/build/outputs/bundle/afatRelease/TMessagesProj_App-afat-release.aab > foldogram-${RELEASE_VERSION_NAME}-checksums.txt
+
+      - name: Upload checksum artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Foldogram-${{ env.RELEASE_VERSION_NAME }}-aab
-          path: TMessagesProj_App/build/outputs/bundle/afatRelease/TMessagesProj_App-afat-release.aab
+          name: Foldogram-${{ env.RELEASE_VERSION_NAME }}-checksums
+          path: foldogram-${{ env.RELEASE_VERSION_NAME }}-checksums.txt
           if-no-files-found: error
 
       - name: Upload to Google Play internal
