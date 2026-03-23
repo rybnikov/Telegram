@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  create:
 
 concurrency:
   group: android-internal-release
@@ -15,7 +14,7 @@ permissions:
 
 jobs:
   build-and-upload:
-    if: ${{ github.actor == 'rybnikov' && (github.event_name == 'push' || (github.event_name == 'create' && github.event.ref_type == 'tag' && startsWith(github.event.ref, 'v'))) }}
+    if: ${{ github.actor == 'rybnikov' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: play-internal
@@ -44,11 +43,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "create" ]]; then
-            TAG_NAME="${{ github.event.ref }}"
-          else
-            TAG_NAME="${GITHUB_REF_NAME}"
-          fi
+          TAG_NAME="${GITHUB_REF_NAME}"
           if [[ ! "$TAG_NAME" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
             echo "Release tag must match vX.Y.Z, got: $TAG_NAME" >&2
             exit 1
@@ -134,7 +129,7 @@ jobs:
       - name: Generate release checksums
         shell: bash
         run: |
-          sha256sum TMessagesProj_App/build/outputs/bundle/afatRelease/TMessagesProj_App-afat-release.aab > foldogram-${RELEASE_VERSION_NAME}-checksums.txt
+          sha256sum TMessagesProj_App/build/outputs/bundle/afatRelease/TMessagesProj_App-afat-release.aab > "foldogram-${RELEASE_VERSION_NAME}-checksums.txt"
 
       - name: Upload checksum artifact
         uses: actions/upload-artifact@v4
