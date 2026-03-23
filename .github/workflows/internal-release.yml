@@ -47,6 +47,19 @@ jobs:
           VERSION_NAME="${MAJOR}.${MINOR}.${PATCH}"
           VERSION_CODE="$((MAJOR * 1000000 + MINOR * 1000 + PATCH))"
 
+          BASELINE_VERSION_NAME="$(grep '^APP_VERSION_NAME=' gradle.properties | cut -d= -f2)"
+          BASELINE_VERSION_CODE="$(grep '^APP_VERSION_CODE=' gradle.properties | cut -d= -f2)"
+          if [[ -n "$BASELINE_VERSION_NAME" ]]; then
+            if [[ "$(printf '%s\n%s\n' "$BASELINE_VERSION_NAME" "$VERSION_NAME" | sort -V | tail -n 1)" != "$VERSION_NAME" || "$BASELINE_VERSION_NAME" == "$VERSION_NAME" ]]; then
+              echo "Release version must be higher than baseline version ${BASELINE_VERSION_NAME} from gradle.properties" >&2
+              exit 1
+            fi
+          fi
+          if [[ -n "$BASELINE_VERSION_CODE" && "$VERSION_CODE" -le "$BASELINE_VERSION_CODE" ]]; then
+            echo "Release versionCode must be higher than baseline versionCode ${BASELINE_VERSION_CODE} from gradle.properties" >&2
+            exit 1
+          fi
+
           PREVIOUS_TAG="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "$TAG_NAME" | sort -V | tail -n 1 || true)"
           if [[ -n "$PREVIOUS_TAG" ]]; then
             PREVIOUS_VERSION="${PREVIOUS_TAG#v}"
