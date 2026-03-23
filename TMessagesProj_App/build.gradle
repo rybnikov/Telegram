@@ -14,6 +14,8 @@ ext.RELEASE_KEYSTORE_PATH = localProperties.getProperty('RELEASE_KEYSTORE_PATH',
 ext.RELEASE_KEY_PASSWORD = localProperties.getProperty('RELEASE_KEY_PASSWORD', System.getenv('RELEASE_KEY_PASSWORD') ?: 'android')
 ext.RELEASE_KEY_ALIAS = localProperties.getProperty('RELEASE_KEY_ALIAS', System.getenv('RELEASE_KEY_ALIAS') ?: 'androidkey')
 ext.RELEASE_STORE_PASSWORD = localProperties.getProperty('RELEASE_STORE_PASSWORD', System.getenv('RELEASE_STORE_PASSWORD') ?: 'android')
+ext.RESOLVED_APP_VERSION_CODE = System.getenv('RELEASE_VERSION_CODE') ?: APP_VERSION_CODE
+ext.RESOLVED_APP_VERSION_NAME = System.getenv('RELEASE_VERSION_NAME') ?: APP_VERSION_NAME
 
 repositories {
     mavenCentral()
@@ -169,7 +171,7 @@ android {
         }
     }
 
-    defaultConfig.versionCode = Integer.parseInt(APP_VERSION_CODE)
+    defaultConfig.versionCode = Integer.parseInt(RESOLVED_APP_VERSION_CODE)
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
@@ -188,7 +190,7 @@ android {
     defaultConfig {
         minSdkVersion 21
         targetSdkVersion 35
-        versionName APP_VERSION_NAME
+        versionName RESOLVED_APP_VERSION_NAME
         ndkVersion "21.4.7075529"
 
         multiDexEnabled true
