@@ -74,8 +74,8 @@ The `BuildVars.java` file should already exist locally. If not, create it at:
 Make sure lines 29-30 read from local.properties (this should already be configured):
 
 ```java
-public static int APP_ID = %%APP_ID%%;  // Your app_id from local.properties
-public static String APP_HASH = "%%APP_HASH%%";  // Your app_hash
+public static int APP_ID = %%APP_ID%%;  // Injected from local.properties
+public static String APP_HASH = "%%APP_HASH%%";  // Injected from local.properties
 ```
 
 ## Step 5: Set Java Version

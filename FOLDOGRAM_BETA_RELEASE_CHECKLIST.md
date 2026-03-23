@@ -8,7 +8,7 @@
 - [x] Updated version to 12.4.2-beta (6511)
 - [x] Changed package name to `com.rbnkv.foldogram`
 - [x] Changed app name to "Foldogram" / "Foldogram Beta"
-- [x] Custom API credentials already configured (APP_ID: %%APP_ID%%)
+- [x] Custom API credentials already configured
 - [x] Release keystore in place
 
 ## 🎨 Pending: App Icons
