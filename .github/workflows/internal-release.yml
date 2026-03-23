@@ -171,4 +171,4 @@ jobs:
           packageName: com.rbnkv.foldogram
           releaseFiles: TMessagesProj_App/build/outputs/bundle/afatRelease/TMessagesProj_App-afat-release.aab
           track: internal
-          status: completed
+          status: draft
