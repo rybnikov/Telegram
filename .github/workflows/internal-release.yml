@@ -28,13 +28,17 @@ jobs:
       RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
       RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-      RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set release paths
+        shell: bash
+        run: |
+          echo "RELEASE_KEYSTORE_PATH=${RUNNER_TEMP}/release.keystore" >> "$GITHUB_ENV"
 
       - name: Resolve release version from tag
         shell: bash
