@@ -102,8 +102,9 @@ jobs:
             "cmake;3.10.2.4988404" \
             "ndk;21.4.7075529"
 
-      - name: Cache native .cxx state
-        uses: actions/cache@v4
+      - name: Restore native .cxx state
+        id: restore-native-cxx
+        uses: actions/cache/restore@v4
         with:
           path: |
             TMessagesProj/.cxx
@@ -112,8 +113,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ndk-cxx-21.4.7075529-3.10.2.4988404-
 
-      - name: Cache safe native intermediates
-        uses: actions/cache@v4
+      - name: Restore safe native intermediates
+        id: restore-native-intermediates
+        uses: actions/cache/restore@v4
         with:
           path: |
             TMessagesProj/build/intermediates/merged_jni_libs
@@ -151,6 +153,28 @@ jobs:
 
       - name: Build release bundle
         run: ./gradlew :TMessagesProj_App:bundleAfatRelease
+
+      - name: Save native .cxx state
+        if: ${{ success() && steps.restore-native-cxx.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            TMessagesProj/.cxx
+            TMessagesProj/build/intermediates/cxx
+          key: ${{ steps.restore-native-cxx.outputs.cache-primary-key }}
+
+      - name: Save safe native intermediates
+        if: ${{ success() && steps.restore-native-intermediates.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            TMessagesProj/build/intermediates/merged_jni_libs
+            TMessagesProj/build/intermediates/stripped_native_libs
+            TMessagesProj/build/intermediates/library_jni
+            TMessagesProj_App/build/intermediates/merged_jni_libs
+            TMessagesProj_App/build/intermediates/stripped_native_libs
+            TMessagesProj_App/build/intermediates/native_debug_metadata
+          key: ${{ steps.restore-native-intermediates.outputs.cache-primary-key }}
 
       - name: Generate release checksums
         shell: bash
