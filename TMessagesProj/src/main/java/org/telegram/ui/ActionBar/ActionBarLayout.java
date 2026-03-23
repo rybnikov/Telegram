@@ -946,14 +946,17 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         setInnerTranslationX(0);
     }
 
-    @Override
-    public void onResume() {
-        // If any animation state is stuck from before pause, force-reset it.
+    public void resetNavigationStateIfNeeded() {
         boolean animationStuck = transitionAnimationInProgress || animationInProgress
                 || predictiveInput || predictiveBackInProgress || startedTracking;
         if (animationStuck) {
             forceResetAnimationState();
         }
+    }
+
+    @Override
+    public void onResume() {
+        resetNavigationStateIfNeeded();
         if (!fragmentsStack.isEmpty()) {
             BaseFragment lastFragment = fragmentsStack.get(fragmentsStack.size() - 1);
             lastFragment.onResume();
