@@ -171,3 +171,51 @@ jobs:
           releaseFiles: TMessagesProj_App/build/outputs/bundle/afatRelease/TMessagesProj_App-afat-release.aab
           track: internal
           status: draft
+
+      - name: Promote Google Play internal release
+        shell: bash
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+
+          SA_JSON_PATH="${RUNNER_TEMP}/play-service-account.json"
+          SA_KEY_PATH="${RUNNER_TEMP}/play-service-account.pem"
+          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$SA_JSON_PATH"
+
+          CLIENT_EMAIL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["client_email"])' "$SA_JSON_PATH")"
+          python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["private_key"])' "$SA_JSON_PATH" > "$SA_KEY_PATH"
+
+          JWT_ASSERTION="$(
+            python3 -c 'import base64,json,sys,time; b=lambda d: base64.urlsafe_b64encode(d).rstrip(b"=").decode(); now=int(time.time()); header={"alg":"RS256","typ":"JWT"}; claim={"iss":sys.argv[1],"scope":"https://www.googleapis.com/auth/androidpublisher","aud":"https://oauth2.googleapis.com/token","iat":now,"exp":now+3600}; print(f"{b(json.dumps(header,separators=(\",\",\":\")).encode())}.{b(json.dumps(claim,separators=(\",\",\":\")).encode())}")' "$CLIENT_EMAIL"
+          )"
+
+          JWT_SIGNATURE="$(printf '%s' "$JWT_ASSERTION" | openssl dgst -sha256 -sign "$SA_KEY_PATH" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+          ACCESS_TOKEN="$(
+            curl -fsS https://oauth2.googleapis.com/token \
+              -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer \
+              --data-urlencode assertion="${JWT_ASSERTION}.${JWT_SIGNATURE}" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
+          )"
+
+          EDIT_ID="$(
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              -H "Content-Type: application/json; charset=utf-8" \
+              "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.rbnkv.foldogram/edits" |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'
+          )"
+
+          TRACK_PAYLOAD="$(
+            python3 -c 'import json,os; print(json.dumps({"track":"internal","releases":[{"name":os.environ["RELEASE_VERSION_NAME"],"versionCodes":[os.environ["RELEASE_VERSION_CODE"]],"status":"completed"}]}, separators=(",", ":")))' 
+          )"
+
+          curl -fsS -X PUT \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            -d "$TRACK_PAYLOAD" \
+            "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.rbnkv.foldogram/edits/${EDIT_ID}/tracks/internal" > /dev/null
+
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.rbnkv.foldogram/edits/${EDIT_ID}:commit?changesNotSentForReview=true" > /dev/null
