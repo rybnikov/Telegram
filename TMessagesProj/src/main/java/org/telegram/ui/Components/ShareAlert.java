@@ -1858,6 +1858,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
         if (listAdapter.dialogs.isEmpty()) {
             NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.dialogsNeedReload);
         }
+        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.reloadHints);
 
         DialogsSearchAdapter.loadRecentSearch(currentAccount, 0, new DialogsSearchAdapter.OnRecentSearchLoaded() {
             @Override
@@ -2105,7 +2106,6 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
             }
         }
         if (searchAdapter != null && searchAdapter.categoryAdapter != null) {
-            searchAdapter.refreshRankedShareHints();
             searchAdapter.categoryAdapter.notifyItemRangeChanged(0, searchAdapter.categoryAdapter.getItemCount());
         }
     }
@@ -2629,6 +2629,13 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                 listAdapter.fetchDialogs();
             }
             NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.dialogsNeedReload);
+        } else if (id == NotificationCenter.reloadHints) {
+            if (searchAdapter != null) {
+                searchAdapter.refreshRankedShareHints();
+                if (searchAdapter.categoryAdapter != null) {
+                    searchAdapter.categoryAdapter.notifyDataSetChanged();
+                }
+            }
         }
     }
 
@@ -2871,6 +2878,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
         fullyShown = false;
         super.dismiss();
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.dialogsNeedReload);
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.reloadHints);
     }
 
     private class ShareDialogsAdapter extends RecyclerListView.SelectionAdapter {
