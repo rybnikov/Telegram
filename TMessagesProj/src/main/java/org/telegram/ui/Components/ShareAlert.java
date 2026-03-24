@@ -2105,6 +2105,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
             }
         }
         if (searchAdapter != null && searchAdapter.categoryAdapter != null) {
+            searchAdapter.refreshRankedShareHints();
             searchAdapter.categoryAdapter.notifyItemRangeChanged(0, searchAdapter.categoryAdapter.getItemCount());
         }
     }
@@ -3128,9 +3129,11 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
 
         DialogsSearchAdapter.CategoryAdapterRecycler categoryAdapter;
         RecyclerView categoryListView;
+        private ArrayList<TLRPC.TL_topPeer> rankedShareHints = new ArrayList<>();
 
         public ShareSearchAdapter(Context context) {
             this.context = context;
+            refreshRankedShareHints();
             searchAdapterHelper = new SearchAdapterHelper(false) {
                 @Override
                 protected boolean filter(TLObject obj) {
@@ -3159,6 +3162,10 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                     return searchId == lastSearchId;
                 }
             });
+        }
+
+        private void refreshRankedShareHints() {
+            rankedShareHints = MediaDataController.getInstance(currentAccount).getShareHints(20);
         }
 
         boolean internalDialogsIsSearching = false;
@@ -3567,13 +3574,9 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                     layoutManager.setOrientation(LinearLayoutManager.HORIZONTAL);
                     horizontalListView.setLayoutManager(layoutManager);
                     horizontalListView.setAdapter(categoryAdapter = new DialogsSearchAdapter.CategoryAdapterRecycler(context, currentAccount, true, true, resourcesProvider) {
-                        private ArrayList<TLRPC.TL_topPeer> rankedHints() {
-                            return MediaDataController.getInstance(currentAccount).getShareHints(20);
-                        }
-
                         @Override
                         public int getItemCount() {
-                            return rankedHints().size();
+                            return rankedShareHints.size();
                         }
 
                         @Override
@@ -3583,11 +3586,10 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                                 cell.setColors(Theme.key_voipgroup_nameText, Theme.key_voipgroup_inviteMembersBackground);
                             }
 
-                            ArrayList<TLRPC.TL_topPeer> rankedHints = rankedHints();
-                            if (position < 0 || position >= rankedHints.size()) {
+                            if (position < 0 || position >= rankedShareHints.size()) {
                                 return;
                             }
-                            TLRPC.TL_topPeer peer = rankedHints.get(position);
+                            TLRPC.TL_topPeer peer = rankedShareHints.get(position);
                             TLRPC.Chat chat = null;
                             TLRPC.User user = null;
                             long did = 0;
@@ -3615,11 +3617,10 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                     });
                     horizontalListView.setOnItemClickListener((view1, position) -> {
                         HintDialogCell cell = (HintDialogCell) view1;
-                        ArrayList<TLRPC.TL_topPeer> rankedHints = MediaDataController.getInstance(currentAccount).getShareHints(20);
-                        if (position < 0 || position >= rankedHints.size()) {
+                        if (position < 0 || position >= rankedShareHints.size()) {
                             return;
                         }
-                        TLRPC.TL_topPeer peer = rankedHints.get(position);
+                        TLRPC.TL_topPeer peer = rankedShareHints.get(position);
                         TLRPC.Dialog dialog = new TLRPC.TL_dialog();
                         long did = 0;
                         if (peer.peer.user_id != 0) {

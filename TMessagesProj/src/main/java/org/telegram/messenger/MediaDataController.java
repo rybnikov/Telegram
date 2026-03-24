@@ -128,6 +128,7 @@ public class MediaDataController extends BaseController {
             STRIKE_PATTERN = Pattern.compile("~~(.+?)~~");
 
     public static final String SHORTCUT_CATEGORY = "com.rbnkv.foldogram.SHORTCUT_SHARE";
+    private static final String LEGACY_SHORTCUT_CATEGORY = "org.telegram.messenger.SHORTCUT_SHARE";
 
     private static volatile MediaDataController[] Instance = new MediaDataController[UserConfig.MAX_ACCOUNT_COUNT];
     private static final Object[] lockObjects = new Object[UserConfig.MAX_ACCOUNT_COUNT];
@@ -4933,6 +4934,7 @@ public class MediaDataController extends BaseController {
     public ArrayList<TLRPC.TL_topPeer> inlineBots = new ArrayList<>();
     public ArrayList<TLRPC.TL_topPeer> webapps = new ArrayList<>();
     private final ShareTargetRanker shareTargetRanker;
+    private Runnable buildShortcutsRunnable;
     boolean loaded;
     boolean loading;
 
@@ -4964,38 +4966,60 @@ public class MediaDataController extends BaseController {
         if (Build.VERSION.SDK_INT < 23) {
             return;
         }
-        int maxShortcuts = ShortcutManagerCompat.getMaxShortcutCountPerActivity(ApplicationLoader.applicationContext) - 2;
-        if (maxShortcuts <= 0) {
-            maxShortcuts = 5;
+        if (buildShortcutsRunnable != null) {
+            Utilities.globalQueue.cancelRunnable(buildShortcutsRunnable);
         }
-        ArrayList<TLRPC.TL_topPeer> hintsFinal = new ArrayList<>();
-        if (SharedConfig.passcodeHash.length() <= 0) {
-            hintsFinal.addAll(getShareHints(maxShortcuts - 2));
-            if (hintsFinal.isEmpty()) {
-                for (int a = 0; a < hints.size(); a++) {
-                    hintsFinal.add(hints.get(a));
-                    if (hintsFinal.size() == maxShortcuts - 2) {
-                        break;
+        Utilities.globalQueue.postRunnable(buildShortcutsRunnable = () -> {
+            try {
+                int maxShortcuts = ShortcutManagerCompat.getMaxShortcutCountPerActivity(ApplicationLoader.applicationContext) - 2;
+                if (maxShortcuts <= 0) {
+                    maxShortcuts = 5;
+                }
+                ArrayList<TLRPC.TL_topPeer> hintsFinal = new ArrayList<>();
+                if (SharedConfig.passcodeHash.length() <= 0) {
+                    hintsFinal.addAll(getShareHints(maxShortcuts - 2));
+                    if (hintsFinal.isEmpty()) {
+                        for (int a = 0; a < hints.size(); a++) {
+                            hintsFinal.add(hints.get(a));
+                            if (hintsFinal.size() == maxShortcuts - 2) {
+                                break;
+                            }
+                        }
                     }
                 }
-            }
-        }
-        boolean recreateShortcuts = Build.VERSION.SDK_INT >= 30;
-        Utilities.globalQueue.postRunnable(() -> {
-            try {
                 if (SharedConfig.directShareHash == null) {
                     SharedConfig.directShareHash = UUID.randomUUID().toString();
                     ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE).edit().putString("directShareHash2", SharedConfig.directShareHash).commit();
                 }
 
                 ArrayList<String> shortcutsToUpdate = new ArrayList<>();
-                ShortcutManager shortcutManager = Build.VERSION.SDK_INT >= 25 ? ApplicationLoader.applicationContext.getSystemService(ShortcutManager.class) : null;
+                ArrayList<String> newShortcutsIds = new ArrayList<>();
                 ArrayList<String> shortcutsToDelete = new ArrayList<>();
+                HashMap<String, Integer> currentShortcutRanks = new HashMap<>();
+                ShortcutManager shortcutManager = Build.VERSION.SDK_INT >= 25 ? ApplicationLoader.applicationContext.getSystemService(ShortcutManager.class) : null;
+
+                newShortcutsIds.add("compose");
+                for (int a = 0; a < hintsFinal.size(); a++) {
+                    newShortcutsIds.add("did3_" + MessageObject.getPeerId(hintsFinal.get(a).peer));
+                }
+
                 List<ShortcutInfoCompat> compatShortcuts = ShortcutManagerCompat.getDynamicShortcuts(ApplicationLoader.applicationContext);
                 if (compatShortcuts != null && !compatShortcuts.isEmpty()) {
                     for (int a = 0; a < compatShortcuts.size(); a++) {
-                        String id = compatShortcuts.get(a).getId();
-                        if ("compose".equals(id) || id.startsWith("did3_")) {
+                        ShortcutInfoCompat info = compatShortcuts.get(a);
+                        String id = info.getId();
+                        if (!"compose".equals(id) && !id.startsWith("did3_")) {
+                            continue;
+                        }
+                        if (hasLegacyShortcutCategory(info.getCategories())) {
+                            shortcutsToUpdate.remove(id);
+                            if (!shortcutsToDelete.contains(id)) {
+                                shortcutsToDelete.add(id);
+                            }
+                            continue;
+                        }
+                        shortcutsToUpdate.add(id);
+                        if (!newShortcutsIds.remove(id) && !shortcutsToDelete.contains(id)) {
                             shortcutsToDelete.add(id);
                         }
                     }
@@ -5004,12 +5028,43 @@ public class MediaDataController extends BaseController {
                     List<ShortcutInfo> frameworkShortcuts = shortcutManager.getDynamicShortcuts();
                     if (frameworkShortcuts != null && !frameworkShortcuts.isEmpty()) {
                         for (int a = 0; a < frameworkShortcuts.size(); a++) {
-                            String id = frameworkShortcuts.get(a).getId();
-                            if (("compose".equals(id) || id.startsWith("did3_")) && !shortcutsToDelete.contains(id)) {
+                            ShortcutInfo shortcutInfo = frameworkShortcuts.get(a);
+                            String id = shortcutInfo.getId();
+                            if (!"compose".equals(id) && !id.startsWith("did3_")) {
+                                continue;
+                            }
+                            currentShortcutRanks.put(id, shortcutInfo.getRank());
+                            if (hasLegacyShortcutCategory(shortcutInfo.getCategories())) {
+                                shortcutsToUpdate.remove(id);
+                                if (!shortcutsToDelete.contains(id)) {
+                                    shortcutsToDelete.add(id);
+                                }
+                                continue;
+                            }
+                            if (!shortcutsToUpdate.contains(id)) {
+                                shortcutsToUpdate.add(id);
+                            }
+                            if (!newShortcutsIds.remove(id) && !shortcutsToDelete.contains(id)) {
                                 shortcutsToDelete.add(id);
                             }
                         }
                     }
+                }
+                boolean rankChanged = false;
+                for (int a = 0; a < hintsFinal.size(); a++) {
+                    String id = "did3_" + MessageObject.getPeerId(hintsFinal.get(a).peer);
+                    Integer currentRank = currentShortcutRanks.get(id);
+                    if (currentRank == null || currentRank != 1 + a) {
+                        rankChanged = true;
+                        break;
+                    }
+                }
+                Integer composeRank = currentShortcutRanks.get("compose");
+                if (composeRank != null && composeRank != 0) {
+                    rankChanged = true;
+                }
+                if (newShortcutsIds.isEmpty() && shortcutsToDelete.isEmpty() && !rankChanged) {
+                    return;
                 }
                 if (!shortcutsToDelete.isEmpty()) {
                     ShortcutManagerCompat.removeDynamicShortcuts(ApplicationLoader.applicationContext, shortcutsToDelete);
@@ -5020,7 +5075,6 @@ public class MediaDataController extends BaseController {
 
                 Intent intent = new Intent(ApplicationLoader.applicationContext, LaunchActivity.class);
                 intent.setAction("new_dialog");
-                ArrayList<ShortcutInfoCompat> arrayList = new ArrayList<>();
                 ShortcutInfoCompat shortcut = new ShortcutInfoCompat.Builder(ApplicationLoader.applicationContext, "compose")
                         .setShortLabel(LocaleController.getString(R.string.NewConversationShortcut))
                         .setLongLabel(LocaleController.getString(R.string.NewConversationShortcut))
@@ -5028,9 +5082,7 @@ public class MediaDataController extends BaseController {
                         .setRank(0)
                         .setIntent(intent)
                         .build();
-                arrayList.add(shortcut);
-                ShortcutManagerCompat.addDynamicShortcuts(ApplicationLoader.applicationContext, arrayList);
-                arrayList.clear();
+                publishShortcut(shortcut, "compose", shortcutsToUpdate.contains("compose"));
 
 
                 HashSet<String> category = new HashSet<>(1);
@@ -5145,10 +5197,7 @@ public class MediaDataController extends BaseController {
                             }
                             builder.setPersons(new Person[]{personBuilder.build()});
 
-                            ShortcutInfo shortcutInfo = builder.build();
-                            ArrayList<ShortcutInfo> frameworkShortcuts = new ArrayList<>(1);
-                            frameworkShortcuts.add(shortcutInfo);
-                            shortcutManager.addDynamicShortcuts(frameworkShortcuts);
+                            publishShortcut(builder.build(), shortcutsToUpdate.contains(id), shortcutManager);
                             continue;
                         }
                     }
@@ -5179,14 +5228,40 @@ public class MediaDataController extends BaseController {
                         compatBuilder.setIcon(IconCompat.createWithResource(ApplicationLoader.applicationContext, R.drawable.shortcut_user));
                     }
 
-                    arrayList.add(compatBuilder.build());
-                    ShortcutManagerCompat.addDynamicShortcuts(ApplicationLoader.applicationContext, arrayList);
-                    arrayList.clear();
+                    publishShortcut(compatBuilder.build(), id, shortcutsToUpdate.contains(id));
                 }
             } catch (Throwable ignore) {
 
             }
-        });
+        }, 300);
+    }
+
+    private boolean hasLegacyShortcutCategory(Set<String> categories) {
+        return categories != null && categories.contains(LEGACY_SHORTCUT_CATEGORY);
+    }
+
+    private void publishShortcut(ShortcutInfoCompat shortcut, String id, boolean updateExisting) {
+        ArrayList<ShortcutInfoCompat> shortcuts = new ArrayList<>(1);
+        shortcuts.add(shortcut);
+        if (Build.VERSION.SDK_INT >= 30 && updateExisting) {
+            ShortcutManagerCompat.pushDynamicShortcut(ApplicationLoader.applicationContext, shortcut);
+        } else if (updateExisting) {
+            ShortcutManagerCompat.updateShortcuts(ApplicationLoader.applicationContext, shortcuts);
+        } else {
+            ShortcutManagerCompat.addDynamicShortcuts(ApplicationLoader.applicationContext, shortcuts);
+        }
+    }
+
+    private void publishShortcut(ShortcutInfo shortcut, boolean updateExisting, ShortcutManager shortcutManager) {
+        ArrayList<ShortcutInfo> shortcuts = new ArrayList<>(1);
+        shortcuts.add(shortcut);
+        if (Build.VERSION.SDK_INT >= 30 && updateExisting) {
+            shortcutManager.pushDynamicShortcut(shortcut);
+        } else if (updateExisting && Build.VERSION.SDK_INT >= 25) {
+            shortcutManager.updateShortcuts(shortcuts);
+        } else if (Build.VERSION.SDK_INT >= 25) {
+            shortcutManager.addDynamicShortcuts(shortcuts);
+        }
     }
 
     public void loadHints(boolean cache) {
@@ -5528,7 +5603,7 @@ public class MediaDataController extends BaseController {
         }
         if (DialogObject.isUserDialog(dialogId)) {
             TLRPC.User user = getMessagesController().getUser(dialogId);
-            if (user == null || user.bot || user.self) {
+            if (user == null || UserObject.isDeleted(user) || UserObject.isReplyUser(user) || UserObject.isService(user.id)) {
                 return;
             }
         }
@@ -5562,13 +5637,7 @@ public class MediaDataController extends BaseController {
                 }
                 if (peer == null) {
                     peer = new TLRPC.TL_topPeer();
-                    if (DialogObject.isUserDialog(dialogId)) {
-                        peer.peer = new TLRPC.TL_peerUser();
-                        peer.peer.user_id = dialogId;
-                    } else {
-                        peer.peer = new TLRPC.TL_peerChat();
-                        peer.peer.chat_id = (int) -dialogId;
-                    }
+                    peer.peer = createPeerForDialog(dialogId);
                     hints.add(peer);
                 }
                 peer.rating += Math.exp(dtFinal / getMessagesController().ratingDecay);
@@ -5617,6 +5686,23 @@ public class MediaDataController extends BaseController {
                 FileLog.e(e);
             }
         });
+    }
+
+    private TLRPC.Peer createPeerForDialog(long dialogId) {
+        if (DialogObject.isUserDialog(dialogId)) {
+            TLRPC.TL_peerUser peerUser = new TLRPC.TL_peerUser();
+            peerUser.user_id = dialogId;
+            return peerUser;
+        }
+        TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
+        if (ChatObject.isChannel(chat)) {
+            TLRPC.TL_peerChannel peerChannel = new TLRPC.TL_peerChannel();
+            peerChannel.channel_id = -dialogId;
+            return peerChannel;
+        }
+        TLRPC.TL_peerChat peerChat = new TLRPC.TL_peerChat();
+        peerChat.chat_id = -dialogId;
+        return peerChat;
     }
 
 

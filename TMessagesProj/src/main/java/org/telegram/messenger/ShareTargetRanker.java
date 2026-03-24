@@ -8,7 +8,6 @@ import org.telegram.tgnet.TLRPC;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -163,11 +162,21 @@ class ShareTargetRanker extends BaseController {
             return fallback;
         }
 
-        Collections.sort(scoredDialogs, Comparator
-                .comparingDouble((ScoredDialog value) -> value.score).reversed()
-                .thenComparingInt((ScoredDialog value) -> value.lastShare).reversed()
-                .thenComparingInt((ScoredDialog value) -> value.lastSend).reversed()
-                .thenComparingLong(value -> value.dialogId));
+        Collections.sort(scoredDialogs, (left, right) -> {
+            int result = Double.compare(right.score, left.score);
+            if (result != 0) {
+                return result;
+            }
+            result = Integer.compare(right.lastShare, left.lastShare);
+            if (result != 0) {
+                return result;
+            }
+            result = Integer.compare(right.lastSend, left.lastSend);
+            if (result != 0) {
+                return result;
+            }
+            return Long.compare(left.dialogId, right.dialogId);
+        });
 
         ArrayList<TLRPC.TL_topPeer> result = new ArrayList<>();
         for (int i = 0; i < scoredDialogs.size() && result.size() < limit; i++) {
@@ -178,8 +187,14 @@ class ShareTargetRanker extends BaseController {
                 peer.peer = new TLRPC.TL_peerUser();
                 peer.peer.user_id = did;
             } else {
-                peer.peer = new TLRPC.TL_peerChat();
-                peer.peer.chat_id = -did;
+                TLRPC.Chat chat = getMessagesController().getChat(-did);
+                if (ChatObject.isChannel(chat)) {
+                    peer.peer = new TLRPC.TL_peerChannel();
+                    peer.peer.channel_id = -did;
+                } else {
+                    peer.peer = new TLRPC.TL_peerChat();
+                    peer.peer.chat_id = -did;
+                }
             }
             result.add(peer);
         }
@@ -429,7 +444,10 @@ class ShareTargetRanker extends BaseController {
         }
         if (DialogObject.isUserDialog(dialogId)) {
             TLRPC.User user = getMessagesController().getUser(dialogId);
-            return user != null && !UserObject.isDeleted(user);
+            return user != null
+                    && !UserObject.isDeleted(user)
+                    && !UserObject.isReplyUser(user)
+                    && !UserObject.isService(user.id);
         }
         TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
         if (chat == null || ChatObject.isNotInChat(chat)) {
