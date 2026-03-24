@@ -4944,10 +4944,13 @@ public class MediaDataController extends BaseController {
         }
         ArrayList<TLRPC.TL_topPeer> hintsFinal = new ArrayList<>();
         if (SharedConfig.passcodeHash.length() <= 0) {
-            for (int a = 0; a < hints.size(); a++) {
-                hintsFinal.add(hints.get(a));
-                if (hintsFinal.size() == maxShortcuts - 2) {
-                    break;
+            hintsFinal.addAll(loadDirectShareHints(maxShortcuts - 2));
+            if (hintsFinal.isEmpty()) {
+                for (int a = 0; a < hints.size(); a++) {
+                    hintsFinal.add(hints.get(a));
+                    if (hintsFinal.size() == maxShortcuts - 2) {
+                        break;
+                    }
                 }
             }
         }
@@ -5122,6 +5125,37 @@ public class MediaDataController extends BaseController {
 
             }
         });
+    }
+
+    private ArrayList<TLRPC.TL_topPeer> loadDirectShareHints(int limit) {
+        ArrayList<TLRPC.TL_topPeer> result = new ArrayList<>();
+        if (limit <= 0) {
+            return result;
+        }
+        long selfUserId = getUserConfig().getClientUserId();
+        try {
+            SQLiteCursor cursor = getMessagesStorage().getDatabase().queryFinalized(String.format(Locale.US, "SELECT did, rating FROM chat_hints WHERE type = 0 ORDER BY rating DESC LIMIT %d", limit));
+            while (cursor.next()) {
+                long did = cursor.longValue(0);
+                if (did == selfUserId || DialogObject.isEncryptedDialog(did)) {
+                    continue;
+                }
+                TLRPC.TL_topPeer peer = new TLRPC.TL_topPeer();
+                peer.rating = cursor.doubleValue(1);
+                if (did > 0) {
+                    peer.peer = new TLRPC.TL_peerUser();
+                    peer.peer.user_id = did;
+                } else {
+                    peer.peer = new TLRPC.TL_peerChat();
+                    peer.peer.chat_id = -did;
+                }
+                result.add(peer);
+            }
+            cursor.dispose();
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return result;
     }
 
     public void loadHints(boolean cache) {
@@ -5458,12 +5492,14 @@ public class MediaDataController extends BaseController {
         if (!getUserConfig().suggestContacts) {
             return;
         }
-        if (!DialogObject.isUserDialog(dialogId)) {
+        if (DialogObject.isEncryptedDialog(dialogId)) {
             return;
         }
-        TLRPC.User user = getMessagesController().getUser(dialogId);
-        if (user == null || user.bot || user.self) {
-            return;
+        if (DialogObject.isUserDialog(dialogId)) {
+            TLRPC.User user = getMessagesController().getUser(dialogId);
+            if (user == null || user.bot || user.self) {
+                return;
+            }
         }
         getMessagesStorage().getStorageQueue().postRunnable(() -> {
             double dt = 0;
@@ -5494,8 +5530,13 @@ public class MediaDataController extends BaseController {
                 }
                 if (peer == null) {
                     peer = new TLRPC.TL_topPeer();
-                    peer.peer = new TLRPC.TL_peerUser();
-                    peer.peer.user_id = dialogId;
+                    if (DialogObject.isUserDialog(dialogId)) {
+                        peer.peer = new TLRPC.TL_peerUser();
+                        peer.peer.user_id = dialogId;
+                    } else {
+                        peer.peer = new TLRPC.TL_peerChat();
+                        peer.peer.chat_id = (int) -dialogId;
+                    }
                     hints.add(peer);
                 }
                 peer.rating += Math.exp(dtFinal / getMessagesController().ratingDecay);
@@ -5509,6 +5550,7 @@ public class MediaDataController extends BaseController {
                 });
 
                 savePeer(dialogId, 0, peer.rating);
+                buildShortcuts();
 
                 getNotificationCenter().postNotificationName(NotificationCenter.reloadHints);
             });
