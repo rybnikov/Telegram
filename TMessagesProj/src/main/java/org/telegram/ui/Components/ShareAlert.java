@@ -2461,6 +2461,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
         }
 
         AlertsCreator.ensurePaidMessagesMultiConfirmation(currentAccount, paidDialogIds, messagesCount, prices -> {
+            MediaDataController.getInstance(currentAccount).markPendingShare(selectedDialogs);
             boolean hadPaid = false;
             if (sendingMessageObjects != null) {
                 List<Long> removeKeys = new ArrayList<>();
@@ -3566,6 +3567,15 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                     layoutManager.setOrientation(LinearLayoutManager.HORIZONTAL);
                     horizontalListView.setLayoutManager(layoutManager);
                     horizontalListView.setAdapter(categoryAdapter = new DialogsSearchAdapter.CategoryAdapterRecycler(context, currentAccount, true, true, resourcesProvider) {
+                        private ArrayList<TLRPC.TL_topPeer> rankedHints() {
+                            return MediaDataController.getInstance(currentAccount).getShareHints(20);
+                        }
+
+                        @Override
+                        public int getItemCount() {
+                            return rankedHints().size();
+                        }
+
                         @Override
                         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
                             HintDialogCell cell = (HintDialogCell) holder.itemView;
@@ -3573,7 +3583,11 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                                 cell.setColors(Theme.key_voipgroup_nameText, Theme.key_voipgroup_inviteMembersBackground);
                             }
 
-                            TLRPC.TL_topPeer peer = MediaDataController.getInstance(currentAccount).hints.get(position);
+                            ArrayList<TLRPC.TL_topPeer> rankedHints = rankedHints();
+                            if (position < 0 || position >= rankedHints.size()) {
+                                return;
+                            }
+                            TLRPC.TL_topPeer peer = rankedHints.get(position);
                             TLRPC.Chat chat = null;
                             TLRPC.User user = null;
                             long did = 0;
@@ -3601,10 +3615,12 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                     });
                     horizontalListView.setOnItemClickListener((view1, position) -> {
                         HintDialogCell cell = (HintDialogCell) view1;
-                        TLRPC.TL_topPeer peer = MediaDataController.getInstance(currentAccount).hints.get(position);
+                        ArrayList<TLRPC.TL_topPeer> rankedHints = MediaDataController.getInstance(currentAccount).getShareHints(20);
+                        if (position < 0 || position >= rankedHints.size()) {
+                            return;
+                        }
+                        TLRPC.TL_topPeer peer = rankedHints.get(position);
                         TLRPC.Dialog dialog = new TLRPC.TL_dialog();
-                        TLRPC.Chat chat = null;
-                        TLRPC.User user = null;
                         long did = 0;
                         if (peer.peer.user_id != 0) {
                             did = peer.peer.user_id;
