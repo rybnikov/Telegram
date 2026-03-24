@@ -4954,7 +4954,30 @@ public class MediaDataController extends BaseController {
     private static Path roundPath;
 
     public ArrayList<TLRPC.TL_topPeer> getShareHints(int limit) {
-        return shareTargetRanker.getTopHints(limit, hints);
+        return getShareHints(limit, new ArrayList<>(hints));
+    }
+
+    private ArrayList<TLRPC.TL_topPeer> getShareHints(int limit, ArrayList<TLRPC.TL_topPeer> remoteHints) {
+        ArrayList<TLRPC.TL_topPeer> result = new ArrayList<>();
+        if (limit <= 0) {
+            return result;
+        }
+        ArrayList<ShareTargetRanker.RankedDialog> rankedDialogs = shareTargetRanker.getTopDialogs(Math.max(limit * 3, limit), remoteHints);
+        for (int i = 0; i < rankedDialogs.size() && result.size() < limit; i++) {
+            ShareTargetRanker.RankedDialog rankedDialog = rankedDialogs.get(i);
+            if (!isShareableShortcutDialog(rankedDialog.dialogId)) {
+                continue;
+            }
+            TLRPC.Peer peer = createPeerForDialog(rankedDialog.dialogId);
+            if (peer == null) {
+                continue;
+            }
+            TLRPC.TL_topPeer topPeer = new TLRPC.TL_topPeer();
+            topPeer.peer = peer;
+            topPeer.rating = rankedDialog.score;
+            result.add(topPeer);
+        }
+        return result;
     }
 
     public void markPendingShare(long dialogId) {
@@ -4977,6 +5000,7 @@ public class MediaDataController extends BaseController {
         if (Build.VERSION.SDK_INT < 23) {
             return;
         }
+        final ArrayList<TLRPC.TL_topPeer> hintsCopy = new ArrayList<>(hints);
         if (buildShortcutsRunnable != null) {
             Utilities.globalQueue.cancelRunnable(buildShortcutsRunnable);
         }
@@ -4988,10 +5012,10 @@ public class MediaDataController extends BaseController {
                 }
                 ArrayList<TLRPC.TL_topPeer> hintsFinal = new ArrayList<>();
                 if (SharedConfig.passcodeHash.length() <= 0) {
-                    hintsFinal.addAll(getShareHints(maxShortcuts - 2));
+                    hintsFinal.addAll(getShareHints(maxShortcuts - 2, hintsCopy));
                     if (hintsFinal.isEmpty()) {
-                        for (int a = 0; a < hints.size(); a++) {
-                            hintsFinal.add(hints.get(a));
+                        for (int a = 0; a < hintsCopy.size(); a++) {
+                            hintsFinal.add(hintsCopy.get(a));
                             if (hintsFinal.size() == maxShortcuts - 2) {
                                 break;
                             }
@@ -5014,27 +5038,6 @@ public class MediaDataController extends BaseController {
                     newShortcutsIds.add("did3_" + MessageObject.getPeerId(hintsFinal.get(a).peer));
                 }
 
-                List<ShortcutInfoCompat> compatShortcuts = ShortcutManagerCompat.getDynamicShortcuts(ApplicationLoader.applicationContext);
-                if (compatShortcuts != null && !compatShortcuts.isEmpty()) {
-                    for (int a = 0; a < compatShortcuts.size(); a++) {
-                        ShortcutInfoCompat info = compatShortcuts.get(a);
-                        String id = info.getId();
-                        if (!"compose".equals(id) && !id.startsWith("did3_")) {
-                            continue;
-                        }
-                        if (hasLegacyShortcutCategory(info.getCategories())) {
-                            shortcutsToUpdate.remove(id);
-                            if (!shortcutsToDelete.contains(id)) {
-                                shortcutsToDelete.add(id);
-                            }
-                            continue;
-                        }
-                        shortcutsToUpdate.add(id);
-                        if (!newShortcutsIds.remove(id) && !shortcutsToDelete.contains(id)) {
-                            shortcutsToDelete.add(id);
-                        }
-                    }
-                }
                 if (shortcutManager != null) {
                     List<ShortcutInfo> frameworkShortcuts = shortcutManager.getDynamicShortcuts();
                     if (frameworkShortcuts != null && !frameworkShortcuts.isEmpty()) {
@@ -5060,19 +5063,42 @@ public class MediaDataController extends BaseController {
                             }
                         }
                     }
-                }
-                boolean rankChanged = false;
-                for (int a = 0; a < hintsFinal.size(); a++) {
-                    String id = "did3_" + MessageObject.getPeerId(hintsFinal.get(a).peer);
-                    Integer currentRank = currentShortcutRanks.get(id);
-                    if (currentRank == null || currentRank != 1 + a) {
-                        rankChanged = true;
-                        break;
+                } else {
+                    List<ShortcutInfoCompat> compatShortcuts = ShortcutManagerCompat.getDynamicShortcuts(ApplicationLoader.applicationContext);
+                    if (compatShortcuts != null && !compatShortcuts.isEmpty()) {
+                        for (int a = 0; a < compatShortcuts.size(); a++) {
+                            ShortcutInfoCompat info = compatShortcuts.get(a);
+                            String id = info.getId();
+                            if (!"compose".equals(id) && !id.startsWith("did3_")) {
+                                continue;
+                            }
+                            if (hasLegacyShortcutCategory(info.getCategories())) {
+                                if (!shortcutsToDelete.contains(id)) {
+                                    shortcutsToDelete.add(id);
+                                }
+                                continue;
+                            }
+                            shortcutsToUpdate.add(id);
+                            if (!newShortcutsIds.remove(id) && !shortcutsToDelete.contains(id)) {
+                                shortcutsToDelete.add(id);
+                            }
+                        }
                     }
                 }
-                Integer composeRank = currentShortcutRanks.get("compose");
-                if (composeRank != null && composeRank != 0) {
-                    rankChanged = true;
+                boolean rankChanged = false;
+                if (shortcutManager != null) {
+                    for (int a = 0; a < hintsFinal.size(); a++) {
+                        String id = "did3_" + MessageObject.getPeerId(hintsFinal.get(a).peer);
+                        Integer currentRank = currentShortcutRanks.get(id);
+                        if (currentRank == null || currentRank != 1 + a) {
+                            rankChanged = true;
+                            break;
+                        }
+                    }
+                    Integer composeRank = currentShortcutRanks.get("compose");
+                    if (composeRank != null && composeRank != 0) {
+                        rankChanged = true;
+                    }
                 }
                 if (newShortcutsIds.isEmpty() && shortcutsToDelete.isEmpty() && !rankChanged) {
                     return;
@@ -5273,6 +5299,27 @@ public class MediaDataController extends BaseController {
         } else if (Build.VERSION.SDK_INT >= 25) {
             shortcutManager.addDynamicShortcuts(shortcuts);
         }
+    }
+
+    private boolean isShareableShortcutDialog(long dialogId) {
+        if (dialogId == 0 || DialogObject.isEncryptedDialog(dialogId)) {
+            return false;
+        }
+        if (DialogObject.isUserDialog(dialogId)) {
+            TLRPC.User user = getMessagesController().getUser(dialogId);
+            return user != null
+                    && !UserObject.isDeleted(user)
+                    && !UserObject.isReplyUser(user)
+                    && !UserObject.isService(user.id);
+        }
+        TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
+        if (chat == null || ChatObject.isNotInChat(chat)) {
+            return false;
+        }
+        if (ChatObject.isChannel(chat) && !chat.megagroup) {
+            return ChatObject.canPost(chat);
+        }
+        return ChatObject.canSendMessages(chat);
     }
 
     public void loadHints(boolean cache) {

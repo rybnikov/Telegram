@@ -37,6 +37,7 @@ class ShareTargetRanker extends BaseController {
 
     private boolean loaded;
     private boolean loading;
+    private volatile boolean tableReady;
 
     ShareTargetRanker(int currentAccount) {
         super(currentAccount);
@@ -105,7 +106,7 @@ class ShareTargetRanker extends BaseController {
         return shareEvent;
     }
 
-    public ArrayList<TLRPC.TL_topPeer> getTopHints(int limit, List<TLRPC.TL_topPeer> remoteHints) {
+    public ArrayList<RankedDialog> getTopDialogs(int limit, List<TLRPC.TL_topPeer> remoteHints) {
         ensureLoaded();
         if (limit <= 0) {
             return new ArrayList<>();
@@ -121,11 +122,8 @@ class ShareTargetRanker extends BaseController {
         }
         candidates.addAll(remoteScores.keySet());
 
-        ArrayList<ScoredDialog> scoredDialogs = new ArrayList<>();
+        ArrayList<RankedDialog> rankedDialogs = new ArrayList<>();
         for (Long did : candidates) {
-            if (!isShareableDialog(did)) {
-                continue;
-            }
             Entry entry;
             synchronized (sync) {
                 entry = entries.get(did);
@@ -144,17 +142,17 @@ class ShareTargetRanker extends BaseController {
             }
             int lastShare = entry != null ? entry.lastShareDate : 0;
             int lastSend = entry != null ? entry.lastSendDate : 0;
-            scoredDialogs.add(new ScoredDialog(did, score, lastShare, lastSend));
+            rankedDialogs.add(new RankedDialog(did, score, lastShare, lastSend));
         }
 
-        if (scoredDialogs.isEmpty() && remoteHints != null) {
-            ArrayList<TLRPC.TL_topPeer> fallback = new ArrayList<>();
+        if (rankedDialogs.isEmpty() && remoteHints != null) {
+            ArrayList<RankedDialog> fallback = new ArrayList<>();
             for (TLRPC.TL_topPeer remoteHint : remoteHints) {
                 long did = MessageObject.getPeerId(remoteHint.peer);
-                if (!isShareableDialog(did)) {
+                if (!isEligibleDialogId(did)) {
                     continue;
                 }
-                fallback.add(remoteHint);
+                fallback.add(new RankedDialog(did, remoteScores.getOrDefault(did, remoteHint.rating), 0, 0));
                 if (fallback.size() == limit) {
                     break;
                 }
@@ -162,7 +160,7 @@ class ShareTargetRanker extends BaseController {
             return fallback;
         }
 
-        Collections.sort(scoredDialogs, (left, right) -> {
+        Collections.sort(rankedDialogs, (left, right) -> {
             int result = Double.compare(right.score, left.score);
             if (result != 0) {
                 return result;
@@ -178,27 +176,10 @@ class ShareTargetRanker extends BaseController {
             return Long.compare(left.dialogId, right.dialogId);
         });
 
-        ArrayList<TLRPC.TL_topPeer> result = new ArrayList<>();
-        for (int i = 0; i < scoredDialogs.size() && result.size() < limit; i++) {
-            long did = scoredDialogs.get(i).dialogId;
-            TLRPC.TL_topPeer peer = new TLRPC.TL_topPeer();
-            peer.rating = scoredDialogs.get(i).score;
-            if (DialogObject.isUserDialog(did)) {
-                peer.peer = new TLRPC.TL_peerUser();
-                peer.peer.user_id = did;
-            } else {
-                TLRPC.Chat chat = getMessagesController().getChat(-did);
-                if (ChatObject.isChannel(chat)) {
-                    peer.peer = new TLRPC.TL_peerChannel();
-                    peer.peer.channel_id = -did;
-                } else {
-                    peer.peer = new TLRPC.TL_peerChat();
-                    peer.peer.chat_id = -did;
-                }
-            }
-            result.add(peer);
+        if (rankedDialogs.size() > limit) {
+            return new ArrayList<>(rankedDialogs.subList(0, limit));
         }
-        return result;
+        return rankedDialogs;
     }
 
     private void ensureLoaded() {
@@ -284,6 +265,9 @@ class ShareTargetRanker extends BaseController {
     }
 
     private void ensureTable() {
+        if (tableReady) {
+            return;
+        }
         try {
             getMessagesStorage().getDatabase().executeFast(
                     "CREATE TABLE IF NOT EXISTS " + TABLE_NAME + "(" +
@@ -298,6 +282,7 @@ class ShareTargetRanker extends BaseController {
                             "last_session_activity_date INTEGER)").stepThis().dispose();
             getMessagesStorage().getDatabase().executeFast(
                     "CREATE INDEX IF NOT EXISTS " + TABLE_NAME + "_last_activity_idx ON " + TABLE_NAME + "(last_session_activity_date)").stepThis().dispose();
+            tableReady = true;
         } catch (Exception e) {
             FileLog.e(e);
         }
@@ -438,27 +423,6 @@ class ShareTargetRanker extends BaseController {
         return dialogId != 0 && !DialogObject.isEncryptedDialog(dialogId);
     }
 
-    private boolean isShareableDialog(long dialogId) {
-        if (!isEligibleDialogId(dialogId)) {
-            return false;
-        }
-        if (DialogObject.isUserDialog(dialogId)) {
-            TLRPC.User user = getMessagesController().getUser(dialogId);
-            return user != null
-                    && !UserObject.isDeleted(user)
-                    && !UserObject.isReplyUser(user)
-                    && !UserObject.isService(user.id);
-        }
-        TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
-        if (chat == null || ChatObject.isNotInChat(chat)) {
-            return false;
-        }
-        if (ChatObject.isChannel(chat) && !chat.megagroup) {
-            return ChatObject.canPost(chat);
-        }
-        return ChatObject.canSendMessages(chat);
-    }
-
     private int now() {
         return (int) (System.currentTimeMillis() / 1000);
     }
@@ -507,13 +471,13 @@ class ShareTargetRanker extends BaseController {
         }
     }
 
-    private static class ScoredDialog {
+    static class RankedDialog {
         final long dialogId;
         final double score;
         final int lastShare;
         final int lastSend;
 
-        ScoredDialog(long dialogId, double score, int lastShare, int lastSend) {
+        RankedDialog(long dialogId, double score, int lastShare, int lastSend) {
             this.dialogId = dialogId;
             this.score = score;
             this.lastShare = lastShare;
