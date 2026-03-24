@@ -1672,6 +1672,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         }
                         if (SharedConfig.directShareHash == null || !SharedConfig.directShareHash.equals(hash)) {
                             dialogId = 0;
+                        } else if (dialogId != 0) {
+                            MediaDataController.getInstance(currentAccount).markPendingShare(dialogId);
                         }
                     }
 

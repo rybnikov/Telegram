@@ -29079,6 +29079,7 @@ public class ChatActivity extends BaseFragment implements
 
         if (chatMode == 0) {
             getNotificationsController().setOpenedDialogId(dialog_id, getTopicId());
+            getMediaDataController().recordDialogOpened(dialog_id);
         }
         getMessagesController().setLastVisibleDialogId(dialog_id, chatMode == MODE_SCHEDULED, true);
         if (scrollToTopOnResume) {

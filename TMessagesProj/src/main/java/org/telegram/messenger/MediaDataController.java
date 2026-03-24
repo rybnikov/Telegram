@@ -10,9 +10,11 @@ package org.telegram.messenger;
 
 import android.app.Activity;
 import android.app.PendingIntent;
+import android.app.Person;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -26,6 +28,7 @@ import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
@@ -41,6 +44,7 @@ import android.util.SparseArray;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.collection.LongSparseArray;
+import androidx.core.content.LocusIdCompat;
 import androidx.core.content.pm.ShortcutInfoCompat;
 import androidx.core.content.pm.ShortcutManagerCompat;
 import androidx.core.graphics.drawable.IconCompat;
@@ -123,7 +127,7 @@ public class MediaDataController extends BaseController {
             SPOILER_PATTERN = Pattern.compile("\\|\\|(.+?)\\|\\|"),
             STRIKE_PATTERN = Pattern.compile("~~(.+?)~~");
 
-    public static String SHORTCUT_CATEGORY = "org.telegram.messenger.SHORTCUT_SHARE";
+    public static final String SHORTCUT_CATEGORY = "com.rbnkv.foldogram.SHORTCUT_SHARE";
 
     private static volatile MediaDataController[] Instance = new MediaDataController[UserConfig.MAX_ACCOUNT_COUNT];
     private static final Object[] lockObjects = new Object[UserConfig.MAX_ACCOUNT_COUNT];
@@ -150,6 +154,7 @@ public class MediaDataController extends BaseController {
 
     public MediaDataController(int num) {
         super(num);
+        shareTargetRanker = new ShareTargetRanker(num);
 
         if (currentAccount == 0) {
             draftPreferences = ApplicationLoader.applicationContext.getSharedPreferences("drafts", Activity.MODE_PRIVATE);
@@ -4938,12 +4943,33 @@ public class MediaDataController extends BaseController {
     public ArrayList<TLRPC.TL_topPeer> hints = new ArrayList<>();
     public ArrayList<TLRPC.TL_topPeer> inlineBots = new ArrayList<>();
     public ArrayList<TLRPC.TL_topPeer> webapps = new ArrayList<>();
+    private final ShareTargetRanker shareTargetRanker;
     boolean loaded;
     boolean loading;
 
     private static Paint roundPaint, erasePaint;
     private static RectF bitmapRect;
     private static Path roundPath;
+
+    public ArrayList<TLRPC.TL_topPeer> getShareHints(int limit) {
+        return shareTargetRanker.getTopHints(limit, hints);
+    }
+
+    public void markPendingShare(long dialogId) {
+        shareTargetRanker.markPendingShare(dialogId);
+    }
+
+    public void markPendingShare(LongSparseArray<TLRPC.Dialog> dialogs) {
+        shareTargetRanker.markPendingShare(dialogs);
+    }
+
+    public void recordDialogOpened(long dialogId) {
+        shareTargetRanker.recordDialogOpened(dialogId);
+    }
+
+    public void reportShareTargetUsed(long dialogId) {
+        ShortcutManagerCompat.reportShortcutUsed(ApplicationLoader.applicationContext, "did3_" + dialogId);
+    }
 
     public void buildShortcuts() {
         if (Build.VERSION.SDK_INT < 23) {
@@ -4955,7 +4981,7 @@ public class MediaDataController extends BaseController {
         }
         ArrayList<TLRPC.TL_topPeer> hintsFinal = new ArrayList<>();
         if (SharedConfig.passcodeHash.length() <= 0) {
-            hintsFinal.addAll(loadDirectShareHints(maxShortcuts - 2));
+            hintsFinal.addAll(getShareHints(maxShortcuts - 2));
             if (hintsFinal.isEmpty()) {
                 for (int a = 0; a < hints.size(); a++) {
                     hintsFinal.add(hints.get(a));
@@ -4974,33 +5000,32 @@ public class MediaDataController extends BaseController {
                 }
 
                 ArrayList<String> shortcutsToUpdate = new ArrayList<>();
-                ArrayList<String> newShortcutsIds = new ArrayList<>();
+                ShortcutManager shortcutManager = Build.VERSION.SDK_INT >= 25 ? ApplicationLoader.applicationContext.getSystemService(ShortcutManager.class) : null;
                 ArrayList<String> shortcutsToDelete = new ArrayList<>();
-
-                if (recreateShortcuts) {
-                    ShortcutManagerCompat.removeAllDynamicShortcuts(ApplicationLoader.applicationContext);
-                } else {
-                    List<ShortcutInfoCompat> currentShortcuts = ShortcutManagerCompat.getDynamicShortcuts(ApplicationLoader.applicationContext);
-                    if (currentShortcuts != null && !currentShortcuts.isEmpty()) {
-                        newShortcutsIds.add("compose");
-                        for (int a = 0; a < hintsFinal.size(); a++) {
-                            TLRPC.TL_topPeer hint = hintsFinal.get(a);
-                            newShortcutsIds.add("did3_" + MessageObject.getPeerId(hint.peer));
-                        }
-                        for (int a = 0; a < currentShortcuts.size(); a++) {
-                            String id = currentShortcuts.get(a).getId();
-                            if (!newShortcutsIds.remove(id)) {
-                                shortcutsToDelete.add(id);
-                            }
-                            shortcutsToUpdate.add(id);
-                        }
-                        if (newShortcutsIds.isEmpty() && shortcutsToDelete.isEmpty()) {
-                            return;
+                List<ShortcutInfoCompat> compatShortcuts = ShortcutManagerCompat.getDynamicShortcuts(ApplicationLoader.applicationContext);
+                if (compatShortcuts != null && !compatShortcuts.isEmpty()) {
+                    for (int a = 0; a < compatShortcuts.size(); a++) {
+                        String id = compatShortcuts.get(a).getId();
+                        if ("compose".equals(id) || id.startsWith("did3_")) {
+                            shortcutsToDelete.add(id);
                         }
                     }
-
-                    if (!shortcutsToDelete.isEmpty()) {
-                        ShortcutManagerCompat.removeDynamicShortcuts(ApplicationLoader.applicationContext, shortcutsToDelete);
+                }
+                if (shortcutManager != null) {
+                    List<ShortcutInfo> frameworkShortcuts = shortcutManager.getDynamicShortcuts();
+                    if (frameworkShortcuts != null && !frameworkShortcuts.isEmpty()) {
+                        for (int a = 0; a < frameworkShortcuts.size(); a++) {
+                            String id = frameworkShortcuts.get(a).getId();
+                            if (("compose".equals(id) || id.startsWith("did3_")) && !shortcutsToDelete.contains(id)) {
+                                shortcutsToDelete.add(id);
+                            }
+                        }
+                    }
+                }
+                if (!shortcutsToDelete.isEmpty()) {
+                    ShortcutManagerCompat.removeDynamicShortcuts(ApplicationLoader.applicationContext, shortcutsToDelete);
+                    if (Build.VERSION.SDK_INT >= 30 && shortcutManager != null) {
+                        shortcutManager.removeLongLivedShortcuts(shortcutsToDelete);
                     }
                 }
 
@@ -5014,17 +5039,9 @@ public class MediaDataController extends BaseController {
                         .setRank(0)
                         .setIntent(intent)
                         .build();
-                if (recreateShortcuts) {
-                    ShortcutManagerCompat.pushDynamicShortcut(ApplicationLoader.applicationContext, shortcut);
-                } else {
-                    arrayList.add(shortcut);
-                    if (shortcutsToUpdate.contains("compose")) {
-                        ShortcutManagerCompat.updateShortcuts(ApplicationLoader.applicationContext, arrayList);
-                    } else {
-                        ShortcutManagerCompat.addDynamicShortcuts(ApplicationLoader.applicationContext, arrayList);
-                    }
-                    arrayList.clear();
-                }
+                arrayList.add(shortcut);
+                ShortcutManagerCompat.addDynamicShortcuts(ApplicationLoader.applicationContext, arrayList);
+                arrayList.clear();
 
 
                 HashSet<String> category = new HashSet<>(1);
@@ -5052,8 +5069,12 @@ public class MediaDataController extends BaseController {
                     TLRPC.FileLocation photo = null;
 
                     if (user != null) {
-                        name = ContactsController.formatName(user.first_name, user.last_name);
-                        if (user.photo != null) {
+                        if (UserObject.isUserSelf(user)) {
+                            name = LocaleController.getString(R.string.SavedMessages);
+                        } else {
+                            name = ContactsController.formatName(user.first_name, user.last_name);
+                        }
+                        if (!UserObject.isUserSelf(user) && user.photo != null) {
                             photo = user.photo.photo_small;
                         }
                     } else {
@@ -5106,67 +5127,77 @@ public class MediaDataController extends BaseController {
                     if (TextUtils.isEmpty(name)) {
                         name = " ";
                     }
-                    ShortcutInfoCompat.Builder builder = new ShortcutInfoCompat.Builder(ApplicationLoader.applicationContext, id)
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        if (shortcutManager != null) {
+                            ShortcutInfo.Builder builder = new ShortcutInfo.Builder(ApplicationLoader.applicationContext, id)
+                                    .setShortLabel(name)
+                                    .setLongLabel(name)
+                                    .setRank(1 + a)
+                                    .setIntent(shortcutIntent)
+                                    .setLongLived(true)
+                                    .setLocusId(new android.content.LocusId(id));
+                            if (SharedConfig.directShare) {
+                                builder.setCategories(category);
+                            }
+
+                            Person.Builder personBuilder = new Person.Builder().setName(name);
+                            if (user != null) {
+                                personBuilder.setKey(id);
+                                personBuilder.setBot(user.bot);
+                            } else {
+                                personBuilder.setKey(id);
+                            }
+                            if (bitmap != null) {
+                                Icon icon = Icon.createWithBitmap(bitmap);
+                                builder.setIcon(icon);
+                                personBuilder.setIcon(icon);
+                            } else {
+                                builder.setIcon(Icon.createWithResource(ApplicationLoader.applicationContext, R.drawable.shortcut_user));
+                            }
+                            builder.setPersons(new Person[]{personBuilder.build()});
+
+                            ShortcutInfo shortcutInfo = builder.build();
+                            ArrayList<ShortcutInfo> frameworkShortcuts = new ArrayList<>(1);
+                            frameworkShortcuts.add(shortcutInfo);
+                            shortcutManager.addDynamicShortcuts(frameworkShortcuts);
+                            continue;
+                        }
+                    }
+
+                    ShortcutInfoCompat.Builder compatBuilder = new ShortcutInfoCompat.Builder(ApplicationLoader.applicationContext, id)
                             .setShortLabel(name)
                             .setLongLabel(name)
                             .setRank(1 + a)
-                            .setIntent(shortcutIntent);
+                            .setIntent(shortcutIntent)
+                            .setLongLived(true)
+                            .setLocusId(new LocusIdCompat(id));
                     if (SharedConfig.directShare) {
-                        builder.setCategories(category);
+                        compatBuilder.setCategories(category);
                     }
-                    if (bitmap != null) {
-                        builder.setIcon(IconCompat.createWithBitmap(bitmap));
+                    if (user != null) {
+                        androidx.core.app.Person.Builder personBuilder = new androidx.core.app.Person.Builder().setName(name);
+                        if (bitmap != null) {
+                            IconCompat icon = IconCompat.createWithBitmap(bitmap);
+                            personBuilder.setIcon(icon);
+                            compatBuilder.setIcon(icon);
+                        } else {
+                            compatBuilder.setIcon(IconCompat.createWithResource(ApplicationLoader.applicationContext, R.drawable.shortcut_user));
+                        }
+                        compatBuilder.setPerson(personBuilder.build());
+                    } else if (bitmap != null) {
+                        compatBuilder.setIcon(IconCompat.createWithBitmap(bitmap));
                     } else {
-                        builder.setIcon(IconCompat.createWithResource(ApplicationLoader.applicationContext, R.drawable.shortcut_user));
+                        compatBuilder.setIcon(IconCompat.createWithResource(ApplicationLoader.applicationContext, R.drawable.shortcut_user));
                     }
 
-                    if (recreateShortcuts) {
-                        ShortcutManagerCompat.pushDynamicShortcut(ApplicationLoader.applicationContext, builder.build());
-                    } else {
-                        arrayList.add(builder.build());
-                        if (shortcutsToUpdate.contains(id)) {
-                            ShortcutManagerCompat.updateShortcuts(ApplicationLoader.applicationContext, arrayList);
-                        } else {
-                            ShortcutManagerCompat.addDynamicShortcuts(ApplicationLoader.applicationContext, arrayList);
-                        }
-                        arrayList.clear();
-                    }
+                    arrayList.add(compatBuilder.build());
+                    ShortcutManagerCompat.addDynamicShortcuts(ApplicationLoader.applicationContext, arrayList);
+                    arrayList.clear();
                 }
             } catch (Throwable ignore) {
 
             }
         });
-    }
-
-    private ArrayList<TLRPC.TL_topPeer> loadDirectShareHints(int limit) {
-        ArrayList<TLRPC.TL_topPeer> result = new ArrayList<>();
-        if (limit <= 0) {
-            return result;
-        }
-        long selfUserId = getUserConfig().getClientUserId();
-        try {
-            SQLiteCursor cursor = getMessagesStorage().getDatabase().queryFinalized(String.format(Locale.US, "SELECT did, rating FROM chat_hints WHERE type = 0 ORDER BY rating DESC LIMIT %d", limit));
-            while (cursor.next()) {
-                long did = cursor.longValue(0);
-                if (did == selfUserId || DialogObject.isEncryptedDialog(did)) {
-                    continue;
-                }
-                TLRPC.TL_topPeer peer = new TLRPC.TL_topPeer();
-                peer.rating = cursor.doubleValue(1);
-                if (did > 0) {
-                    peer.peer = new TLRPC.TL_peerUser();
-                    peer.peer.user_id = did;
-                } else {
-                    peer.peer = new TLRPC.TL_peerChat();
-                    peer.peer.chat_id = -did;
-                }
-                result.add(peer);
-            }
-            cursor.dispose();
-        } catch (Exception e) {
-            FileLog.e(e);
-        }
-        return result;
     }
 
     public void loadHints(boolean cache) {
@@ -5531,10 +5562,11 @@ public class MediaDataController extends BaseController {
             }
             double dtFinal = dt;
             AndroidUtilities.runOnUIThread(() -> {
+                boolean shareEvent = shareTargetRanker.recordSuccessfulSend(dialogId);
                 TLRPC.TL_topPeer peer = null;
                 for (int a = 0; a < hints.size(); a++) {
                     TLRPC.TL_topPeer p = hints.get(a);
-                    if (p.peer.user_id == dialogId) {
+                    if (DialogObject.getPeerDialogId(p.peer) == dialogId) {
                         peer = p;
                         break;
                     }
@@ -5562,6 +5594,9 @@ public class MediaDataController extends BaseController {
 
                 savePeer(dialogId, 0, peer.rating);
                 buildShortcuts();
+                if (shareEvent) {
+                    reportShareTargetUsed(dialogId);
+                }
 
                 getNotificationCenter().postNotificationName(NotificationCenter.reloadHints);
             });
