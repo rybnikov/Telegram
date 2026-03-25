@@ -20,6 +20,20 @@ class ShareTargetRanker extends BaseController {
 
     private static final double SHARE_EVENT_WEIGHT = 1.0;
     private static final double SEND_EVENT_WEIGHT = 0.30;
+    private static final double LONG_TERM_SEND_WEIGHT = 0.45;
+    private static final double SHORT_TERM_OPEN_WEIGHT = 0.60;
+    private static final double SHORT_TERM_SEND_WEIGHT = 0.25;
+    private static final double SHORT_TERM_SESSION_OPEN_WEIGHT = 0.15;
+    private static final double REMOTE_ALPHA_WITHOUT_LOCAL = 0.35;
+    private static final double REMOTE_ALPHA_BASE = 0.10;
+    private static final double REMOTE_ALPHA_RANGE = 0.25;
+    private static final double LOCAL_CONFIDENCE_LOG_BASE = Math.log(4.0);
+    private static final double SESSION_ALPHA_BASE = 0.15;
+    private static final double SESSION_ALPHA_OPEN_BONUS = 0.20;
+    private static final double SESSION_ALPHA_SEND_BONUS = 0.20;
+    private static final double SESSION_ALPHA_MAX = 0.60;
+    private static final double SESSION_SEND_NORMALIZER = 2.0;
+    private static final double SESSION_OPEN_NORMALIZER = 3.0;
     private static final int SHARE_HALF_LIFE = 7 * 24 * 60 * 60;
     private static final int SEND_HALF_LIFE = 14 * 24 * 60 * 60;
     private static final int SESSION_WINDOW = 30 * 60;
@@ -96,8 +110,8 @@ class ShareTargetRanker extends BaseController {
                 entry.lastShareDate = now;
             } else {
                 entry.sendScore = decay(entry.sendScore, entry.lastSendDate, SEND_HALF_LIFE, now) + SEND_EVENT_WEIGHT;
+                entry.lastSendDate = now;
             }
-            entry.lastSendDate = now;
             entry.sessionSendCount = Math.min(entry.sessionSendCount + 1, 12);
             entry.lastSessionActivityDate = now;
             snapshot = entry.copy();
@@ -337,7 +351,7 @@ class ShareTargetRanker extends BaseController {
         }
         double shareScore = decay(entry.shareScore, entry.lastShareDate, SHARE_HALF_LIFE, now);
         double sendScore = decay(entry.sendScore, entry.lastSendDate, SEND_HALF_LIFE, now);
-        return Math.log1p(shareScore) + 0.45 * Math.log1p(sendScore);
+        return Math.log1p(shareScore) + LONG_TERM_SEND_WEIGHT * Math.log1p(sendScore);
     }
 
     private double computeShortTerm(Entry entry, int now) {
@@ -345,24 +359,24 @@ class ShareTargetRanker extends BaseController {
             return 0;
         }
         double recentOpen = entry.lastOpenDate == 0 ? 0 : Math.exp(-(double) (now - entry.lastOpenDate) / OPEN_DECAY_WINDOW);
-        double sendComponent = 0.25 * Math.min(1.0, entry.sessionSendCount / 2.0);
-        double openComponent = 0.15 * Math.min(1.0, entry.sessionOpenCount / 3.0);
-        return 0.60 * recentOpen + sendComponent + openComponent;
+        double sendComponent = SHORT_TERM_SEND_WEIGHT * Math.min(1.0, entry.sessionSendCount / SESSION_SEND_NORMALIZER);
+        double openComponent = SHORT_TERM_SESSION_OPEN_WEIGHT * Math.min(1.0, entry.sessionOpenCount / SESSION_OPEN_NORMALIZER);
+        return SHORT_TERM_OPEN_WEIGHT * recentOpen + sendComponent + openComponent;
     }
 
     private double computeSessionAlpha(Entry entry, int now) {
         if (entry == null || entry.lastSessionActivityDate == 0 || now - entry.lastSessionActivityDate > SESSION_WINDOW) {
             return 0;
         }
-        double gate = 0.15;
+        double gate = SESSION_ALPHA_BASE;
         if (entry.lastOpenDate != 0 && now - entry.lastOpenDate <= SESSION_GATE_WINDOW) {
-            gate += 0.20;
+            gate += SESSION_ALPHA_OPEN_BONUS;
         }
         if (entry.sessionSendCount >= 2) {
-            gate += 0.20;
+            gate += SESSION_ALPHA_SEND_BONUS;
         }
         double decay = Math.exp(-(double) (now - entry.lastSessionActivityDate) / SESSION_GATE_HALF_LIFE);
-        return Math.min(0.60, gate) * decay;
+        return Math.min(SESSION_ALPHA_MAX, gate) * decay;
     }
 
     private double computeRemoteAlpha(Entry entry, double remoteScore) {
@@ -370,10 +384,10 @@ class ShareTargetRanker extends BaseController {
             return 0;
         }
         if (entry == null) {
-            return 0.35;
+            return REMOTE_ALPHA_WITHOUT_LOCAL;
         }
-        double localConfidence = Math.min(1.0, Math.log1p(entry.shareScore + entry.sendScore) / Math.log(4.0));
-        return 0.10 + 0.25 * (1.0 - localConfidence);
+        double localConfidence = Math.min(1.0, Math.log1p(entry.shareScore + entry.sendScore) / LOCAL_CONFIDENCE_LOG_BASE);
+        return REMOTE_ALPHA_BASE + REMOTE_ALPHA_RANGE * (1.0 - localConfidence);
     }
 
     private void resetSessionIfStale(Entry entry, int now) {
