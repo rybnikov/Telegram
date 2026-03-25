@@ -187,7 +187,7 @@ jobs:
           python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["private_key"])' "$SA_JSON_PATH" > "$SA_KEY_PATH"
 
           JWT_ASSERTION="$(
-            python3 -c 'import base64,json,sys,time; b=lambda d: base64.urlsafe_b64encode(d).rstrip(b"=").decode(); now=int(time.time()); header={"alg":"RS256","typ":"JWT"}; claim={"iss":sys.argv[1],"scope":"https://www.googleapis.com/auth/androidpublisher","aud":"https://oauth2.googleapis.com/token","iat":now,"exp":now+3600}; print(f"{b(json.dumps(header,separators=(\",\",\":\")).encode())}.{b(json.dumps(claim,separators=(\",\",\":\")).encode())}")' "$CLIENT_EMAIL"
+            python3 -c 'import base64,json,sys,time; b=lambda d: base64.urlsafe_b64encode(d).rstrip(b"=").decode(); now=int(time.time()); header={"alg":"RS256","typ":"JWT"}; claim={"iss":sys.argv[1],"scope":"https://www.googleapis.com/auth/androidpublisher","aud":"https://oauth2.googleapis.com/token","iat":now,"exp":now+3600}; print("{}.{}".format(b(json.dumps(header, separators=(",", ":")).encode()), b(json.dumps(claim, separators=(",", ":")).encode())))' "$CLIENT_EMAIL"
           )"
 
           JWT_SIGNATURE="$(printf '%s' "$JWT_ASSERTION" | openssl dgst -sha256 -sign "$SA_KEY_PATH" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
