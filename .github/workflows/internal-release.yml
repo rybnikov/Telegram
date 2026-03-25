@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-and-upload:
@@ -219,3 +219,33 @@ jobs:
           curl -fsS -X POST \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.rbnkv.foldogram/edits/${EDIT_ID}:commit?changesNotSentForReview=true" > /dev/null
+
+      - name: Publish GitHub release metadata
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          RELEASE_TAG="${GITHUB_REF_NAME}"
+          CHECKSUM_FILE="foldogram-${RELEASE_VERSION_NAME}-checksums.txt"
+          RELEASE_NOTES_FILE="${RUNNER_TEMP}/github-release-notes.md"
+
+          cat > "$RELEASE_NOTES_FILE" <<EOF
+          Internal release for ${RELEASE_VERSION_NAME} (${RELEASE_VERSION_CODE}).
+
+          Attached asset:
+          - SHA-256 checksums
+          EOF
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$CHECKSUM_FILE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$RELEASE_TAG" "$CHECKSUM_FILE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$RELEASE_NOTES_FILE" \
+              --prerelease
+          fi
