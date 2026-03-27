@@ -317,10 +317,10 @@ public class FloatingDebugView extends FrameLayout implements NotificationCenter
 
     public boolean onBackPressed(boolean invoked) {
         if (isBigMenuShown) {
-            if (invoked) showBigMenu(false);
-            return false;
+            showBigMenu(false);
+            return true;
         }
-        return true;
+        return false;
     }
 
     @SuppressLint("ApplySharedPref")
@@ -499,6 +499,9 @@ public class FloatingDebugView extends FrameLayout implements NotificationCenter
         }));
 
         items.add(new FloatingDebugController.DebugItem(LocaleController.getString(R.string.DebugGeneral)));
+        items.add(new FloatingDebugController.DebugItem(LocaleController.getString(SharedConfig.isFloatingDebugActive ? R.string.FloatingDebugDisable : R.string.FloatingDebugEnable), () -> {
+            FloatingDebugController.setActive((LaunchActivity) getContext(), false);
+        }));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             items.add(new FloatingDebugController.DebugItem(LocaleController.getString(SharedConfig.debugWebView ? R.string.DebugMenuDisableWebViewDebug : R.string.DebugMenuEnableWebViewDebug), ()->{
                 SharedConfig.toggleDebugWebView();
