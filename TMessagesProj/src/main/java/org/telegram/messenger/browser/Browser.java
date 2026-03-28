@@ -35,6 +35,7 @@ import org.telegram.messenger.ShareBroadcastReceiver;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.browser.instagram.InstagramMediaOpenHelper;
 import org.telegram.messenger.support.customtabs.CustomTabsCallback;
 import org.telegram.messenger.support.customtabs.CustomTabsClient;
 import org.telegram.messenger.support.customtabs.CustomTabsIntent;
@@ -292,7 +293,31 @@ public class Browser {
     }
 
     public static void openUrl(final Context context, Uri uri, boolean _allowCustom, boolean tryTelegraph, boolean forceNotInternalForApps, Progress inCaseLoading, String browser, boolean allowIntent, boolean allowInAppBrowser, boolean forceRequest) {
+        openUrl(context, uri, _allowCustom, tryTelegraph, forceNotInternalForApps, inCaseLoading, browser, allowIntent, allowInAppBrowser, forceRequest, false);
+    }
+
+    private static void openUrl(final Context context, Uri uri, boolean _allowCustom, boolean tryTelegraph, boolean forceNotInternalForApps, Progress inCaseLoading, String browser, boolean allowIntent, boolean allowInAppBrowser, boolean forceRequest, boolean allowInstagramResolver) {
         if (context == null || uri == null) {
+            return;
+        }
+        final boolean instagramAllowCustom = _allowCustom;
+        final boolean instagramTryTelegraph = tryTelegraph;
+        if (allowInstagramResolver && InstagramMediaOpenHelper.tryOpen(
+            context,
+            uri,
+            fallbackUri -> openUrl(context, fallbackUri, instagramAllowCustom, instagramTryTelegraph, forceNotInternalForApps, inCaseLoading, browser, allowIntent, allowInAppBrowser, forceRequest, false),
+            inCaseLoading == null ? null : new InstagramMediaOpenHelper.BrowserProgressHandle() {
+                @Override
+                public void init() {
+                    inCaseLoading.init();
+                }
+
+                @Override
+                public void end() {
+                    inCaseLoading.end();
+                }
+            }
+        )) {
             return;
         }
         final int currentAccount = UserConfig.selectedAccount;
