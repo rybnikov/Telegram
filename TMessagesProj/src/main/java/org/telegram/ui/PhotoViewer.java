@@ -190,6 +190,9 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.WebFile;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.browser.instagram.InstagramMediaOpenHelper;
+import org.telegram.messenger.browser.external.ExternalMediaViewerOpener;
+import org.telegram.messenger.browser.pinterest.PinterestMediaOpenHelper;
 import org.telegram.messenger.camera.Size;
 import org.telegram.messenger.chromecast.ChromecastController;
 import org.telegram.messenger.chromecast.ChromecastMedia;
@@ -6025,7 +6028,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
             @Override
             public void onStopScrolling() {
-                if (shouldMessageObjectAutoPlayed(currentMessageObject)) {
+                if (shouldMessageObjectAutoPlayed(currentMessageObject) || shouldBotInlineResultAutoPlayed(currentBotInlineResult)) {
                     playerAutoStarted = true;
                     onActionClick(true);
                     checkProgress(0, false, true);
@@ -14309,7 +14312,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogPhotosUpdate, dialogPhotos);
             }
         }
-        if (currentMessageObject != null && currentMessageObject.isVideo() || currentBotInlineResult != null && (currentBotInlineResult.type.equals("video") || MessageObject.isVideoDocument(currentBotInlineResult.document)) || (pageBlocksAdapter != null && (pageBlocksAdapter.isVideo(index) || pageBlocksAdapter.isHardwarePlayer(index))) || (sendPhotoType == SELECT_TYPE_NO_SELECT && ((MediaController.PhotoEntry)imagesArrLocals.get(index)).isVideo)) {
+        if (currentMessageObject != null && currentMessageObject.isVideo() || currentBotInlineResult != null && (currentBotInlineResult.type.equals("video") || MessageObject.isVideoDocument(currentBotInlineResult.document)) || (pageBlocksAdapter != null && (pageBlocksAdapter.isVideo(index) || pageBlocksAdapter.isHardwarePlayer(index))) || (sendPhotoType == SELECT_TYPE_NO_SELECT && isLocalPhotoEntryVideo(index))) {
             playerAutoStarted = true;
             onActionClick(false);
         } else if (!imagesArrLocals.isEmpty()) {
@@ -16237,11 +16240,15 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     return;
                 }
                 TLRPC.BotInlineResult botInlineResult = (TLRPC.BotInlineResult) imagesArrLocals.get(index);
+                canAutoPlay = shouldBotInlineResultAutoPlayed(botInlineResult);
                 if (botInlineResult.type.equals("video") || MessageObject.isVideoDocument(botInlineResult.document)) {
                     if (botInlineResult.document != null) {
                         f1 = FileLoader.getInstance(currentAccount).getPathToAttach(botInlineResult.document);
                     } else if (botInlineResult.content instanceof TLRPC.TL_webDocument) {
                         f1 = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), Utilities.MD5(botInlineResult.content.url) + "." + ImageLoader.getHttpUrlExtension(botInlineResult.content.url, "mp4"));
+                        if (isExternalStreamInlineResult(botInlineResult)) {
+                            canStream = true;
+                        }
                     }
                     isVideo = true;
                 } else if (botInlineResult.document != null) {
@@ -16479,10 +16486,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 } else if (object instanceof TLRPC.BotInlineResult) {
                     cacheType = 1;
                     TLRPC.BotInlineResult botInlineResult = ((TLRPC.BotInlineResult) object);
+                    String externalImageUrl = getExternalInlineImageUrl(botInlineResult);
                     if (botInlineResult.type.equals("video") || MessageObject.isVideoDocument(botInlineResult.document)) {
                         if (botInlineResult.document != null) {
                             photo = FileLoader.getClosestPhotoSizeWithSize(botInlineResult.document.thumbs, 90);
                             photoObject = botInlineResult.document;
+                        } else if (externalImageUrl != null) {
+                            path = externalImageUrl;
+                            filter = String.format(Locale.US, "%d_%d", size, size);
                         } else if (botInlineResult.thumb instanceof TLRPC.TL_webDocument) {
                             webDocument = WebFile.createWithWebDocument(botInlineResult.thumb);
                         }
@@ -16499,6 +16510,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         photo = sizeFull;
                         photoObject = botInlineResult.photo;
                         imageSize = sizeFull.size;
+                        filter = String.format(Locale.US, "%d_%d", size, size);
+                    } else if (externalImageUrl != null) {
+                        path = externalImageUrl;
                         filter = String.format(Locale.US, "%d_%d", size, size);
                     } else if (botInlineResult.content instanceof TLRPC.TL_webDocument) {
                         if (botInlineResult.type.equals("gif")) {
@@ -19156,7 +19170,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
         playerAutoStarted = false;
         setImageIndex(currentIndex + add, init, true);
-        if (shouldMessageObjectAutoPlayed(currentMessageObject) || shouldIndexAutoPlayed(currentIndex)) {
+        if (shouldMessageObjectAutoPlayed(currentMessageObject) || shouldBotInlineResultAutoPlayed(currentBotInlineResult) || shouldIndexAutoPlayed(currentIndex)) {
             playerAutoStarted = true;
             onActionClick(true);
             checkProgress(0, false, true);
@@ -19175,6 +19189,58 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     private boolean shouldMessageObjectAutoPlayed(MessageObject messageObject) {
         return messageObject != null && messageObject.isVideo() && (messageObject.mediaExists || messageObject.attachPathExists || messageObject.hasVideoQualities() || messageObject.canStreamVideo() && SharedConfig.streamMedia) && SharedConfig.isAutoplayVideo();
+    }
+
+    private boolean shouldBotInlineResultAutoPlayed(TLRPC.BotInlineResult botInlineResult) {
+        return botInlineResult != null
+            && isExternalStreamInlineResult(botInlineResult)
+            && (botInlineResult.type.equals("video") || MessageObject.isVideoDocument(botInlineResult.document))
+            && SharedConfig.isAutoplayVideo();
+    }
+
+    private boolean isExternalStreamInlineResult(TLRPC.BotInlineResult botInlineResult) {
+        return botInlineResult != null && (
+            botInlineResult.query_id == InstagramMediaOpenHelper.EXTERNAL_STREAM_INLINE_QUERY_ID ||
+                botInlineResult.query_id == PinterestMediaOpenHelper.EXTERNAL_STREAM_INLINE_QUERY_ID ||
+                botInlineResult.query_id == ExternalMediaViewerOpener.EXTERNAL_STREAM_INLINE_QUERY_ID
+        );
+    }
+
+    private boolean isInstagramExternalLocalEntry(Object object) {
+        return object instanceof TLRPC.BotInlineResult && ((TLRPC.BotInlineResult) object).query_id == InstagramMediaOpenHelper.EXTERNAL_STREAM_INLINE_QUERY_ID;
+    }
+
+    private boolean isInstagramExternalCarousel() {
+        if (imagesArrLocals.size() <= 1) {
+            return false;
+        }
+        for (int i = 0; i < imagesArrLocals.size(); i++) {
+            if (!isInstagramExternalLocalEntry(imagesArrLocals.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String getExternalInlineImageUrl(TLRPC.BotInlineResult botInlineResult) {
+        if (!isExternalStreamInlineResult(botInlineResult)) {
+            return null;
+        }
+        if (botInlineResult.thumb instanceof TLRPC.TL_webDocument) {
+            return botInlineResult.thumb.url;
+        }
+        if (botInlineResult.content instanceof TLRPC.TL_webDocument && !botInlineResult.type.equals("video")) {
+            return botInlineResult.content.url;
+        }
+        return null;
+    }
+
+    private boolean isLocalPhotoEntryVideo(int index) {
+        if (index < 0 || index >= imagesArrLocals.size()) {
+            return false;
+        }
+        Object object = imagesArrLocals.get(index);
+        return object instanceof MediaController.PhotoEntry && ((MediaController.PhotoEntry) object).isVideo;
     }
 
     private boolean shouldIndexAutoPlayed(int index) {
@@ -20294,9 +20360,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     file = null;
                 }
             } else if (currentBotInlineResult.content instanceof TLRPC.TL_webDocument) {
-                file = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), Utilities.MD5(currentBotInlineResult.content.url) + "." + ImageLoader.getHttpUrlExtension(currentBotInlineResult.content.url, "mp4"));
-                if (!file.exists()) {
-                    file = null;
+                if (isExternalStreamInlineResult(currentBotInlineResult)) {
+                    uri = Uri.parse(currentBotInlineResult.content.url);
+                    isStreaming = true;
+                } else {
+                    file = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), Utilities.MD5(currentBotInlineResult.content.url) + "." + ImageLoader.getHttpUrlExtension(currentBotInlineResult.content.url, "mp4"));
+                    if (!file.exists()) {
+                        file = null;
+                    }
                 }
             }
         } else if (pageBlocksAdapter != null) {

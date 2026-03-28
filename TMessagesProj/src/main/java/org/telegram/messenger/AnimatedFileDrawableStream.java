@@ -139,8 +139,12 @@ public class AnimatedFileDrawableStream implements FileLoadOperationStream {
     }
 
     private void cancelLoadingInternal() {
-        FileLoader.getInstance(currentAccount).cancelLoadFile(document);
-        if (location != null) {
+        if (document != null) {
+            FileLoader.getInstance(currentAccount).cancelLoadFile(document);
+        }
+        if (location != null && location.webFile != null) {
+            FileLoader.getInstance(currentAccount).cancelLoadFile(location.webFile);
+        } else if (location != null) {
             FileLoader.getInstance(currentAccount).cancelLoadFile(location.location, "mp4");
         }
     }

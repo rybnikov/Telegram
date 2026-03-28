@@ -183,6 +183,8 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.browser.external.ExternalLinkRouter;
+import org.telegram.messenger.browser.external.ExternalMediaViewerOpener;
 import org.telegram.messenger.camera.CameraView;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.OnPostDrawView;
@@ -38982,6 +38984,32 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
             };
+            Browser.Progress currentProgress = progressDialogCurrent;
+            if (ExternalLinkRouter.openCachedPreview(getContext(), uri)) {
+                if (currentProgress != null) {
+                    currentProgress.end(true);
+                }
+                progressDialogCurrent = null;
+                return;
+            }
+            if (ExternalLinkRouter.tryOpen(
+                getContext(),
+                uri,
+                fallbackUri -> Browser.openUrl(getContext(), fallbackUri, true, true, false, currentProgress, null, false, true, false),
+                currentProgress == null ? null : new ExternalLinkRouter.ProgressHandle() {
+                    @Override
+                    public void init() {
+                        currentProgress.init();
+                    }
+
+                    @Override
+                    public void end() {
+                        currentProgress.end();
+                    }
+                }
+            )) {
+                return;
+            }
             if (!safe && !Browser.isInternalUri(uri, null)) {
                 AlertsCreator.showOpenUrlAlert(ChatActivity.this, url, true, true, true, !safe, progressDialogCurrent, themeDelegate);
             } else {
@@ -39335,6 +39363,9 @@ public class ChatActivity extends BaseFragment implements
             } else if (message.isSending()) {
                 return;
             }
+            if (ExternalLinkRouter.openCachedPreview(getContext(), message.messageOwner)) {
+                return;
+            }
             if (fullPreview && message != null && message.messageOwner != null && message.messageOwner.media != null && message.messageOwner.media.webpage != null && !TextUtils.isEmpty(message.messageOwner.media.webpage.url)) {
                 final String url = message.messageOwner.media.webpage.url;
                 final String host = AndroidUtilities.getHostAuthority(url);
@@ -39403,6 +39434,8 @@ public class ChatActivity extends BaseFragment implements
                 final EmojiPacksAlert alert = new EmojiPacksAlert(ChatActivity.this, getParentActivity(), themeDelegate, inputSets);
                 alert.setCalcMandatoryInsets(isKeyboardVisible());
                 showDialog(alert);
+            } else if (ExternalMediaViewerOpener.tryOpen(getContext(), message)) {
+                return;
             } else if (message.getInputStickerSet() != null) {
                 StickersAlert alert = new StickersAlert(getParentActivity(), ChatActivity.this, message.getInputStickerSet(), null, bottomChannelButtonsLayout.getVisibility() != View.VISIBLE && (currentChat == null || ChatObject.canSendStickers(currentChat)) ? chatActivityEnterView : null, themeDelegate, false);
                 alert.setCalcMandatoryInsets(isKeyboardVisible());
