@@ -3,10 +3,14 @@ package org.telegram.messenger.browser.tiktok;
 import android.net.Uri;
 import android.text.TextUtils;
 
+import org.telegram.messenger.browser.external.ParsedLink;
+
 import java.util.List;
 import java.util.Locale;
 
 public final class TikTokLinkParser {
+
+    static final String PLATFORM_NAME = "TikTok";
 
     private TikTokLinkParser() {
     }
@@ -31,7 +35,7 @@ public final class TikTokLinkParser {
                 return null;
             }
             String canonicalUrl = "https://" + host + "/" + shortCode + "/";
-            return new ParsedLink(uri.toString(), canonicalUrl, shortCode, PathType.SHORT);
+            return new ParsedLink(uri.toString(), canonicalUrl, shortCode, PLATFORM_NAME);
         }
 
         if (!"tiktok.com".equals(host) && !"www.tiktok.com".equals(host) && !"m.tiktok.com".equals(host) && !host.endsWith(".tiktok.com")) {
@@ -48,7 +52,7 @@ public final class TikTokLinkParser {
             if (TextUtils.isEmpty(shortCode)) {
                 return null;
             }
-            return new ParsedLink(uri.toString(), "https://www.tiktok.com/t/" + shortCode + "/", shortCode, PathType.SHORT);
+            return new ParsedLink(uri.toString(), "https://www.tiktok.com/t/" + shortCode + "/", shortCode, PLATFORM_NAME);
         }
 
         if (segments.size() >= 3 && segments.get(0).startsWith("@") && "video".equalsIgnoreCase(segments.get(1))) {
@@ -58,7 +62,7 @@ public final class TikTokLinkParser {
                 return null;
             }
             String canonicalUrl = "https://www.tiktok.com/" + user + "/video/" + videoId;
-            return new ParsedLink(uri.toString(), canonicalUrl, videoId, PathType.VIDEO);
+            return new ParsedLink(uri.toString(), canonicalUrl, videoId, PLATFORM_NAME);
         }
 
         return null;
@@ -70,28 +74,5 @@ public final class TikTokLinkParser {
         }
         String trimmed = value.trim();
         return TextUtils.isEmpty(trimmed) ? null : trimmed;
-    }
-
-    public enum PathType {
-        SHORT,
-        VIDEO
-    }
-
-    public static final class ParsedLink {
-        public final String originalUrl;
-        public final String canonicalUrl;
-        public final String id;
-        public final PathType pathType;
-
-        public ParsedLink(String originalUrl, String canonicalUrl, String id, PathType pathType) {
-            this.originalUrl = originalUrl;
-            this.canonicalUrl = canonicalUrl;
-            this.id = id;
-            this.pathType = pathType;
-        }
-
-        public Uri getCanonicalUri() {
-            return Uri.parse(canonicalUrl);
-        }
     }
 }

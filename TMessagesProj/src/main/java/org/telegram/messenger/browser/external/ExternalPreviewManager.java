@@ -1,7 +1,9 @@
-package org.telegram.messenger.browser.tiktok;
+package org.telegram.messenger.browser.external;
 
+import android.content.Context;
 import android.net.Uri;
 import android.text.TextUtils;
+import android.util.Log;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
@@ -17,29 +19,44 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 
-public final class TikTokPreviewManager {
+public final class ExternalPreviewManager {
 
-    private static final String TAG = "TikTokPreview";
-    private static final int MAX_CACHE_SIZE = 32;
+    private static final String TAG = "ExternalPreview";
+    private static final int MAX_CACHE_SIZE = 64;
 
     private static final Object lock = new Object();
-    private static final LinkedHashMap<String, CachedPreview> cache = new LinkedHashMap<>(MAX_CACHE_SIZE, 0.75f, true);
+    private static final LinkedHashMap<String, CachedPreview> cache = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 1.0f, true);
     private static final HashMap<String, ArrayList<PendingMessage>> pendingMessages = new HashMap<>();
 
-    private TikTokPreviewManager() {
+    private ExternalPreviewManager() {
+    }
+
+    public static void preloadPreviews(ArrayList<MessageObject> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < messages.size(); i++) {
+            requestPreviewIfNeeded(messages.get(i));
+        }
     }
 
     public static void requestPreviewIfNeeded(MessageObject messageObject) {
         if (messageObject == null || messageObject.messageOwner == null || messageObject.isRestrictedMessage) {
             return;
         }
-        TikTokLinkParser.ParsedLink link = findTikTokLink(messageObject.messageOwner);
+        ParsedLink link = findPlatformLink(messageObject.messageOwner);
         if (link == null) {
             return;
         }
+        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(link.getCanonicalUri());
+        if (resolver == null) {
+            return;
+        }
         TLRPC.MessageMedia messageMedia = MessageObject.getMedia(messageObject.messageOwner);
+        if (!resolver.overridesServerPreview() && hasServerWebPage(messageMedia)) {
+            return;
+        }
         if (shouldSkipExistingMedia(messageMedia, link)) {
-            FileLog.d(TAG + ": skip existing media " + messageObject.getId());
             return;
         }
 
@@ -66,13 +83,13 @@ public final class TikTokPreviewManager {
             return;
         }
 
-        FileLog.d(TAG + ": schedule resolve " + link.canonicalUrl);
+        FileLog.d(TAG + ": schedule resolve " + link.platformName + " " + link.canonicalUrl);
 
         Utilities.globalQueue.postRunnable(() -> {
             CachedPreview cached = null;
             Throwable error = null;
             try {
-                TikTokMediaResolver.ResolvedMedia media = new TikTokMediaResolver().resolve(link);
+                ResolvedMedia media = resolver.resolve(link);
                 if (media != null) {
                     TLRPC.WebPage webpage = buildWebPage(link, media);
                     if (webpage != null) {
@@ -99,8 +116,10 @@ public final class TikTokPreviewManager {
                 }
                 if (finalCached == null) {
                     if (finalError != null) {
+                        Log.e(TAG, "resolve failed " + link.canonicalUrl, finalError);
                         FileLog.d(TAG + ": fallback no preview " + finalError.getClass().getSimpleName() + " " + link.canonicalUrl);
                     } else {
+                        Log.d(TAG, "no media " + link.canonicalUrl);
                         FileLog.d(TAG + ": fallback no preview " + link.canonicalUrl);
                     }
                     return;
@@ -118,13 +137,17 @@ public final class TikTokPreviewManager {
                 for (Map.Entry<Integer, ArrayList<TLRPC.Message>> entry : messagesByAccount.entrySet()) {
                     NotificationCenter.getInstance(entry.getKey()).postNotificationName(NotificationCenter.didReceivedWebpages, entry.getValue());
                 }
-                FileLog.d(TAG + ": loaded preview " + link.canonicalUrl);
+                FileLog.d(TAG + ": loaded preview " + link.platformName + " " + link.canonicalUrl);
             });
         });
     }
 
-    public static boolean openCachedPreview(android.content.Context context, Uri uri) {
-        TikTokLinkParser.ParsedLink link = TikTokLinkParser.parse(uri);
+    public static boolean openCachedPreview(Context context, Uri uri) {
+        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(uri);
+        if (resolver == null || !resolver.overridesServerPreview()) {
+            return false;
+        }
+        ParsedLink link = resolver.parseLink(uri);
         if (link == null) {
             return false;
         }
@@ -135,16 +158,20 @@ public final class TikTokPreviewManager {
         if (cachedPreview == null || cachedPreview.media == null) {
             return false;
         }
-        if (cachedPreview.media instanceof TikTokMediaResolver.ResolvedMedia.Preview) {
+        if (cachedPreview.media instanceof ResolvedMedia.Preview) {
             Browser.openUrl(context, Uri.parse(cachedPreview.webPage.url), true, true, false, null, null, false, true, false);
             return true;
         }
-        return TikTokMediaOpenHelper.openResolved(context, Uri.parse(cachedPreview.webPage.url), cachedPreview.media);
+        return ExternalMediaOpenHelper.openResolved(context, uri, cachedPreview.media);
     }
 
-    public static boolean openCachedPreview(android.content.Context context, TLRPC.Message message) {
-        TikTokLinkParser.ParsedLink link = findTikTokLink(message);
+    public static boolean openCachedPreview(Context context, TLRPC.Message message) {
+        ParsedLink link = findPlatformLink(message);
         if (link == null) {
+            return false;
+        }
+        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(link.getCanonicalUri());
+        if (resolver == null || !resolver.overridesServerPreview()) {
             return false;
         }
         CachedPreview cachedPreview;
@@ -154,14 +181,28 @@ public final class TikTokPreviewManager {
         if (cachedPreview == null || cachedPreview.media == null) {
             return false;
         }
-        if (cachedPreview.media instanceof TikTokMediaResolver.ResolvedMedia.Preview) {
+        if (cachedPreview.media instanceof ResolvedMedia.Preview) {
             Browser.openUrl(context, Uri.parse(cachedPreview.webPage.url), true, true, false, null, null, false, true, false);
             return true;
         }
-        return TikTokMediaOpenHelper.openResolved(context, Uri.parse(cachedPreview.webPage.url), cachedPreview.media);
+        return ExternalMediaOpenHelper.openResolved(context, Uri.parse(link.canonicalUrl), cachedPreview.media);
     }
 
-    private static boolean shouldSkipExistingMedia(TLRPC.MessageMedia messageMedia, TikTokLinkParser.ParsedLink link) {
+    public static boolean tryOpenMessagePreview(Context context, MessageObject messageObject) {
+        if (messageObject == null || messageObject.messageOwner == null || !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage)) {
+            return false;
+        }
+        TLRPC.WebPage webPage = messageObject.messageOwner.media.webpage;
+        ExternalMediaPreviewStore.VideoPreview preview = webPage == null ? null : ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+        return preview != null && ExternalMediaOpenHelper.openVideoPreview(context, preview);
+    }
+
+    private static boolean hasServerWebPage(TLRPC.MessageMedia messageMedia) {
+        return messageMedia instanceof TLRPC.TL_messageMediaWebPage
+            && messageMedia.webpage instanceof TLRPC.TL_webPage;
+    }
+
+    private static boolean shouldSkipExistingMedia(TLRPC.MessageMedia messageMedia, ParsedLink link) {
         if (messageMedia == null || messageMedia instanceof TLRPC.TL_messageMediaEmpty) {
             return false;
         }
@@ -171,11 +212,7 @@ public final class TikTokPreviewManager {
         if (!(messageMedia.webpage instanceof TLRPC.TL_webPage)) {
             return false;
         }
-        return isManagedPreview(messageMedia.webpage, link);
-    }
-
-    private static boolean isManagedPreview(TLRPC.WebPage webPage, TikTokLinkParser.ParsedLink link) {
-        return webPage != null && link != null && webPage.id == computeStableId(link.canonicalUrl);
+        return messageMedia.webpage.id == computeStableId(link.canonicalUrl);
     }
 
     private static void trimCache() {
@@ -201,33 +238,67 @@ public final class TikTokPreviewManager {
         return message;
     }
 
-    private static TLRPC.WebPage buildWebPage(TikTokLinkParser.ParsedLink link, TikTokMediaResolver.ResolvedMedia media) {
+    private static TLRPC.WebPage buildWebPage(ParsedLink link, ResolvedMedia media) {
+        ResolvedMedia.Single previewMedia = pickPreviewMedia(media);
+        if (previewMedia == null) {
+            return null;
+        }
+
         TLRPC.TL_webPage webpage = new TLRPC.TL_webPage();
         webpage.id = computeStableId(link.canonicalUrl);
         webpage.url = link.canonicalUrl;
         webpage.display_url = buildDisplayUrl(link.canonicalUrl);
-        webpage.site_name = "TikTok";
-        webpage.title = !TextUtils.isEmpty(media.title) ? media.title : "TikTok";
+        webpage.site_name = link.platformName;
+        webpage.title = !TextUtils.isEmpty(media.title) ? media.title : link.platformName;
         webpage.description = media.description;
-        if (media instanceof TikTokMediaResolver.ResolvedMedia.Preview) {
-            TikTokMediaResolver.ResolvedMedia.Preview preview = (TikTokMediaResolver.ResolvedMedia.Preview) media;
+
+        if (previewMedia instanceof ResolvedMedia.Video) {
+            ResolvedMedia.Video video = (ResolvedMedia.Video) previewMedia;
+            // Store video data separately for playback on click.
+            // WebPage uses type="photo" with poster URL so ChatMessageCell
+            // loads the poster as a direct image (simple, reliable).
+            ExternalMediaPreviewStore.putVideo(
+                webpage.id, link.platformName, link.canonicalUrl,
+                video.videoUrl, video.posterUrl, video.width, video.height,
+                webpage.title, webpage.description
+            );
+            String posterUrl = !TextUtils.isEmpty(video.posterUrl) ? video.posterUrl : video.videoUrl;
+            webpage.type = "photo";
+            webpage.embed_url = posterUrl;
+            webpage.embed_width = video.width;
+            webpage.embed_height = video.height;
+        } else if (previewMedia instanceof ResolvedMedia.Image) {
+            ResolvedMedia.Image image = (ResolvedMedia.Image) previewMedia;
+            webpage.type = "photo";
+            webpage.embed_url = image.imageUrl;
+            webpage.embed_width = image.width;
+            webpage.embed_height = image.height;
+        } else if (previewMedia instanceof ResolvedMedia.Preview) {
+            ResolvedMedia.Preview preview = (ResolvedMedia.Preview) previewMedia;
             webpage.type = "photo";
             webpage.embed_url = preview.posterUrl;
             webpage.embed_width = preview.width;
             webpage.embed_height = preview.height;
-        } else if (media instanceof TikTokMediaResolver.ResolvedMedia.Video) {
-            TikTokMediaResolver.ResolvedMedia.Video video = (TikTokMediaResolver.ResolvedMedia.Video) media;
-            webpage.type = "video";
-            webpage.embed_url = !TextUtils.isEmpty(video.posterUrl) ? video.posterUrl : video.videoUrl;
-            webpage.embed_width = video.width;
-            webpage.embed_height = video.height;
         } else {
             return null;
         }
         return webpage;
     }
 
-    private static TikTokLinkParser.ParsedLink findTikTokLink(TLRPC.Message message) {
+    private static ResolvedMedia.Single pickPreviewMedia(ResolvedMedia media) {
+        if (media instanceof ResolvedMedia.Carousel) {
+            ArrayList<ResolvedMedia.Single> items = ((ResolvedMedia.Carousel) media).items;
+            if (items.isEmpty()) {
+                return null;
+            }
+            return items.get(0);
+        } else if (media instanceof ResolvedMedia.Single) {
+            return (ResolvedMedia.Single) media;
+        }
+        return null;
+    }
+
+    static ParsedLink findPlatformLink(TLRPC.Message message) {
         if (message == null || TextUtils.isEmpty(message.message)) {
             return null;
         }
@@ -250,7 +321,7 @@ public final class TikTokPreviewManager {
                 }
             }
         }
-        if (urls.isEmpty()) {
+        if (urls.isEmpty() && AndroidUtilities.WEB_URL != null) {
             Matcher matcher = AndroidUtilities.WEB_URL.matcher(message.message);
             while (matcher.find()) {
                 urls.add(matcher.group());
@@ -262,54 +333,66 @@ public final class TikTokPreviewManager {
         if (urls.size() != 1) {
             return null;
         }
-        String normalized = urls.get(0);
+        return parseCandidate(urls.get(0));
+    }
+
+    private static ParsedLink parseCandidate(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return null;
+        }
+        String normalized = value;
         if (!normalized.contains("://")) {
             normalized = "https://" + normalized;
         }
-        return TikTokLinkParser.parse(Uri.parse(normalized));
+        Uri uri = Uri.parse(normalized);
+        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(uri);
+        if (resolver == null) {
+            return null;
+        }
+        return resolver.parseLink(uri);
     }
 
-    private static long computeStableId(String value) {
+    static long computeStableId(String value) {
         String md5 = Utilities.MD5(value);
         if (TextUtils.isEmpty(md5) || md5.length() < 16) {
             return Math.abs((long) value.hashCode());
         }
         try {
-            return Long.parseUnsignedLong(md5.substring(0, 16), 16);
+            long hi = Long.parseLong(md5.substring(0, 8), 16);
+            long lo = Long.parseLong(md5.substring(8, 16), 16);
+            return (hi << 32) | lo;
         } catch (Exception ignore) {
             return Math.abs((long) value.hashCode());
         }
     }
 
-    private static String buildDisplayUrl(String url) {
-        Uri uri = Uri.parse(url);
-        StringBuilder builder = new StringBuilder();
-        if (!TextUtils.isEmpty(uri.getHost())) {
-            builder.append(uri.getHost());
+    private static String buildDisplayUrl(String canonicalUrl) {
+        Uri uri = Uri.parse(canonicalUrl);
+        String host = uri.getHost();
+        String path = uri.getPath();
+        if (host == null) {
+            return canonicalUrl;
         }
-        if (!TextUtils.isEmpty(uri.getPath())) {
-            builder.append(uri.getPath());
-        }
-        return builder.toString();
-    }
-
-    private static final class CachedPreview {
-        private final TLRPC.WebPage webPage;
-        private final TikTokMediaResolver.ResolvedMedia media;
-
-        private CachedPreview(TLRPC.WebPage webPage, TikTokMediaResolver.ResolvedMedia media) {
-            this.webPage = webPage;
-            this.media = media;
-        }
+        return path == null ? host : host + path;
     }
 
     private static final class PendingMessage {
-        private final int account;
-        private final TLRPC.Message message;
+        final int account;
+        final TLRPC.Message message;
 
-        private PendingMessage(int account, TLRPC.Message message) {
+        PendingMessage(int account, TLRPC.Message message) {
             this.account = account;
             this.message = message;
+        }
+    }
+
+    private static final class CachedPreview {
+        final TLRPC.WebPage webPage;
+        final ResolvedMedia media;
+
+        CachedPreview(TLRPC.WebPage webPage, ResolvedMedia media) {
+            this.webPage = webPage;
+            this.media = media;
         }
     }
 }

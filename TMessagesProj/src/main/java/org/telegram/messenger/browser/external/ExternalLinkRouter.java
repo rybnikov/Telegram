@@ -4,61 +4,72 @@ import android.content.Context;
 import android.net.Uri;
 
 import org.telegram.messenger.MessageObject;
-import org.telegram.messenger.browser.instagram.InstagramExternalLinkHandler;
-import org.telegram.messenger.browser.pinterest.PinterestExternalLinkHandler;
-import org.telegram.messenger.browser.tiktok.TikTokExternalLinkHandler;
+import org.telegram.messenger.browser.instagram.InstagramMediaResolver;
+import org.telegram.messenger.browser.maps.MapsMediaResolver;
+import org.telegram.messenger.browser.pinterest.PinterestMediaResolver;
+import org.telegram.messenger.browser.tiktok.TikTokMediaResolver;
+import org.telegram.messenger.browser.twitter.TwitterMediaResolver;
+import org.telegram.messenger.browser.youtube.YouTubeMediaResolver;
 import org.telegram.tgnet.TLRPC;
+
+import java.util.Locale;
 
 public final class ExternalLinkRouter {
 
-    private static final ExternalLinkHandler[] HANDLERS = new ExternalLinkHandler[] {
-        new InstagramExternalLinkHandler(),
-        new PinterestExternalLinkHandler(),
-        new TikTokExternalLinkHandler()
+    private static final ExternalMediaResolver[] RESOLVERS = new ExternalMediaResolver[]{
+        new InstagramMediaResolver(),
+        new MapsMediaResolver(),
+        new PinterestMediaResolver(),
+        new TikTokMediaResolver(),
+        new TwitterMediaResolver(),
+        new YouTubeMediaResolver()
     };
 
     private ExternalLinkRouter() {
     }
 
-    public static void requestPreviewIfNeeded(MessageObject messageObject) {
-        for (int i = 0; i < HANDLERS.length; i++) {
-            HANDLERS[i].requestPreviewIfNeeded(messageObject);
+    public static ExternalMediaResolver findResolver(Uri uri) {
+        if (uri == null) {
+            return null;
         }
+        for (ExternalMediaResolver resolver : RESOLVERS) {
+            if (resolver.parseLink(uri) != null) {
+                return resolver;
+            }
+        }
+        return null;
+    }
+
+    public static boolean isExternalPreviewSite(String siteName) {
+        if (siteName == null) {
+            return false;
+        }
+        String lower = siteName.toLowerCase(Locale.US);
+        for (ExternalMediaResolver resolver : RESOLVERS) {
+            if (resolver.overridesServerPreview() && resolver.siteNames().contains(lower)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static void requestPreviewIfNeeded(MessageObject messageObject) {
+        ExternalPreviewManager.requestPreviewIfNeeded(messageObject);
     }
 
     public static boolean openCachedPreview(Context context, Uri uri) {
-        for (int i = 0; i < HANDLERS.length; i++) {
-            if (HANDLERS[i].openCachedPreview(context, uri)) {
-                return true;
-            }
-        }
-        return false;
+        return ExternalPreviewManager.openCachedPreview(context, uri);
     }
 
     public static boolean openCachedPreview(Context context, TLRPC.Message message) {
-        for (int i = 0; i < HANDLERS.length; i++) {
-            if (HANDLERS[i].openCachedPreview(context, message)) {
-                return true;
-            }
-        }
-        return false;
+        return ExternalPreviewManager.openCachedPreview(context, message);
     }
 
-    public static boolean tryOpen(Context context, Uri uri, UriFallback fallback, ProgressHandle progressHandle) {
-        for (int i = 0; i < HANDLERS.length; i++) {
-            if (HANDLERS[i].tryOpen(context, uri, fallback, progressHandle)) {
-                return true;
-            }
-        }
-        return false;
+    public static boolean tryOpen(Context context, Uri uri, ExternalMediaOpenHelper.Fallback fallback, ExternalMediaOpenHelper.ProgressHandle progressHandle) {
+        return ExternalMediaOpenHelper.tryOpen(context, uri, fallback, progressHandle);
     }
 
-    public interface UriFallback {
-        void run(Uri fallbackUri);
-    }
-
-    public interface ProgressHandle {
-        void init();
-        void end();
+    public static boolean tryOpenMessagePreview(Context context, MessageObject messageObject) {
+        return ExternalPreviewManager.tryOpenMessagePreview(context, messageObject);
     }
 }

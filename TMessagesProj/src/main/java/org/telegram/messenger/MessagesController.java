@@ -56,6 +56,7 @@ import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.browser.external.ExternalPreviewManager;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.support.LongSparseLongArray;
 import org.telegram.messenger.voip.GroupCallMessagesController;
@@ -11760,6 +11761,7 @@ public class MessagesController extends BaseController implements NotificationCe
             if (!webpagesToReload.isEmpty()) {
                 reloadWebPages(dialogId, webpagesToReload, mode);
             }
+            ExternalPreviewManager.preloadPreviews(objects);
 
             Timer.done(t3);
             Timer.finish(loaderLogger);

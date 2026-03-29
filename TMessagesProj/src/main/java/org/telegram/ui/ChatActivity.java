@@ -186,7 +186,7 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.browser.external.ExternalLinkRouter;
-import org.telegram.messenger.browser.external.ExternalMediaViewerOpener;
+import org.telegram.messenger.browser.external.ExternalMediaOpenHelper;
 import org.telegram.messenger.camera.CameraView;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.OnPostDrawView;
@@ -39571,7 +39571,7 @@ public class ChatActivity extends BaseFragment implements
                 getContext(),
                 uri,
                 fallbackUri -> Browser.openUrl(getContext(), fallbackUri, true, true, false, currentProgress, null, false, true, false),
-                currentProgress == null ? null : new ExternalLinkRouter.ProgressHandle() {
+                currentProgress == null ? null : new ExternalMediaOpenHelper.ProgressHandle() {
                     @Override
                     public void init() {
                         currentProgress.init();
@@ -40192,7 +40192,7 @@ public class ChatActivity extends BaseFragment implements
                 final EmojiPacksAlert alert = new EmojiPacksAlert(ChatActivity.this, getParentActivity(), themeDelegate, inputSets);
                 alert.setCalcMandatoryInsets(isKeyboardVisible());
                 showDialog(alert);
-            } else if (ExternalMediaViewerOpener.tryOpen(getContext(), message)) {
+            } else if (ExternalLinkRouter.tryOpenMessagePreview(getContext(), message)) {
                 return;
             } else if (message.getInputStickerSet() != null) {
                 StickersAlert alert = new StickersAlert(getParentActivity(), ChatActivity.this, message.getInputStickerSet(), null, bottomChannelButtonsLayout.getVisibility() != View.VISIBLE && (currentChat == null || ChatObject.canSendStickers(currentChat)) ? chatActivityEnterView : null, themeDelegate, false);
