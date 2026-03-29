@@ -73,7 +73,17 @@ public final class ExternalHtmlUtils {
         }
     }
 
+    public static FetchResult fetchHtmlWithFinalUrl(String url, String startMarker, String endMarker, int maxChars, java.util.Map<String, String> extraHeaders) throws IOException {
+        // extraHeaders override defaults (e.g. User-Agent)
+        FetchResult result = fetchHtmlWithFinalUrlInternal(url, startMarker, endMarker, maxChars, extraHeaders);
+        return result;
+    }
+
     public static FetchResult fetchHtmlWithFinalUrl(String url, String startMarker, String endMarker, int maxChars) throws IOException {
+        return fetchHtmlWithFinalUrlInternal(url, startMarker, endMarker, maxChars, null);
+    }
+
+    private static FetchResult fetchHtmlWithFinalUrlInternal(String url, String startMarker, String endMarker, int maxChars, java.util.Map<String, String> extraHeaders) throws IOException {
         HttpURLConnection connection = null;
         InputStream inputStream = null;
         try {
@@ -94,6 +104,11 @@ public final class ExternalHtmlUtils {
             connection.setRequestProperty("Sec-GPC", "1");
             connection.setRequestProperty("Upgrade-Insecure-Requests", "1");
             connection.setRequestProperty("User-Agent", DESKTOP_UA);
+            if (extraHeaders != null) {
+                for (java.util.Map.Entry<String, String> entry : extraHeaders.entrySet()) {
+                    connection.setRequestProperty(entry.getKey(), entry.getValue());
+                }
+            }
             connection.connect();
 
             int code = connection.getResponseCode();

@@ -39,6 +39,10 @@ public final class ExternalMediaOpenHelper {
         if (resolver == null || !resolver.overridesServerPreview()) {
             return false;
         }
+        // Preview-only resolvers (no button, e.g. Maps) don't intercept clicks
+        if (ExternalLinkRouter.getInstantButtonText(resolver.platformName(), null) == null) {
+            return false;
+        }
         ParsedLink link = resolver.parseLink(uri);
         if (link == null) {
             return false;

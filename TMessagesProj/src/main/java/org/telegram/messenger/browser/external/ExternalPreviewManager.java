@@ -198,6 +198,10 @@ public final class ExternalPreviewManager {
             resolveAndStreamVideo(context, canonicalUrl, video);
             return true;
         }
+        // Preview-only resolvers (no button, e.g. Maps) — don't intercept click
+        if (ExternalLinkRouter.getInstantButtonText(resolver.platformName(), cachedPreview.webPage) == null) {
+            return false;
+        }
         return ExternalMediaOpenHelper.openResolved(context, Uri.parse(canonicalUrl), cachedPreview.media);
     }
 
