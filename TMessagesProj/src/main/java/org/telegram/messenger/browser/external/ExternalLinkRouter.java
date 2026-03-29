@@ -40,6 +40,25 @@ public final class ExternalLinkRouter {
         return null;
     }
 
+    public static String getInstantButtonText(CharSequence siteName, org.telegram.tgnet.TLRPC.WebPage webpage) {
+        if (siteName == null) {
+            return null;
+        }
+        String name = siteName.toString();
+        String type = webpage != null ? webpage.type : null;
+        if ("instagram".equalsIgnoreCase(name)) {
+            if ("video".equals(type)) {
+                return "INSTAGRAM REEL";
+            }
+            return "INSTAGRAM POST";
+        } else if ("tiktok".equalsIgnoreCase(name)) {
+            return "TIKTOK";
+        } else if ("pinterest".equalsIgnoreCase(name)) {
+            return "VIEW PINTEREST";
+        }
+        return name.toUpperCase();
+    }
+
     public static boolean isExternalPreviewSite(String siteName) {
         if (siteName == null) {
             return false;

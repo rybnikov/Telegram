@@ -96,6 +96,24 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         }
 
         if (primaryItem != null) {
+            // Attach OG title/description if the media item doesn't have its own
+            if (primaryItem instanceof ResolvedMedia.Video) {
+                ResolvedMedia.Video v = (ResolvedMedia.Video) primaryItem;
+                if (TextUtils.isEmpty(v.title) || TextUtils.isEmpty(v.description)) {
+                    primaryItem = new ResolvedMedia.Video(v.videoUrl, v.posterUrl,
+                        !TextUtils.isEmpty(v.title) ? v.title : title,
+                        !TextUtils.isEmpty(v.description) ? v.description : description,
+                        v.width, v.height);
+                }
+            } else if (primaryItem instanceof ResolvedMedia.Image) {
+                ResolvedMedia.Image img = (ResolvedMedia.Image) primaryItem;
+                if (TextUtils.isEmpty(img.title) || TextUtils.isEmpty(img.description)) {
+                    primaryItem = new ResolvedMedia.Image(img.imageUrl,
+                        !TextUtils.isEmpty(img.title) ? img.title : title,
+                        !TextUtils.isEmpty(img.description) ? img.description : description,
+                        img.width, img.height);
+                }
+            }
             return primaryItem;
         }
 

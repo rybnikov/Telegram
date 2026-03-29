@@ -7251,6 +7251,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
                 drawInstantView = hasLinkPreview && webpage.cached_page != null;
                 String siteName = hasLinkPreview ? webpage.site_name : null;
+                if (!drawInstantView && hasLinkPreview && isCustomExternalPreviewSite(siteName)) {
+                    drawInstantView = true;
+                    drawInstantViewType = 40;
+                    instantViewButtonText = ExternalLinkRouter.getInstantButtonText(siteName, webpage);
+                }
                 hasEmbed = hasLinkPreview && !TextUtils.isEmpty(webpage.embed_url) && !messageObject.isGif() && !isCustomExternalPreviewSite(siteName);
                 boolean slideshow = false;
                 String webpageType = webpage != null ? webpage.type : null;

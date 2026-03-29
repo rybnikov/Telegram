@@ -40416,6 +40416,14 @@ public class ChatActivity extends BaseFragment implements
                     args.putBoolean("addContact", true);
                     presentFragment(new ContactAddActivity(args));
                 }
+            } else if (type == 40) {
+                // External preview button (Instagram Reel, TikTok, Pinterest)
+                if (messageObject != null) {
+                    if (ExternalLinkRouter.openCachedPreview(getContext(), messageObject.messageOwner)) {
+                        return;
+                    }
+                    ExternalLinkRouter.tryOpenMessagePreview(getContext(), messageObject);
+                }
             } else if (type == ChatMessageCell.INSTANT_BUTTON_TYPE_STICKER_SET || type == ChatMessageCell.INSTANT_BUTTON_TYPE_EMOJI_SET) {
                 final boolean emoji = type == ChatMessageCell.INSTANT_BUTTON_TYPE_EMOJI_SET;
                 TLRPC.WebPage webPage = null;
