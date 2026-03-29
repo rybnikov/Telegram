@@ -3129,7 +3129,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             }
                         } else if (webPage != null) {
                             if (delegate != null) {
-                                delegate.didPressWebPage(this, webPage, webPage.url, MessageObject.getMedia(currentMessageObject.messageOwner).safe);
+                                boolean safe = MessageObject.getMedia(currentMessageObject.messageOwner).safe || isCustomExternalPreviewSite(webPage.site_name);
+                                delegate.didPressWebPage(this, webPage, webPage.url, safe);
                             } else {
                                 Browser.openUrl(getContext(), webPage.url);
                             }
@@ -7252,9 +7253,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 drawInstantView = hasLinkPreview && webpage.cached_page != null;
                 String siteName = hasLinkPreview ? webpage.site_name : null;
                 if (!drawInstantView && hasLinkPreview && isCustomExternalPreviewSite(siteName)) {
-                    drawInstantView = true;
-                    drawInstantViewType = 40;
-                    instantViewButtonText = ExternalLinkRouter.getInstantButtonText(siteName, webpage);
+                    String btnText = ExternalLinkRouter.getInstantButtonText(siteName, webpage);
+                    if (btnText != null) {
+                        drawInstantView = true;
+                        drawInstantViewType = 40;
+                        instantViewButtonText = btnText;
+                    }
                 }
                 hasEmbed = hasLinkPreview && !TextUtils.isEmpty(webpage.embed_url) && !messageObject.isGif() && !isCustomExternalPreviewSite(siteName);
                 boolean slideshow = false;

@@ -45,6 +45,9 @@ public final class ExternalLinkRouter {
             return null;
         }
         String name = siteName.toString();
+        if ("google maps".equalsIgnoreCase(name)) {
+            return null; // No button for Maps — standard link handler on click
+        }
         String type = webpage != null ? webpage.type : null;
         if ("instagram".equalsIgnoreCase(name)) {
             if ("video".equals(type)) {
