@@ -50,10 +50,12 @@ public final class ExternalPreviewManager {
         }
         ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(link.getCanonicalUri());
         if (resolver == null) {
+            Log.w("ExtPreview", "no resolver for " + link.canonicalUrl);
             return;
         }
         TLRPC.MessageMedia messageMedia = MessageObject.getMedia(messageObject.messageOwner);
         if (!resolver.overridesServerPreview() && hasServerWebPage(messageMedia)) {
+            Log.w("ExtPreview", "skip server preview " + link.platformName);
             return;
         }
         if (shouldSkipExistingMedia(messageMedia, link)) {
@@ -85,11 +87,14 @@ public final class ExternalPreviewManager {
 
         FileLog.d(TAG + ": schedule resolve " + link.platformName + " " + link.canonicalUrl);
 
-        Utilities.globalQueue.postRunnable(() -> {
+        // Use separate threads for parallel resolve (don't block globalQueue)
+        new Thread(() -> {
             CachedPreview cached = null;
             Throwable error = null;
             try {
+                Log.w("ExtPreview", "resolving " + link.canonicalUrl);
                 ResolvedMedia media = resolver.resolve(link);
+                Log.w("ExtPreview", "resolved " + link.canonicalUrl + " -> " + (media != null ? media.getClass().getSimpleName() : "null"));
                 if (media != null) {
                     TLRPC.WebPage webpage = buildWebPage(link, media);
                     if (webpage != null) {
@@ -98,6 +103,7 @@ public final class ExternalPreviewManager {
                 }
             } catch (Throwable e) {
                 error = e;
+                Log.w("ExtPreview", "ERROR " + link.canonicalUrl + " " + e);
             }
 
             final CachedPreview finalCached = cached;
@@ -135,11 +141,13 @@ public final class ExternalPreviewManager {
                     messages.add(createPreviewMessage(pendingMessage.message, finalCached.webPage));
                 }
                 for (Map.Entry<Integer, ArrayList<TLRPC.Message>> entry : messagesByAccount.entrySet()) {
+                    Log.w("ExtPreview", "posting " + entry.getValue().size() + " msgs for account " + entry.getKey() + " " + link.platformName);
                     NotificationCenter.getInstance(entry.getKey()).postNotificationName(NotificationCenter.didReceivedWebpages, entry.getValue());
                 }
+                Log.w("ExtPreview", "loaded " + link.platformName + " " + link.canonicalUrl + " webpage.id=" + finalCached.webPage.id + " type=" + finalCached.webPage.type + " embed=" + (finalCached.webPage.embed_url != null ? finalCached.webPage.embed_url.substring(0, Math.min(80, finalCached.webPage.embed_url.length())) : "null"));
                 FileLog.d(TAG + ": loaded preview " + link.platformName + " " + link.canonicalUrl);
             });
-        });
+        }, "ExtPreview-" + link.platformName).start();
     }
 
     public static boolean openCachedPreview(Context context, Uri uri) {
@@ -158,11 +166,7 @@ public final class ExternalPreviewManager {
         if (cachedPreview == null || cachedPreview.media == null) {
             return false;
         }
-        if (cachedPreview.media instanceof ResolvedMedia.Preview) {
-            Browser.openUrl(context, Uri.parse(cachedPreview.webPage.url), true, true, false, null, null, false, true, false);
-            return true;
-        }
-        return ExternalMediaOpenHelper.openResolved(context, uri, cachedPreview.media);
+        return openCachedMedia(context, resolver, cachedPreview, link.canonicalUrl);
     }
 
     public static boolean openCachedPreview(Context context, TLRPC.Message message) {
@@ -181,11 +185,16 @@ public final class ExternalPreviewManager {
         if (cachedPreview == null || cachedPreview.media == null) {
             return false;
         }
+        return openCachedMedia(context, resolver, cachedPreview, link.canonicalUrl);
+    }
+
+    private static boolean openCachedMedia(Context context, ExternalMediaResolver resolver, CachedPreview cachedPreview, String canonicalUrl) {
         if (cachedPreview.media instanceof ResolvedMedia.Preview) {
             Browser.openUrl(context, Uri.parse(cachedPreview.webPage.url), true, true, false, null, null, false, true, false);
             return true;
         }
-        return ExternalMediaOpenHelper.openResolved(context, Uri.parse(link.canonicalUrl), cachedPreview.media);
+        // Video types go through openResolved → PhotoViewer (streaming with cookies if needed)
+        return ExternalMediaOpenHelper.openResolved(context, Uri.parse(canonicalUrl), cachedPreview.media);
     }
 
     public static boolean tryOpenMessagePreview(Context context, MessageObject messageObject) {
@@ -232,6 +241,7 @@ public final class ExternalPreviewManager {
         TLRPC.TL_message message = new TLRPC.TL_message();
         message.id = source.id;
         message.peer_id = source.peer_id;
+        Log.w("ExtPreview", "createPreviewMsg id=" + source.id + " peer=" + source.peer_id + " dialogId=" + MessageObject.getDialogId(message));
         message.from_id = source.from_id;
         message.media = new TLRPC.TL_messageMediaWebPage();
         message.media.webpage = webpage;

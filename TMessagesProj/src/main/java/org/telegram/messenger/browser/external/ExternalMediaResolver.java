@@ -18,4 +18,12 @@ public interface ExternalMediaResolver {
     default boolean overridesServerPreview() {
         return false;
     }
+
+    /**
+     * If true, resolved videos can be streamed directly in ExoPlayer.
+     * If false, video tap opens the source URL in browser/WebView instead.
+     */
+    default boolean supportsDirectVideoStreaming() {
+        return true;
+    }
 }

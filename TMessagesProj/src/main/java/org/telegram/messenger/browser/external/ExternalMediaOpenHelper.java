@@ -9,6 +9,7 @@ import android.util.Log;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 public final class ExternalMediaOpenHelper {
 
     public static final long EXTERNAL_STREAM_INLINE_QUERY_ID = -0x4558545052565752L;
+    public static final long EXTERNAL_LOCAL_INLINE_QUERY_ID = -0x4558544C4F43414CL;
     private static final String TAG = "ExternalOpen";
 
     private ExternalMediaOpenHelper() {
@@ -58,7 +60,11 @@ public final class ExternalMediaOpenHelper {
             final ResolvedMedia finalMedia = resolvedMedia;
             final Throwable finalError = error;
             AndroidUtilities.runOnUIThread(() -> {
-                if (finalMedia != null && openResolvedMedia(context, link, finalMedia)) {
+                boolean opened = false;
+                if (finalMedia != null) {
+                    opened = openResolvedMedia(context, link, finalMedia);
+                }
+                if (opened) {
                     FileLog.d(TAG + ": opened " + link.platformName + " " + finalMedia.getClass().getSimpleName() + " " + link.canonicalUrl);
                     if (progressHandle != null) {
                         progressHandle.end();

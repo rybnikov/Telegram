@@ -187,6 +187,12 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
 
     boolean audioDisabled;
 
+    private static volatile java.util.Map<String, String> pendingExtraHeaders;
+
+    public static void setExtraHeadersForNextPlayback(java.util.Map<String, String> headers) {
+        pendingExtraHeaders = headers;
+    }
+
     public VideoPlayer() {
         this(true, false);
     }
@@ -385,6 +391,20 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
         this.loopingMediaSource = false;
         this.autoIsOriginal = false;
         this.currentStreamIsHls = false;
+
+        // Apply one-time extra headers (e.g. TikTok cookies)
+        java.util.Map<String, String> extraHeaders = pendingExtraHeaders;
+        pendingExtraHeaders = null;
+        if (extraHeaders != null && !extraHeaders.isEmpty()) {
+            mediaDataSourceFactory = new ExtendedDefaultDataSourceFactory(
+                ApplicationLoader.applicationContext,
+                null,
+                new com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory(
+                    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                    null
+                ).setDefaultRequestProperties(extraHeaders)
+            );
+        }
 
         videoPlayerReady = false;
         mixedAudio = false;
