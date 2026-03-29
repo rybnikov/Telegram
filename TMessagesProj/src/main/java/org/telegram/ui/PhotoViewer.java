@@ -11047,7 +11047,18 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         } else if (object instanceof MediaController.PhotoEntry) {
             caption = ((MediaController.PhotoEntry) object).caption;
         } else if (object instanceof TLRPC.BotInlineResult) {
-            //caption = ((TLRPC.BotInlineResult) object).send_message.caption;
+            TLRPC.BotInlineResult botResult = (TLRPC.BotInlineResult) object;
+            if (ExternalMediaOpenHelper.isExternalInlineResult(botResult.query_id)) {
+                String title = botResult.title;
+                String desc = botResult.description;
+                if (!TextUtils.isEmpty(title) && !TextUtils.isEmpty(desc)) {
+                    caption = title + "\n\n" + desc;
+                } else if (!TextUtils.isEmpty(desc)) {
+                    caption = desc;
+                } else if (!TextUtils.isEmpty(title)) {
+                    caption = title;
+                }
+            }
         } else if (object instanceof MediaController.SearchImage) {
             caption = ((MediaController.SearchImage) object).caption;
         }
@@ -14952,6 +14963,17 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     isFiltered = searchImage.isFiltered;
                     isPainted = searchImage.isPainted;
                     isCropped = searchImage.isCropped;
+                } else if (object instanceof TLRPC.BotInlineResult && ExternalMediaOpenHelper.isExternalInlineResult(((TLRPC.BotInlineResult) object).query_id)) {
+                    TLRPC.BotInlineResult botResult = (TLRPC.BotInlineResult) object;
+                    String t = botResult.title;
+                    String d = botResult.description;
+                    if (!TextUtils.isEmpty(t) && !TextUtils.isEmpty(d)) {
+                        caption = t + "\n\n" + d;
+                    } else if (!TextUtils.isEmpty(d)) {
+                        caption = d;
+                    } else if (!TextUtils.isEmpty(t)) {
+                        caption = t;
+                    }
                 }
             }
             if (bottomLayout.getVisibility() != View.GONE) {
@@ -16185,7 +16207,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
             captionTextView.setScrollY(0);
             captionTextView.setTextColor(0xffffffff);
-            boolean visible = isActionBarVisible && (!isCurrentVideo || pickerView.getVisibility() == View.VISIBLE || pageBlocksAdapter != null);
+            boolean visible = isActionBarVisible && (!isCurrentVideo || pickerView.getVisibility() == View.VISIBLE || pageBlocksAdapter != null || isExternalStreamInlineResult(currentBotInlineResult));
             captionTextViewSwitcher.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
         } else {
             if (needCaptionLayout) {
