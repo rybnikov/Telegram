@@ -193,7 +193,11 @@ public final class ExternalPreviewManager {
             Browser.openUrl(context, Uri.parse(cachedPreview.webPage.url), true, true, false, null, null, false, true, false);
             return true;
         }
-        // Video types go through openResolved → PhotoViewer (streaming with cookies if needed)
+        if (cachedPreview.media instanceof ResolvedMedia.Video && !resolver.supportsDirectVideoStreaming()) {
+            ResolvedMedia.Video video = (ResolvedMedia.Video) cachedPreview.media;
+            resolveAndStreamVideo(context, canonicalUrl, video);
+            return true;
+        }
         return ExternalMediaOpenHelper.openResolved(context, Uri.parse(canonicalUrl), cachedPreview.media);
     }
 
@@ -204,6 +208,23 @@ public final class ExternalPreviewManager {
         TLRPC.WebPage webPage = messageObject.messageOwner.media.webpage;
         ExternalMediaPreviewStore.VideoPreview preview = webPage == null ? null : ExternalMediaPreviewStore.getVideoPreview(webPage.id);
         return preview != null && ExternalMediaOpenHelper.openVideoPreview(context, preview);
+    }
+
+    private static void resolveAndStreamVideo(Context context, String canonicalUrl, ResolvedMedia.Video video) {
+        new Thread(() -> {
+            String videoUrl = org.telegram.messenger.browser.tiktok.TikTokMediaResolver.resolveVideoForPlayback(canonicalUrl);
+            AndroidUtilities.runOnUIThread(() -> {
+                if (videoUrl != null) {
+                    ResolvedMedia.Video streamVideo = new ResolvedMedia.Video(
+                        videoUrl, video.posterUrl, video.title, video.description,
+                        video.width, video.height
+                    );
+                    ExternalMediaOpenHelper.openResolved(context, Uri.parse(canonicalUrl), streamVideo);
+                } else {
+                    Browser.openUrl(context, Uri.parse(canonicalUrl), true, true, false, null, null, false, true, false);
+                }
+            });
+        }, "ExtPreview-playback").start();
     }
 
     private static boolean hasServerWebPage(TLRPC.MessageMedia messageMedia) {
