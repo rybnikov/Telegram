@@ -16509,13 +16509,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private boolean isCustomExternalPreviewSite(CharSequence siteName) {
-        if (siteName == null) {
-            return false;
-        }
-        String value = siteName.toString();
-        return "instagram".equalsIgnoreCase(value)
-            || "pinterest".equalsIgnoreCase(value)
-            || "tiktok".equalsIgnoreCase(value);
+        return siteName != null && ExternalLinkRouter.isExternalPreviewSite(siteName.toString());
     }
 
     private String getExternalPosterFilter() {

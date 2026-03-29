@@ -3,10 +3,14 @@ package org.telegram.messenger.browser.instagram;
 import android.net.Uri;
 import android.text.TextUtils;
 
+import org.telegram.messenger.browser.external.ParsedLink;
+
 import java.util.List;
 import java.util.Locale;
 
 public final class InstagramLinkParser {
+
+    static final String PLATFORM_NAME = "Instagram";
 
     private InstagramLinkParser() {
     }
@@ -29,17 +33,17 @@ public final class InstagramLinkParser {
             return null;
         }
 
-        PathType pathType;
+        String pathSegment;
         String firstSegment = segments.get(0).toLowerCase(Locale.US);
         switch (firstSegment) {
             case "reel":
-                pathType = PathType.REEL;
+                pathSegment = "reel";
                 break;
             case "p":
-                pathType = PathType.POST;
+                pathSegment = "p";
                 break;
             case "tv":
-                pathType = PathType.TV;
+                pathSegment = "tv";
                 break;
             default:
                 return null;
@@ -54,37 +58,7 @@ public final class InstagramLinkParser {
             return null;
         }
 
-        String canonicalUrl = "https://www.instagram.com/" + pathType.segment + "/" + shortcode + "/";
-        return new ParsedLink(uri.toString(), canonicalUrl, shortcode, pathType);
-    }
-
-    public enum PathType {
-        REEL("reel"),
-        POST("p"),
-        TV("tv");
-
-        public final String segment;
-
-        PathType(String segment) {
-            this.segment = segment;
-        }
-    }
-
-    public static final class ParsedLink {
-        public final String originalUrl;
-        public final String canonicalUrl;
-        public final String shortcode;
-        public final PathType pathType;
-
-        public ParsedLink(String originalUrl, String canonicalUrl, String shortcode, PathType pathType) {
-            this.originalUrl = originalUrl;
-            this.canonicalUrl = canonicalUrl;
-            this.shortcode = shortcode;
-            this.pathType = pathType;
-        }
-
-        public Uri getCanonicalUri() {
-            return Uri.parse(canonicalUrl);
-        }
+        String canonicalUrl = "https://www.instagram.com/" + pathSegment + "/" + shortcode + "/";
+        return new ParsedLink(uri.toString(), canonicalUrl, shortcode, PLATFORM_NAME);
     }
 }

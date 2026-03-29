@@ -190,9 +190,7 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.WebFile;
 import org.telegram.messenger.browser.Browser;
-import org.telegram.messenger.browser.instagram.InstagramMediaOpenHelper;
-import org.telegram.messenger.browser.external.ExternalMediaViewerOpener;
-import org.telegram.messenger.browser.pinterest.PinterestMediaOpenHelper;
+import org.telegram.messenger.browser.external.ExternalMediaOpenHelper;
 import org.telegram.messenger.camera.Size;
 import org.telegram.messenger.chromecast.ChromecastController;
 import org.telegram.messenger.chromecast.ChromecastMedia;
@@ -312,6 +310,8 @@ import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.spoilers.SpoilersTextView;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stories.DarkThemeResourceProvider;
+import org.telegram.ui.Stories.PeerStoriesView;
+import org.telegram.ui.Stories.StoryLinesDrawable;
 import org.telegram.ui.Stories.recorder.CaptionContainerView;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Stories.recorder.KeyboardNotifier;
@@ -365,6 +365,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private ActionBar actionBar;
     private boolean isActionBarVisible = true;
     private boolean isPhotosListViewVisible;
+
+    private StoryLinesDrawable carouselLinesDrawable;
+    private PeerStoriesView.SharedResources carouselSharedResources;
     private AnimatorSet actionBarAnimator;
     private PhotoViewerActionBarContainer actionBarContainer;
     private PhotoCountView countView;
@@ -3212,6 +3215,28 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         @Override
         protected void onDraw(Canvas canvas) {
             PhotoViewer.this.onDraw(canvas);
+
+            if (isExternalCarousel()) {
+                if (carouselSharedResources == null) {
+                    carouselSharedResources = new PeerStoriesView.SharedResources(containerView.getContext());
+                }
+                if (carouselLinesDrawable == null) {
+                    carouselLinesDrawable = new StoryLinesDrawable(containerView, carouselSharedResources);
+                }
+                canvas.save();
+                canvas.translate(0, AndroidUtilities.statusBarHeight + dp(8));
+                carouselLinesDrawable.draw(
+                    canvas,
+                    containerView.getWidth(),
+                    currentIndex,
+                    1f,
+                    imagesArrLocals.size(),
+                    1f,
+                    isActionBarVisible ? 1f : 0f,
+                    false, false, 0f
+                );
+                canvas.restore();
+            }
 
             if (isStatusBarVisible() && AndroidUtilities.statusBarHeight != 0 && actionBar != null) {
                 paint.setAlpha((int) (255 * actionBar.getAlpha() * 0.498f));
@@ -19169,7 +19194,12 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             groupedPhotosListView.setAnimateBackground(true);
         }
         playerAutoStarted = false;
-        setImageIndex(currentIndex + add, init, true);
+        int nextIndex = currentIndex + add;
+        if (isExternalCarousel()) {
+            int size = imagesArrLocals.size();
+            nextIndex = ((nextIndex % size) + size) % size;
+        }
+        setImageIndex(nextIndex, init, true);
         if (shouldMessageObjectAutoPlayed(currentMessageObject) || shouldBotInlineResultAutoPlayed(currentBotInlineResult) || shouldIndexAutoPlayed(currentIndex)) {
             playerAutoStarted = true;
             onActionClick(true);
@@ -19199,23 +19229,16 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private boolean isExternalStreamInlineResult(TLRPC.BotInlineResult botInlineResult) {
-        return botInlineResult != null && (
-            botInlineResult.query_id == InstagramMediaOpenHelper.EXTERNAL_STREAM_INLINE_QUERY_ID ||
-                botInlineResult.query_id == PinterestMediaOpenHelper.EXTERNAL_STREAM_INLINE_QUERY_ID ||
-                botInlineResult.query_id == ExternalMediaViewerOpener.EXTERNAL_STREAM_INLINE_QUERY_ID
-        );
+        return botInlineResult != null && ExternalMediaOpenHelper.isExternalInlineResult(botInlineResult.query_id);
     }
 
-    private boolean isInstagramExternalLocalEntry(Object object) {
-        return object instanceof TLRPC.BotInlineResult && ((TLRPC.BotInlineResult) object).query_id == InstagramMediaOpenHelper.EXTERNAL_STREAM_INLINE_QUERY_ID;
-    }
-
-    private boolean isInstagramExternalCarousel() {
-        if (imagesArrLocals.size() <= 1) {
+    private boolean isExternalCarousel() {
+        if (imagesArrLocals == null || imagesArrLocals.size() <= 1) {
             return false;
         }
         for (int i = 0; i < imagesArrLocals.size(); i++) {
-            if (!isInstagramExternalLocalEntry(imagesArrLocals.get(i))) {
+            Object o = imagesArrLocals.get(i);
+            if (!(o instanceof TLRPC.BotInlineResult) || !ExternalMediaOpenHelper.isExternalInlineResult(((TLRPC.BotInlineResult) o).query_id)) {
                 return false;
             }
         }
@@ -20560,6 +20583,24 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
         float x = e.getX();
         float y = e.getY();
+        if (isExternalCarousel()) {
+            int w = containerView.getMeasuredWidth();
+            if (x > w * 0.7f) {
+                int next = currentIndex + 1;
+                if (next >= imagesArrLocals.size()) {
+                    next = 0;
+                }
+                setImageIndex(next, false, true);
+                return true;
+            } else if (x < w * 0.3f) {
+                int prev = currentIndex - 1;
+                if (prev < 0) {
+                    prev = imagesArrLocals.size() - 1;
+                }
+                setImageIndex(prev, false, true);
+                return true;
+            }
+        }
         if (checkImageView.getVisibility() != View.VISIBLE) {
             if (SharedConfig.nextMediaTap && sendPhotoType != SELECT_TYPE_STICKER && y > ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight + dp(40)) {
                 int side = Math.min(135, containerView.getMeasuredWidth() / 8);

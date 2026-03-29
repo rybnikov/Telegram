@@ -15,7 +15,7 @@ public final class ExternalMediaPreviewStore {
 
     private static final int MAX_CACHE_SIZE = 64;
     private static final Object lock = new Object();
-    private static final LinkedHashMap<Long, VideoPreview> videoCache = new LinkedHashMap<>(MAX_CACHE_SIZE, 0.75f, true);
+    private static final LinkedHashMap<Long, VideoPreview> videoCache = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 1.0f, true);
 
     private ExternalMediaPreviewStore() {
     }
@@ -65,7 +65,7 @@ public final class ExternalMediaPreviewStore {
 
     private static TLRPC.Document buildVideoDocument(String videoUrl, int width, int height) {
         TLRPC.TL_document document = new TLRPC.TL_document();
-        document.id = -Math.max(1L, stableLong(videoUrl));
+        document.id = stableLong(videoUrl) | Long.MIN_VALUE;
         document.access_hash = stableLong(videoUrl + "#external");
         document.file_reference = new byte[0];
         document.mime_type = "video/mp4";
@@ -134,7 +134,9 @@ public final class ExternalMediaPreviewStore {
             return Math.abs((long) value.hashCode());
         }
         try {
-            return Long.parseUnsignedLong(md5.substring(0, 16), 16);
+            long hi = Long.parseLong(md5.substring(0, 8), 16);
+            long lo = Long.parseLong(md5.substring(8, 16), 16);
+            return (hi << 32) | lo;
         } catch (Exception ignore) {
             return Math.abs((long) value.hashCode());
         }
