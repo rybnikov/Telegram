@@ -20732,6 +20732,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 }
             } else if (currentBotInlineResult.content instanceof TLRPC.TL_webDocument) {
                 if (isExternalStreamInlineResult(currentBotInlineResult)) {
+                    // Set cookies for TikTok CDN streaming if available
+                    String cookies = org.telegram.messenger.browser.tiktok.TikTokMediaResolver.getCookiesForUrl(currentBotInlineResult.content.url);
+                    if (cookies != null) {
+                        java.util.Map<String, String> headers = new java.util.HashMap<>();
+                        headers.put("Cookie", cookies);
+                        headers.put("Referer", "https://www.tiktok.com/");
+                        org.telegram.ui.Components.VideoPlayer.setExtraHeadersForNextPlayback(headers);
+                    }
                     uri = Uri.parse(currentBotInlineResult.content.url);
                     isStreaming = true;
                 } else {

@@ -37,7 +37,7 @@ public final class TwitterMediaResolver implements ExternalMediaResolver {
 
     @Override
     public boolean overridesServerPreview() {
-        return true;
+        return false; // Telegram's server provides decent Twitter previews
     }
 
     @Override
