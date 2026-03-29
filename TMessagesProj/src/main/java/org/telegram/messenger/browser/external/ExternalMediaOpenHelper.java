@@ -162,6 +162,11 @@ public final class ExternalMediaOpenHelper {
         );
         if (opened) {
             photoViewer.setTitle(link.platformName);
+            // Set caption for the viewer (title + description)
+            String captionText = buildCaption(media);
+            if (captionText != null) {
+                photoViewer.setCaption(captionText);
+            }
         }
         return opened;
     }
@@ -259,6 +264,19 @@ public final class ExternalMediaOpenHelper {
         return result;
     }
 
+    private static String buildCaption(ResolvedMedia media) {
+        String title = media.title;
+        String description = media.description;
+        if (!TextUtils.isEmpty(title) && !TextUtils.isEmpty(description)) {
+            return title + "\n\n" + description;
+        } else if (!TextUtils.isEmpty(description)) {
+            return description;
+        } else if (!TextUtils.isEmpty(title)) {
+            return title;
+        }
+        return null;
+    }
+
     static TLRPC.WebDocument createWebDocument(String url, String mimeType, int width, int height, boolean isVideo) {
         TLRPC.TL_webDocument document = new TLRPC.TL_webDocument();
         document.url = url;
@@ -312,7 +330,7 @@ public final class ExternalMediaOpenHelper {
 
         @Override
         public boolean allowCaption() {
-            return false;
+            return true;
         }
 
         @Override
