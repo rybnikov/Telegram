@@ -41,6 +41,9 @@ public final class ExternalPreviewManager {
     }
 
     public static void requestPreviewIfNeeded(MessageObject messageObject) {
+        if (!org.telegram.messenger.SharedConfig.extendedPreviews) {
+            return;
+        }
         if (messageObject == null || messageObject.messageOwner == null || messageObject.isRestrictedMessage) {
             return;
         }
