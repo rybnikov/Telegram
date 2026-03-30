@@ -195,7 +195,12 @@ public final class ExternalPreviewManager {
         }
         if (cachedPreview.media instanceof ResolvedMedia.Video && !resolver.supportsDirectVideoStreaming()) {
             ResolvedMedia.Video video = (ResolvedMedia.Video) cachedPreview.media;
-            resolveAndStreamVideo(context, canonicalUrl, video);
+            if ("TikTok".equals(resolver.platformName())) {
+                resolveAndStreamVideo(context, canonicalUrl, video);
+            } else {
+                // YouTube and others: open embed in Telegram's EmbedBottomSheet
+                openEmbedSheet(context, resolver.platformName(), video, canonicalUrl);
+            }
             return true;
         }
         // Preview-only resolvers (no button, e.g. Maps) — don't intercept click
@@ -229,6 +234,26 @@ public final class ExternalPreviewManager {
                 }
             });
         }, "ExtPreview-playback").start();
+    }
+
+    private static void openEmbedSheet(Context context, String siteName, ResolvedMedia.Video video, String sourceUrl) {
+        org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+        if (fragment == null) {
+            Browser.openUrl(context, Uri.parse(video.videoUrl), true, true, false, null, null, false, true, false);
+            return;
+        }
+        org.telegram.ui.Components.EmbedBottomSheet.show(
+            fragment,
+            null,
+            null,
+            siteName,
+            video.title,
+            sourceUrl,
+            video.videoUrl,
+            video.width,
+            video.height,
+            false
+        );
     }
 
     private static boolean hasServerWebPage(TLRPC.MessageMedia messageMedia) {
