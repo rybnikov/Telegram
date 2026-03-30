@@ -58,6 +58,8 @@ public final class ExternalLinkRouter {
             return "TIKTOK";
         } else if ("pinterest".equalsIgnoreCase(name)) {
             return "VIEW PINTEREST";
+        } else if ("youtube".equalsIgnoreCase(name)) {
+            return null; // YouTube button handled separately (type 41)
         }
         return name.toUpperCase();
     }

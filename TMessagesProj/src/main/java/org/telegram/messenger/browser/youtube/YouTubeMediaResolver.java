@@ -35,6 +35,9 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver {
         return SITE_NAMES;
     }
 
+    // overridesServerPreview = false (default): Telegram's server preview + embed player work great.
+    // supportsDirectVideoStreaming = true (default): not used since we don't override.
+
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
         String oembedUrl = "https://www.youtube.com/oembed?url=" + Uri.encode(link.canonicalUrl) + "&format=json";
@@ -50,23 +53,31 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver {
         String author = json.optString("author_name", null);
         String description = !TextUtils.isEmpty(author) ? author : null;
 
-        int width = json.optInt("thumbnail_width", 0);
-        int height = json.optInt("thumbnail_height", 0);
+        // oEmbed width/height tells us aspect ratio (Shorts: height > width)
+        int oembedWidth = json.optInt("width", 200);
+        int oembedHeight = json.optInt("height", 113);
+        boolean isShorts = oembedHeight > oembedWidth;
 
-        String thumbnailUrl = json.optString("thumbnail_url", null);
         String safeId = Uri.encode(link.id);
-        if (TextUtils.isEmpty(thumbnailUrl)) {
-            thumbnailUrl = "https://i.ytimg.com/vi/" + safeId + "/hqdefault.jpg";
+
+        // HD thumbnail — maxresdefault for regular, hq for shorts
+        String posterUrl;
+        int posterWidth;
+        int posterHeight;
+        if (isShorts) {
+            posterUrl = "https://i.ytimg.com/vi/" + safeId + "/oar2.jpg";
+            posterWidth = 405;
+            posterHeight = 720;
+        } else {
+            posterUrl = "https://i.ytimg.com/vi/" + safeId + "/maxresdefault.jpg";
+            posterWidth = 1280;
+            posterHeight = 720;
         }
 
-        String imageUrl = "https://i.ytimg.com/vi/" + safeId + "/maxresdefault.jpg";
+        // Embed URL for WebView playback
+        String embedUrl = "https://www.youtube.com/embed/" + safeId + "?autoplay=1";
 
-        if (width <= 0 || height <= 0) {
-            width = 1280;
-            height = 720;
-        }
-
-        FileLog.d(TAG + ": resolved " + link.canonicalUrl + " -> " + ExternalHtmlUtils.trimForLog(imageUrl));
-        return new ResolvedMedia.Image(imageUrl, title, description, width, height);
+        FileLog.d(TAG + ": resolved " + (isShorts ? "shorts " : "") + link.canonicalUrl);
+        return new ResolvedMedia.Video(embedUrl, posterUrl, title, description, posterWidth, posterHeight);
     }
 }

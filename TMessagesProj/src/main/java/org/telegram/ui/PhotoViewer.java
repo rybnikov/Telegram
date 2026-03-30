@@ -10161,7 +10161,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 currentMessageObject.forceSeekTo = -1;
             }
         }
-        if (isStreaming) {
+        if (isStreaming || isEmbedVideo) {
             if (playbackState == ExoPlayer.STATE_BUFFERING && skipFirstBufferingProgress) {
                 if (playWhenReady) {
                     skipFirstBufferingProgress = false;
