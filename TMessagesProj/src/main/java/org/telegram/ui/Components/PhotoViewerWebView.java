@@ -97,6 +97,7 @@ public class PhotoViewerWebView extends FrameLayout {
     private boolean hasError;
     private boolean isPlaying;
     private boolean adPlaying;
+    private long adDetectedTime;
     private int videoDuration;
     private int currentPosition;
     private float bufferedPosition;
@@ -199,6 +200,10 @@ public class PhotoViewerWebView extends FrameLayout {
                         photoViewer.onYouTubeAdEnded();
                     }
                 });
+            }
+            if (blockAdRequests && stateInt == YT_PLAYING) {
+                // Ad is done, unblock video stream for main content
+                blockAdRequests = false;
             }
             boolean wasPlaying = isPlaying;
             isPlaying = stateInt == YT_PLAYING || stateInt == YT_BUFFERING;
@@ -329,12 +334,28 @@ public class PhotoViewerWebView extends FrameLayout {
                         String host = request.getUrl().getHost();
                         String path = request.getUrl().getPath();
                         if (host != null && path != null) {
+                            // Block ad streams and ad tracking after user taps Skip Ad
+                            if (blockAdRequests) {
+                                if (host.contains("googlevideo.com") && path.contains("/videoplayback")) {
+                                    return new WebResourceResponse("text/plain", "UTF-8", new java.io.ByteArrayInputStream(new byte[0]));
+                                }
+                                if (path.contains("/pagead/") || path.contains("/api/stats/ads") || path.contains("/pcs/activeview")) {
+                                    return new WebResourceResponse("text/plain", "UTF-8", new java.io.ByteArrayInputStream(new byte[0]));
+                                }
+                            }
                             if (path.contains("/pagead/adview") || path.contains("/api/stats/ads")) {
                                 if (!adPlaying) {
                                     adPlaying = true;
+                                    adDetectedTime = System.currentTimeMillis();
                                     AndroidUtilities.runOnUIThread(() -> {
                                         progressBarBlackBackground.setVisibility(View.INVISIBLE);
                                         progressBar.setVisibility(View.INVISIBLE);
+                                        // Query YouTube for ad skip time via DOM
+                                        runJsCode(
+                                            "var adInfo = document.querySelector('.ytp-ad-duration-remaining, .ytp-ad-skip-button-text, .ytp-ad-preview-text');" +
+                                            "var adDur = player ? player.getDuration() : 0;" +
+                                            "if (window.YoutubeProxy) { YoutubeProxy.postDebug('AD_INFO dur=' + adDur + ' text=' + (adInfo ? adInfo.textContent : 'null')); }"
+                                        );
                                         if (photoViewer != null) {
                                             photoViewer.onYouTubeAdDetected();
                                         }
@@ -584,6 +605,31 @@ public class PhotoViewerWebView extends FrameLayout {
             AndroidUtilities.runOnUIThread(progressRunnable, 500);
         } else if (wasPlaying && !isPlaying) {
             AndroidUtilities.cancelRunOnUIThread(progressRunnable);
+        }
+    }
+
+    private boolean blockAdRequests;
+
+    public long getAdDetectedTime() {
+        return adDetectedTime;
+    }
+
+    public void skipAd() {
+        adPlaying = false;
+        blockAdRequests = false; // Allow video stream for the reload
+        if (currentYoutubeId != null) {
+            // Reload via youtube-nocookie.com which serves fewer/no ads
+            try {
+                java.io.InputStream in = getContext().getAssets().open("youtube_embed.html");
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[10240]; int c;
+                while ((c = in.read(buffer)) != -1) { bos.write(buffer, 0, c); }
+                bos.close(); in.close();
+                String html = String.format(java.util.Locale.US, bos.toString("UTF-8"), currentYoutubeId, currentPosition / 1000);
+                webView.loadDataWithBaseURL("https://www.youtube-nocookie.com/", html, "text/html", "UTF-8", "https://youtube.com");
+            } catch (Exception e) {
+                org.telegram.messenger.FileLog.e(e);
+            }
         }
     }
 

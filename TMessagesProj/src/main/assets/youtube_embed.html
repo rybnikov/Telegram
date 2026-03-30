@@ -100,6 +100,19 @@
                function setPlaybackSpeed(speed) {
                    player.setPlaybackRate(speed);
                }
+               // Auto-skip ads: detect .ad-showing class and fast-forward
+               setInterval(function() {
+                   try {
+                       var adShowing = document.querySelector('.ad-showing');
+                       if (adShowing) {
+                           var v = document.querySelector('video');
+                           if (v && v.duration) { v.currentTime = v.duration; }
+                       }
+                       // Also try clicking skip button if it exists
+                       var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
+                       if (skipBtn) { skipBtn.click(); }
+                   } catch(e) {}
+               }, 500);
                function pollPosition() {
                    if (window.YoutubeProxy !== undefined) {
                        YoutubeProxy.onPlayerNotifyCurrentPosition(player.getCurrentTime());

@@ -10304,6 +10304,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     public void onYouTubeAdDetected() {
         if (skipAdButton != null) {
             skipAdButton.setVisibility(View.VISIBLE);
+            skipAdButton.setText("Skip Ad ▶");
+            skipAdButton.setEnabled(true);
+            skipAdButton.setAlpha(1.0f);
         }
         toggleMiniProgress(false, true);
     }
@@ -10316,7 +10319,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     private void skipYouTubeAd() {
         if (photoViewerWebView != null) {
-            photoViewerWebView.reloadVideo();
+            photoViewerWebView.skipAd();
         }
         if (skipAdButton != null) {
             skipAdButton.setVisibility(View.GONE);
