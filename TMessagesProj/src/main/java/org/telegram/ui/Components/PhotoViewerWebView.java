@@ -96,10 +96,10 @@ public class PhotoViewerWebView extends FrameLayout {
 
     private boolean hasError;
     private boolean isPlaying;
-    private boolean adPlaying;
-    private long adDetectedTime;
-    private String cachedVideoStreamUrl;
-    private String cachedAudioStreamUrl;
+    private volatile boolean adPlaying;
+    private volatile long adDetectedTime;
+    private volatile String cachedVideoStreamUrl;
+    private volatile String cachedAudioStreamUrl;
 
     // Static cache: videoId → [videoUrl, audioUrl]
     private static final java.util.concurrent.ConcurrentHashMap<String, String[]> streamCache = new java.util.concurrent.ConcurrentHashMap<>();
@@ -645,27 +645,31 @@ public class PhotoViewerWebView extends FrameLayout {
 
     public void skipAd() {
         adPlaying = false;
-        blockAdRequests = false; // Allow video stream for the reload
-        if (currentYoutubeId != null) {
-            // Reload via youtube-nocookie.com which serves fewer/no ads
-            try {
-                java.io.InputStream in = getContext().getAssets().open("youtube_embed.html");
-                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-                byte[] buffer = new byte[10240]; int c;
-                while ((c = in.read(buffer)) != -1) { bos.write(buffer, 0, c); }
-                bos.close(); in.close();
-                String html = String.format(java.util.Locale.US, bos.toString("UTF-8"), currentYoutubeId, currentPosition / 1000);
-                webView.loadDataWithBaseURL("https://www.youtube-nocookie.com/", html, "text/html", "UTF-8", "https://youtube.com");
-            } catch (Exception e) {
-                org.telegram.messenger.FileLog.e(e);
-            }
-        }
+        blockAdRequests = false;
+        reloadYouTubeNoCookie();
     }
 
     public void reloadVideo() {
-        if (isYouTube && currentYoutubeId != null && currentWebpage != null) {
+        if (isYouTube && currentYoutubeId != null) {
             adPlaying = false;
-            init(currentPosition / 1000, currentWebpage);
+            reloadYouTubeNoCookie();
+        }
+    }
+
+    private void reloadYouTubeNoCookie() {
+        if (currentYoutubeId == null) {
+            return;
+        }
+        try {
+            java.io.InputStream in = getContext().getAssets().open("youtube_embed.html");
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[10240]; int c;
+            while ((c = in.read(buffer)) != -1) { bos.write(buffer, 0, c); }
+            bos.close(); in.close();
+            String html = String.format(java.util.Locale.US, bos.toString("UTF-8"), currentYoutubeId, currentPosition / 1000);
+            webView.loadDataWithBaseURL("https://www.youtube-nocookie.com/", html, "text/html", "UTF-8", "https://youtube.com");
+        } catch (Exception e) {
+            org.telegram.messenger.FileLog.e(e);
         }
     }
 
