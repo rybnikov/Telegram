@@ -10124,6 +10124,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         return false;
     }
 
+    private String youtubeVideoStreamUrl;
+    private String youtubeAudioStreamUrl;
+
+    public void onYouTubeStreamsReady(String videoUrl, String audioUrl) {
+        youtubeVideoStreamUrl = videoUrl;
+        youtubeAudioStreamUrl = audioUrl;
+    }
+
     public void onYouTubeAdDetected() {
         if (skipAdButton != null) {
             skipAdButton.setVisibility(View.VISIBLE);

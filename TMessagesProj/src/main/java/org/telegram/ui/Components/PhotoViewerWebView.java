@@ -98,6 +98,15 @@ public class PhotoViewerWebView extends FrameLayout {
     private boolean isPlaying;
     private boolean adPlaying;
     private long adDetectedTime;
+    private String cachedVideoStreamUrl;
+    private String cachedAudioStreamUrl;
+
+    // Static cache: videoId → [videoUrl, audioUrl]
+    private static final java.util.concurrent.ConcurrentHashMap<String, String[]> streamCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static String[] getCachedStreams(String videoId) {
+        return videoId != null ? streamCache.get(videoId) : null;
+    }
     private int videoDuration;
     private int currentPosition;
     private float bufferedPosition;
@@ -341,6 +350,31 @@ public class PhotoViewerWebView extends FrameLayout {
                                 }
                                 if (path.contains("/pagead/") || path.contains("/api/stats/ads") || path.contains("/pcs/activeview")) {
                                     return new WebResourceResponse("text/plain", "UTF-8", new java.io.ByteArrayInputStream(new byte[0]));
+                                }
+                            }
+                            // Cache video/audio stream URLs for potential reuse
+                            if (host.contains("googlevideo.com") && path.contains("/videoplayback")) {
+                                String itag = request.getUrl().getQueryParameter("itag");
+                                if (itag != null) {
+                                    // Video itags: 399(av1), 398, 397, 396, 137(h264 1080p), 136(720p), 135(480p)
+                                    // Audio itags: 251(opus), 140(m4a)
+                                    int itagNum = 0;
+                                    try { itagNum = Integer.parseInt(itag); } catch (Exception e) {}
+                                    if (itagNum == 251 || itagNum == 140) {
+                                        cachedAudioStreamUrl = url;
+                                    } else if (itagNum >= 133 && itagNum <= 399) {
+                                        cachedVideoStreamUrl = url;
+                                    }
+                                    if (cachedVideoStreamUrl != null && cachedAudioStreamUrl != null && !adPlaying && currentYoutubeId != null) {
+                                        streamCache.put(currentYoutubeId, new String[]{cachedVideoStreamUrl, cachedAudioStreamUrl});
+                                        final String vUrl = cachedVideoStreamUrl;
+                                        final String aUrl = cachedAudioStreamUrl;
+                                        AndroidUtilities.runOnUIThread(() -> {
+                                            if (photoViewer != null) {
+                                                photoViewer.onYouTubeStreamsReady(vUrl, aUrl);
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             if (path.contains("/pagead/adview") || path.contains("/api/stats/ads")) {
@@ -609,6 +643,14 @@ public class PhotoViewerWebView extends FrameLayout {
     }
 
     private boolean blockAdRequests;
+
+    public String getCachedVideoStreamUrl() {
+        return cachedVideoStreamUrl;
+    }
+
+    public String getCachedAudioStreamUrl() {
+        return cachedAudioStreamUrl;
+    }
 
     public long getAdDetectedTime() {
         return adDetectedTime;
