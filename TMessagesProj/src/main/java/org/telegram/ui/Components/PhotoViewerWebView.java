@@ -125,11 +125,6 @@ public class PhotoViewerWebView extends FrameLayout {
 
     private class YoutubeProxy {
         @JavascriptInterface
-        public void postDebug(String msg) {
-            android.util.Log.w("YT_DEBUG", "JS: " + msg);
-        }
-
-        @JavascriptInterface
         public void onPlayerLoaded() {
             AndroidUtilities.runOnUIThread(() -> {
                 progressBar.setVisibility(View.INVISIBLE);
@@ -274,8 +269,6 @@ public class PhotoViewerWebView extends FrameLayout {
     @SuppressLint("SetJavaScriptEnabled")
     public PhotoViewerWebView(PhotoViewer photoViewer, Context context, View pip) {
         super(context);
-        try { android.webkit.WebView.setWebContentsDebuggingEnabled(true); } catch (Exception e) {}
-
         this.photoViewer = photoViewer;
 
         pipItem = pip;
@@ -384,12 +377,6 @@ public class PhotoViewerWebView extends FrameLayout {
                                     AndroidUtilities.runOnUIThread(() -> {
                                         progressBarBlackBackground.setVisibility(View.INVISIBLE);
                                         progressBar.setVisibility(View.INVISIBLE);
-                                        // Query YouTube for ad skip time via DOM
-                                        runJsCode(
-                                            "var adInfo = document.querySelector('.ytp-ad-duration-remaining, .ytp-ad-skip-button-text, .ytp-ad-preview-text');" +
-                                            "var adDur = player ? player.getDuration() : 0;" +
-                                            "if (window.YoutubeProxy) { YoutubeProxy.postDebug('AD_INFO dur=' + adDur + ' text=' + (adInfo ? adInfo.textContent : 'null')); }"
-                                        );
                                         if (photoViewer != null) {
                                             photoViewer.onYouTubeAdDetected();
                                         }

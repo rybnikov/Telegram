@@ -60,17 +60,6 @@
                    }
                }
                function onStateChange(event) {
-                   if (window.YoutubeProxy !== undefined) {
-                       try {
-                           var vd = player.getVideoData();
-                           var dur = player.getDuration();
-                           var ct = player.getCurrentTime();
-                           var url = player.getVideoUrl();
-                           YoutubeProxy.postDebug("state=" + event.data + " dur=" + dur + " ct=" + ct + " title=" + (vd ? vd.title : "?") + " vid=" + (vd ? vd.video_id : "?") + " url=" + (url || "?"));
-                       } catch(e) {
-                           YoutubeProxy.postDebug("state=" + event.data + " err=" + e.message);
-                       }
-                   }
                    if (event.data == YT.PlayerState.PLAYING && !posted) {
                        if (window.YoutubeProxy !== undefined) {
                            YoutubeProxy.onPlayerLoaded();

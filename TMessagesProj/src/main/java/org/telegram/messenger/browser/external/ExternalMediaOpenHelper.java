@@ -5,8 +5,6 @@ import android.content.Context;
 import android.net.Uri;
 import android.text.TextUtils;
 
-import android.util.Log;
-
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.Browser;
@@ -88,13 +86,10 @@ public final class ExternalMediaOpenHelper {
                 }
 
                 if (finalError != null) {
-                    Log.e(TAG, "fallback error " + link.canonicalUrl, finalError);
                     FileLog.d(TAG + ": fallback error " + finalError.getClass().getSimpleName() + " " + link.canonicalUrl);
                 } else if (finalMedia != null) {
-                    Log.w(TAG, "viewer open failed " + finalMedia.getClass().getSimpleName() + " " + link.canonicalUrl);
                     FileLog.d(TAG + ": viewer open failed " + link.canonicalUrl);
                 } else {
-                    Log.d(TAG, "fallback browser " + link.canonicalUrl);
                     FileLog.d(TAG + ": fallback browser " + link.canonicalUrl);
                 }
 
