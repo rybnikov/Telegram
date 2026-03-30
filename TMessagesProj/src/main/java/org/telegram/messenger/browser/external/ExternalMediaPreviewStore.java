@@ -2,8 +2,6 @@ package org.telegram.messenger.browser.external;
 
 import android.text.TextUtils;
 
-import org.telegram.messenger.ImageLoader;
-import org.telegram.messenger.Utilities;
 import org.telegram.messenger.WebFile;
 import org.telegram.tgnet.TLRPC;
 
@@ -116,30 +114,11 @@ public final class ExternalMediaPreviewStore {
     }
 
     private static String guessImageMimeType(String url) {
-        if (TextUtils.isEmpty(url)) {
-            return "image/jpeg";
-        }
-        String extension = ImageLoader.getHttpUrlExtension(url, "jpg");
-        if ("png".equalsIgnoreCase(extension)) {
-            return "image/png";
-        } else if ("webp".equalsIgnoreCase(extension)) {
-            return "image/webp";
-        }
-        return "image/jpeg";
+        return ExternalMediaOpenHelper.guessImageMimeType(url);
     }
 
     private static long stableLong(String value) {
-        String md5 = Utilities.MD5(value);
-        if (TextUtils.isEmpty(md5) || md5.length() < 16) {
-            return Math.abs((long) value.hashCode());
-        }
-        try {
-            long hi = Long.parseLong(md5.substring(0, 8), 16);
-            long lo = Long.parseLong(md5.substring(8, 16), 16);
-            return (hi << 32) | lo;
-        } catch (Exception ignore) {
-            return Math.abs((long) value.hashCode());
-        }
+        return ExternalPreviewManager.computeStableId(value);
     }
 
     public static final class VideoPreview {
