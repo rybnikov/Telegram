@@ -888,6 +888,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private TextView resetButton;
     private PhotoProgressView[] photoProgressViews = new PhotoProgressView[3];
     private RadialProgressView miniProgressView;
+    private android.widget.TextView skipAdButton;
     private ImageView paintItem;
     private ImageView cropItem;
     private ImageView mirrorItem;
@@ -9684,6 +9685,17 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
             parentActivity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         });
+
+        skipAdButton = new android.widget.TextView(containerView.getContext());
+        skipAdButton.setText("Skip Ad ▶");
+        skipAdButton.setTextColor(0xffffffff);
+        skipAdButton.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 14);
+        skipAdButton.setGravity(Gravity.CENTER);
+        skipAdButton.setPadding(dp(16), dp(8), dp(16), dp(8));
+        skipAdButton.setBackground(Theme.createRoundRectDrawable(dp(4), 0xaa000000));
+        skipAdButton.setVisibility(View.GONE);
+        skipAdButton.setOnClickListener(v -> skipYouTubeAd());
+        containerView.addView(skipAdButton, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.RIGHT | Gravity.BOTTOM, 0, 0, 12, 60));
     }
 
     private int[] fixVideoWidthHeight(int w, int h) {
@@ -10110,6 +10122,28 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             FileLog.e(e);
         }
         return false;
+    }
+
+    public void onYouTubeAdDetected() {
+        if (skipAdButton != null) {
+            skipAdButton.setVisibility(View.VISIBLE);
+        }
+        toggleMiniProgress(false, true);
+    }
+
+    public void onYouTubeAdEnded() {
+        if (skipAdButton != null) {
+            skipAdButton.setVisibility(View.GONE);
+        }
+    }
+
+    private void skipYouTubeAd() {
+        if (photoViewerWebView != null) {
+            photoViewerWebView.reloadVideo();
+        }
+        if (skipAdButton != null) {
+            skipAdButton.setVisibility(View.GONE);
+        }
     }
 
     public void updateWebPlayerState(boolean playWhenReady, int playbackState) {

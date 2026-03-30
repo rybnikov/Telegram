@@ -96,6 +96,7 @@ public class PhotoViewerWebView extends FrameLayout {
 
     private boolean hasError;
     private boolean isPlaying;
+    private boolean adPlaying;
     private int videoDuration;
     private int currentPosition;
     private float bufferedPosition;
@@ -113,6 +114,11 @@ public class PhotoViewerWebView extends FrameLayout {
     };
 
     private class YoutubeProxy {
+        @JavascriptInterface
+        public void postDebug(String msg) {
+            android.util.Log.w("YT_DEBUG", "JS: " + msg);
+        }
+
         @JavascriptInterface
         public void onPlayerLoaded() {
             AndroidUtilities.runOnUIThread(() -> {
@@ -186,6 +192,14 @@ public class PhotoViewerWebView extends FrameLayout {
         @JavascriptInterface
         public void onPlayerStateChange(String state) {
             int stateInt = Integer.parseInt(state);
+            if (adPlaying) {
+                adPlaying = false;
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (photoViewer != null) {
+                        photoViewer.onYouTubeAdEnded();
+                    }
+                });
+            }
             boolean wasPlaying = isPlaying;
             isPlaying = stateInt == YT_PLAYING || stateInt == YT_BUFFERING;
             checkPlayingPoll(wasPlaying);
@@ -246,6 +260,7 @@ public class PhotoViewerWebView extends FrameLayout {
     @SuppressLint("SetJavaScriptEnabled")
     public PhotoViewerWebView(PhotoViewer photoViewer, Context context, View pip) {
         super(context);
+        try { android.webkit.WebView.setWebContentsDebuggingEnabled(true); } catch (Exception e) {}
 
         this.photoViewer = photoViewer;
 
@@ -307,10 +322,33 @@ public class PhotoViewerWebView extends FrameLayout {
             @Nullable
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                // Detect YouTube ad playback via network requests
+                if (isYouTube && request.getUrl().isHierarchical()) {
+                    try {
+                        String host = request.getUrl().getHost();
+                        String path = request.getUrl().getPath();
+                        if (host != null && path != null) {
+                            if (path.contains("/pagead/adview") || path.contains("/api/stats/ads")) {
+                                if (!adPlaying) {
+                                    adPlaying = true;
+                                    AndroidUtilities.runOnUIThread(() -> {
+                                        progressBarBlackBackground.setVisibility(View.INVISIBLE);
+                                        progressBar.setVisibility(View.INVISIBLE);
+                                        if (photoViewer != null) {
+                                            photoViewer.onYouTubeAdDetected();
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        // ignore logging errors
+                    }
+                }
                 if (!VideoSeekPreviewImage.IS_YOUTUBE_PREVIEWS_SUPPORTED) {
                     return null;
                 }
-                String url = request.getUrl().toString();
                 if (isYouTube && url.startsWith("https://www.youtube.com/youtubei/v1/player?key=")) {
                     Utilities.externalNetworkQueue.postRunnable(()->{
                         try {
@@ -546,6 +584,13 @@ public class PhotoViewerWebView extends FrameLayout {
             AndroidUtilities.runOnUIThread(progressRunnable, 500);
         } else if (wasPlaying && !isPlaying) {
             AndroidUtilities.cancelRunOnUIThread(progressRunnable);
+        }
+    }
+
+    public void reloadVideo() {
+        if (isYouTube && currentYoutubeId != null && currentWebpage != null) {
+            adPlaying = false;
+            init(currentPosition / 1000, currentWebpage);
         }
     }
 
