@@ -26,6 +26,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
     private static final String TAG = "TikTokResolver";
     private static final String REHYDRATION_SCRIPT_ID = "__UNIVERSAL_DATA_FOR_REHYDRATION__";
     private static final int MAX_SCRIPT_CHARS = 512 * 1024;
+    private static final int MAX_HEAD_CHARS = 96 * 1024;
     private static final int MAX_OEMBED_CHARS = 16 * 1024;
     private static final Set<String> SITE_NAMES = new HashSet<>(Arrays.asList("tiktok"));
 
@@ -108,24 +109,46 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
 
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
-        // Fast path: oEmbed API (~200ms) for poster + title
-        String oembedUrl = "https://www.tiktok.com/oembed?url=" + Uri.encode(link.canonicalUrl);
-        String response = ExternalHtmlUtils.fetchHtml(oembedUrl, null, null, MAX_OEMBED_CHARS);
-        if (TextUtils.isEmpty(response)) {
-            FileLog.d(TAG + ": oEmbed empty " + link.canonicalUrl);
-            return null;
+        String previewUrl = link.canonicalUrl;
+        String previewHtml = null;
+
+        if (isShortTikTokUrl(link.canonicalUrl)) {
+            ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
+            previewHtml = fetchResult.html;
+            previewUrl = canonicalizePreviewUrl(fetchResult.finalUrl, link.canonicalUrl);
         }
 
-        JSONObject json = new JSONObject(response);
-        String title = json.optString("title", null);
-        String author = json.optString("author_name", null);
-        String posterUrl = json.optString("thumbnail_url", null);
-        int width = json.optInt("thumbnail_width", 0);
-        int height = json.optInt("thumbnail_height", 0);
+        JSONObject json = fetchOEmbed(previewUrl);
+
+        String title = json != null ? json.optString("title", null) : null;
+        String author = json != null ? json.optString("author_name", null) : null;
+        String posterUrl = json != null ? json.optString("thumbnail_url", null) : null;
+        int width = json != null ? json.optInt("thumbnail_width", 0) : 0;
+        int height = json != null ? json.optInt("thumbnail_height", 0) : 0;
         String description = !TextUtils.isEmpty(author) ? author : null;
 
         if (TextUtils.isEmpty(posterUrl)) {
-            FileLog.d(TAG + ": oEmbed no thumbnail " + link.canonicalUrl);
+            if (previewHtml == null) {
+                ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(previewUrl, null, "</head>", MAX_HEAD_CHARS);
+                previewHtml = fetchResult.html;
+                previewUrl = canonicalizePreviewUrl(fetchResult.finalUrl, previewUrl);
+            }
+            posterUrl = firstNonEmpty(
+                ExternalHtmlUtils.findMetaContentDecoded(previewHtml, "property", "og:image"),
+                ExternalHtmlUtils.findMetaContentDecoded(previewHtml, "name", "twitter:image")
+            );
+            title = firstNonEmpty(title, ExternalHtmlUtils.findMetaContentDecoded(previewHtml, "property", "og:title"));
+            description = firstNonEmpty(description, ExternalHtmlUtils.findMetaContentDecoded(previewHtml, "property", "og:description"));
+            if (width == 0) {
+                width = ExternalHtmlUtils.parseIntSafe(ExternalHtmlUtils.findMetaContent(previewHtml, "property", "og:image:width"));
+            }
+            if (height == 0) {
+                height = ExternalHtmlUtils.parseIntSafe(ExternalHtmlUtils.findMetaContent(previewHtml, "property", "og:image:height"));
+            }
+        }
+
+        if (TextUtils.isEmpty(posterUrl)) {
+            FileLog.d(TAG + ": no preview image " + link.canonicalUrl);
             return null;
         }
 
@@ -133,6 +156,55 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         // The canonical URL is used as videoUrl marker; resolveVideoForPlayback replaces it
         FileLog.d(TAG + ": oEmbed preview " + ExternalHtmlUtils.trimForLog(posterUrl));
         return new ResolvedMedia.Video(link.canonicalUrl, posterUrl, title, description, width, height);
+    }
+
+    private static JSONObject fetchOEmbed(String previewUrl) {
+        try {
+            String oembedUrl = "https://www.tiktok.com/oembed?url=" + Uri.encode(previewUrl);
+            String response = ExternalHtmlUtils.fetchHtml(oembedUrl, null, null, MAX_OEMBED_CHARS);
+            if (TextUtils.isEmpty(response)) {
+                return null;
+            }
+            return new JSONObject(response);
+        } catch (Exception e) {
+            FileLog.d(TAG + ": oEmbed failed " + e.getClass().getSimpleName() + " " + ExternalHtmlUtils.trimForLog(previewUrl));
+            return null;
+        }
+    }
+
+    private static boolean isShortTikTokUrl(String url) {
+        if (TextUtils.isEmpty(url)) {
+            return false;
+        }
+        try {
+            String host = Uri.parse(url).getHost();
+            if (TextUtils.isEmpty(host)) {
+                return false;
+            }
+            host = host.toLowerCase();
+            return "vm.tiktok.com".equals(host) || "www.vm.tiktok.com".equals(host)
+                || "vt.tiktok.com".equals(host) || "www.vt.tiktok.com".equals(host);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String canonicalizePreviewUrl(String finalUrl, String fallbackUrl) {
+        if (TextUtils.isEmpty(finalUrl)) {
+            return fallbackUrl;
+        }
+        try {
+            ParsedLink parsedLink = TikTokLinkParser.parse(Uri.parse(finalUrl));
+            if (parsedLink != null && !TextUtils.isEmpty(parsedLink.canonicalUrl)) {
+                return parsedLink.canonicalUrl;
+            }
+        } catch (Exception ignore) {
+        }
+        return finalUrl;
+    }
+
+    private static String firstNonEmpty(String first, String second) {
+        return !TextUtils.isEmpty(first) ? first : second;
     }
 
     private static String pickVideoUrl(JSONObject video) {

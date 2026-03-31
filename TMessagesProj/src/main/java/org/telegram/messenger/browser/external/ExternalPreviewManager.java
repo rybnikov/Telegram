@@ -281,9 +281,18 @@ public final class ExternalPreviewManager {
     }
 
     private static void postResolvedPreview(int account, TLRPC.Message message, TLRPC.WebPage webpage) {
+        applyPreviewToMessage(message, webpage);
         ArrayList<TLRPC.Message> messages = new ArrayList<>(1);
         messages.add(createPreviewMessage(message, webpage));
         NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.didReceivedWebpages, messages);
+    }
+
+    private static void applyPreviewToMessage(TLRPC.Message message, TLRPC.WebPage webpage) {
+        if (message == null) {
+            return;
+        }
+        message.media = new TLRPC.TL_messageMediaWebPage();
+        message.media.webpage = webpage;
     }
 
     private static TLRPC.Message createPreviewMessage(TLRPC.Message source, TLRPC.WebPage webpage) {
@@ -291,8 +300,7 @@ public final class ExternalPreviewManager {
         message.id = source.id;
         message.peer_id = source.peer_id;
         message.from_id = source.from_id;
-        message.media = new TLRPC.TL_messageMediaWebPage();
-        message.media.webpage = webpage;
+        applyPreviewToMessage(message, webpage);
         return message;
     }
 
