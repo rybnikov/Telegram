@@ -23,6 +23,10 @@
         <script>
                var player;
                var posted = false;
+               var captionsApiReady = false;
+               var captionTracklist = [];
+               var pendingCaptionEnable = false;
+               var pendingCaptionLanguageCode = null;
                YT.ready(function() {
                    player = new YT.Player("player", {
                                           "width": "100%%",
@@ -30,6 +34,7 @@
                                               "onReady": "onReady",
                                               "onError": "onError",
                                               "onStateChange": "onStateChange",
+                                              "onApiChange": "onApiChange",
                                           },
                                           "videoId": "%1$s",
                                           "height": "100%%",
@@ -41,7 +46,8 @@
                                               "iv_load_policy": 3,
                                               "autohide": 1,
                                               "autoplay": 1,
-                                              "cc_load_policy": 1,
+                                              "cc_load_policy": %3$d,
+                                              "cc_lang_pref": %4$s,
                                               "playsinline": 1,
                                               "controls": 0
                                           }
@@ -88,6 +94,101 @@
                }
                function setPlaybackSpeed(speed) {
                    player.setPlaybackRate(speed);
+               }
+               function normalizeLanguageCode(languageCode) {
+                   return typeof languageCode === "string" ? languageCode.replace(/_/g, "-").toLowerCase() : "";
+               }
+               function getTrackLanguageCode(track) {
+                   if (!track || typeof track !== "object") {
+                       return null;
+                   }
+                   return track.languageCode || track.language_code || null;
+               }
+               function getCaptionTracklist() {
+                   try {
+                       var tracks = player.getOption("captions", "tracklist");
+                       return Array.isArray(tracks) ? tracks : [];
+                   } catch (e) {
+                       return [];
+                   }
+               }
+               function resolveCaptionLanguageCode(preferredLanguageCode) {
+                   var normalizedPreferredLanguageCode = normalizeLanguageCode(preferredLanguageCode);
+                   if (captionTracklist.length > 0) {
+                       if (normalizedPreferredLanguageCode) {
+                           for (var i = 0; i < captionTracklist.length; ++i) {
+                               var exactTrackLanguageCode = getTrackLanguageCode(captionTracklist[i]);
+                               if (normalizeLanguageCode(exactTrackLanguageCode) === normalizedPreferredLanguageCode) {
+                                   return exactTrackLanguageCode;
+                               }
+                           }
+                           var preferredLanguageBase = normalizedPreferredLanguageCode.split("-")[0];
+                           for (var j = 0; j < captionTracklist.length; ++j) {
+                               var baseTrackLanguageCode = getTrackLanguageCode(captionTracklist[j]);
+                               if (normalizeLanguageCode(baseTrackLanguageCode).split("-")[0] === preferredLanguageBase) {
+                                   return baseTrackLanguageCode;
+                               }
+                           }
+                       }
+                       return getTrackLanguageCode(captionTracklist[0]);
+                   }
+                   return preferredLanguageCode || null;
+               }
+               function notifyCaptionsState() {
+                   if (window.YoutubeProxy === undefined) {
+                       return;
+                   }
+                   var firstTrackLanguageCode = captionTracklist.length > 0 ? getTrackLanguageCode(captionTracklist[0]) : "";
+                   YoutubeProxy.onSubtitlesApiChanged(captionsApiReady, firstTrackLanguageCode || "");
+               }
+               function applyPendingCaptions() {
+                   if (!captionsApiReady || !pendingCaptionEnable) {
+                       return false;
+                   }
+                   try {
+                       player.loadModule("captions");
+                       var resolvedLanguageCode = resolveCaptionLanguageCode(pendingCaptionLanguageCode);
+                       if (resolvedLanguageCode) {
+                           player.setOption("captions", "track", {"languageCode": resolvedLanguageCode});
+                       } else {
+                           player.setOption("captions", "reload", true);
+                       }
+                       pendingCaptionEnable = false;
+                       return true;
+                   } catch(e) {
+                       try {
+                           player.setOption("captions", "reload", true);
+                           pendingCaptionEnable = false;
+                           return true;
+                       } catch (ignored) {}
+                   }
+                   return false;
+               }
+               function onApiChange(event) {
+                   try {
+                       var options = player.getOptions();
+                       captionsApiReady = Array.isArray(options) && options.indexOf("captions") >= 0;
+                       captionTracklist = captionsApiReady ? getCaptionTracklist() : [];
+                       notifyCaptionsState();
+                       applyPendingCaptions();
+                   } catch(e) {}
+               }
+               function setSubtitlesEnabled(enabled, languageCode) {
+                   try {
+                       if (enabled) {
+                           pendingCaptionEnable = true;
+                           pendingCaptionLanguageCode = languageCode || null;
+                           player.loadModule("captions");
+                           applyPendingCaptions();
+                       } else {
+                           pendingCaptionEnable = false;
+                           pendingCaptionLanguageCode = null;
+                           try {
+                               player.setOption("captions", "track", {});
+                           } catch (ignored) {}
+                           player.unloadModule("captions");
+                       }
+                   } catch(e) {}
                }
                // Auto-skip ads: detect .ad-showing class and fast-forward
                setInterval(function() {

@@ -20,6 +20,7 @@ CLAUDE.md
 
 # Sensitive credentials
 google-services.json
+**/google-services.json
 TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
 
 # Keystore files (signing keys - NEVER commit!)
