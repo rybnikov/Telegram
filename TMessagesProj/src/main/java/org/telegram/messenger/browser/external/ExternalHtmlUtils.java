@@ -143,10 +143,14 @@ public final class ExternalHtmlUtils {
             StringBuilder builder = new StringBuilder(Math.min(maxChars, 64 * 1024));
             char[] buffer = new char[4096];
             boolean waitingForStart = !TextUtils.isEmpty(startMarker);
+            int retainedPrefixChars = waitingForStart ? Math.max(256, startMarker.length() * 2) : 0;
             int startIndex = -1;
-            int lastSearchPos = 0;
-            while (builder.length() < maxChars) {
-                int limit = Math.min(buffer.length, maxChars - builder.length());
+            int charsAfterStart = 0;
+            while (waitingForStart || charsAfterStart < maxChars) {
+                int limit = buffer.length;
+                if (!waitingForStart) {
+                    limit = Math.min(limit, maxChars - charsAfterStart);
+                }
                 int read = reader.read(buffer, 0, limit);
                 if (read < 0) {
                     break;
@@ -156,11 +160,15 @@ public final class ExternalHtmlUtils {
                 if (waitingForStart) {
                     int searchFrom = Math.max(0, prevLen - startMarker.length());
                     startIndex = builder.indexOf(startMarker, searchFrom);
-                    waitingForStart = startIndex < 0;
-                    if (waitingForStart) {
-                        continue;
+                    if (startIndex >= 0) {
+                        waitingForStart = false;
+                        charsAfterStart = builder.length() - startIndex;
+                    } else if (builder.length() > retainedPrefixChars) {
+                        builder.delete(0, builder.length() - retainedPrefixChars);
                     }
+                    continue;
                 }
+                charsAfterStart += read;
                 if (endMarker != null) {
                     int searchFrom = Math.max(startIndex >= 0 ? startIndex : 0, Math.max(0, prevLen - endMarker.length()));
                     if (builder.indexOf(endMarker, searchFrom) >= 0) {

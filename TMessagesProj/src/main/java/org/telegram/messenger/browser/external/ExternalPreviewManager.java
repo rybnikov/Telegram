@@ -93,7 +93,7 @@ public final class ExternalPreviewManager {
             try {
                 ResolvedMedia media = resolver.resolve(link);
                 if (media != null) {
-                    TLRPC.WebPage webpage = buildWebPage(link, media);
+                    TLRPC.WebPage webpage = buildWebPage(link, resolver, media);
                     if (webpage != null) {
                         cached = new CachedPreview(webpage, media);
                     }
@@ -188,7 +188,7 @@ public final class ExternalPreviewManager {
         if (cachedPreview.media instanceof ResolvedMedia.Video && !resolver.supportsDirectVideoStreaming()) {
             ResolvedMedia.Video video = (ResolvedMedia.Video) cachedPreview.media;
             if ("TikTok".equals(resolver.platformName())) {
-                resolveAndStreamVideo(context, canonicalUrl, video);
+                resolveAndStreamTikTok(context, canonicalUrl, video);
             } else {
                 // YouTube and others: open embed in Telegram's EmbedBottomSheet
                 openEmbedSheet(context, resolver.platformName(), video, canonicalUrl);
@@ -208,10 +208,17 @@ public final class ExternalPreviewManager {
         }
         TLRPC.WebPage webPage = messageObject.messageOwner.media.webpage;
         ExternalMediaPreviewStore.VideoPreview preview = webPage == null ? null : ExternalMediaPreviewStore.getVideoPreview(webPage.id);
-        return preview != null && ExternalMediaOpenHelper.openVideoPreview(context, preview);
+        if (preview == null) {
+            return false;
+        }
+        ExternalMediaResolver resolver = !TextUtils.isEmpty(preview.sourceUrl) ? ExternalLinkRouter.findResolver(Uri.parse(preview.sourceUrl)) : null;
+        if (resolver != null && !resolver.supportsDirectVideoStreaming()) {
+            return false;
+        }
+        return ExternalMediaOpenHelper.openVideoPreview(context, preview);
     }
 
-    private static void resolveAndStreamVideo(Context context, String canonicalUrl, ResolvedMedia.Video video) {
+    static void resolveAndStreamTikTok(Context context, String canonicalUrl, ResolvedMedia.Video video) {
         new Thread(() -> {
             String videoUrl = org.telegram.messenger.browser.tiktok.TikTokMediaResolver.resolveVideoForPlayback(canonicalUrl);
             AndroidUtilities.runOnUIThread(() -> {
@@ -289,7 +296,7 @@ public final class ExternalPreviewManager {
         return message;
     }
 
-    private static TLRPC.WebPage buildWebPage(ParsedLink link, ResolvedMedia media) {
+    private static TLRPC.WebPage buildWebPage(ParsedLink link, ExternalMediaResolver resolver, ResolvedMedia media) {
         ResolvedMedia.Single previewMedia = pickPreviewMedia(media);
         if (previewMedia == null) {
             return null;
@@ -305,15 +312,19 @@ public final class ExternalPreviewManager {
 
         if (previewMedia instanceof ResolvedMedia.Video) {
             ResolvedMedia.Video video = (ResolvedMedia.Video) previewMedia;
-            // Store video data separately for playback on click.
-            // WebPage uses type="photo" with poster URL so ChatMessageCell
-            // loads the poster as a direct image (simple, reliable).
-            ExternalMediaPreviewStore.putVideo(
-                webpage.id, link.platformName, link.canonicalUrl,
-                video.videoUrl, video.posterUrl, video.width, video.height,
-                webpage.title, webpage.description
-            );
-            String posterUrl = !TextUtils.isEmpty(video.posterUrl) ? video.posterUrl : video.videoUrl;
+            boolean supportsDirectVideoStreaming = resolver == null || resolver.supportsDirectVideoStreaming();
+            if (supportsDirectVideoStreaming) {
+                // Store direct video previews separately for inline playback/autoload in the cell.
+                ExternalMediaPreviewStore.putVideo(
+                    webpage.id, link.platformName, link.canonicalUrl,
+                    video.videoUrl, video.posterUrl, video.width, video.height,
+                    webpage.title, webpage.description
+                );
+            }
+            String posterUrl = !TextUtils.isEmpty(video.posterUrl) ? video.posterUrl : supportsDirectVideoStreaming ? video.videoUrl : null;
+            if (TextUtils.isEmpty(posterUrl)) {
+                return null;
+            }
             webpage.type = "photo";
             webpage.embed_url = posterUrl;
             webpage.embed_width = video.width;
