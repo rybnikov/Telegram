@@ -39434,8 +39434,6 @@ public class ChatActivity extends BaseFragment implements
                 final EmojiPacksAlert alert = new EmojiPacksAlert(ChatActivity.this, getParentActivity(), themeDelegate, inputSets);
                 alert.setCalcMandatoryInsets(isKeyboardVisible());
                 showDialog(alert);
-            } else if (ExternalLinkRouter.tryOpenMessagePreview(getContext(), message)) {
-                return;
             } else if (message.getInputStickerSet() != null) {
                 StickersAlert alert = new StickersAlert(getParentActivity(), ChatActivity.this, message.getInputStickerSet(), null, bottomChannelButtonsLayout.getVisibility() != View.VISIBLE && (currentChat == null || ChatObject.canSendStickers(currentChat)) ? chatActivityEnterView : null, themeDelegate, false);
                 alert.setCalcMandatoryInsets(isKeyboardVisible());
@@ -39662,7 +39660,17 @@ public class ChatActivity extends BaseFragment implements
                     if (ExternalLinkRouter.openCachedPreview(getContext(), messageObject.messageOwner)) {
                         return;
                     }
-                    ExternalLinkRouter.tryOpenMessagePreview(getContext(), messageObject);
+                    // Cache cold — resolve and open from URL
+                    TLRPC.WebPage wp = messageObject.messageOwner != null && messageObject.messageOwner.media != null ? messageObject.messageOwner.media.webpage : null;
+                    if (wp != null && wp.url != null) {
+                        Uri uri = Uri.parse(wp.url);
+                        boolean handled = ExternalLinkRouter.tryOpen(getContext(), uri, fallbackUri -> {
+                            Browser.openUrl(getContext(), fallbackUri, true, true, false, null, null, false, true, false);
+                        }, null);
+                        if (!handled) {
+                            Browser.openUrl(getContext(), uri, true, true, false, null, null, false, true, false);
+                        }
+                    }
                 }
             } else if (type == ChatMessageCell.INSTANT_BUTTON_TYPE_STICKER_SET || type == ChatMessageCell.INSTANT_BUTTON_TYPE_EMOJI_SET) {
                 final boolean emoji = type == ChatMessageCell.INSTANT_BUTTON_TYPE_EMOJI_SET;

@@ -41,12 +41,10 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
      * Returns CDN video URL or null.
      */
     public static String resolveVideoForPlayback(String canonicalUrl) {
-        // Check cache first
-        for (java.util.Map.Entry<String, String> entry : videoUrls.entrySet()) {
-            String cookies = videoCookies.get(entry.getValue());
-            if (cookies != null && entry.getKey().contains(canonicalUrl.contains("vm.tiktok") ? canonicalUrl : "")) {
-                return entry.getValue();
-            }
+        // Check cache first — exact match by canonical URL
+        String cachedVideoUrl = videoUrls.get(canonicalUrl);
+        if (cachedVideoUrl != null && videoCookies.containsKey(cachedVideoUrl)) {
+            return cachedVideoUrl;
         }
 
         CookieManager cookieManager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
