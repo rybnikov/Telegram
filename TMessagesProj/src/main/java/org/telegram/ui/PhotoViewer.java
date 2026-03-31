@@ -191,6 +191,7 @@ import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.WebFile;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.browser.external.ExternalMediaOpenHelper;
+import org.telegram.messenger.browser.youtube.YouTubeLinkParser;
 import org.telegram.messenger.camera.Size;
 import org.telegram.messenger.chromecast.ChromecastController;
 import org.telegram.messenger.chromecast.ChromecastMedia;
@@ -859,6 +860,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private ActionBarMenuSubItem allMediaItem;
     private ActionBarMenuSlider.SpeedSlider speedItem;
     private ActionBarMenuSubItem loopItem;
+    private ActionBarMenuSubItem subtitlesItem;
     private ActionBarMenuSubItem galleryButton;
     private ActionBarPopupWindow.GapView galleryGap;
     private ActionBarMenuSubItem pipItem;
@@ -2133,6 +2135,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private final static int gallery_menu_report = 23;
     private final static int gallery_menu_chromecast = 24;
     private final static int gallery_menu_create_sticker = 25;
+    private final static int gallery_menu_subtitles = 26;
 
     private final static int ads_sponsor_info = 101;
     private final static int ads_about = 102;
@@ -5783,6 +5786,13 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     }
                     loopItem.setEnabledByColor(playerLooping, 0xFFFFFFFF, 0xFF73B4EC);
                     loopItem.setSelectorColor(playerLooping ? 0x0F73B4EC : 0x0fffffff);
+                } else if (id == gallery_menu_subtitles) {
+                    if (photoViewerWebView != null && photoViewerWebView.isYouTube()) {
+                        photoViewerWebView.setSubtitlesEnabled(!photoViewerWebView.areSubtitlesEnabled());
+                    } else if (videoPlayer != null) {
+                        videoPlayer.setSubtitlesEnabled(!videoPlayer.areSubtitlesEnabled());
+                    }
+                    updateSubtitleItem();
                 } else if (id == gallery_menu_report) {
                     TLRPC.Photo photo = null;
                     if (currentFileLocation != null && currentFileLocation.photo != null) {
@@ -5846,6 +5856,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         videoQualityLayout = new LinearLayout(activityContext);
         videoQualityLayout.setOrientation(LinearLayout.VERTICAL);
         videoItem.getPopupLayout().addView(videoQualityLayout);
+        subtitlesItem = videoItem.addSubItem(gallery_menu_subtitles, R.drawable.menu_video_closed_caption, LocaleController.getString(R.string.VideoPlayerSubtitles));
+        subtitlesItem.setSelectorColor(0x0fffffff);
+        subtitlesItem.setVisibility(View.GONE);
         loopItem = videoItem.addSubItem(gallery_menu_loop, R.drawable.menu_video_loop, LocaleController.getString(R.string.VideoPlayerLoop));
         loopItem.setSelectorColor(0x0fffffff);
         castItemButton = new CastMediaRouteButton(activityContext) {
@@ -8718,6 +8731,53 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 FileLog.e(e);
             }
         }
+        updateSubtitleItem();
+    }
+
+    private void updateSubtitleItem() {
+        if (subtitlesItem == null) {
+            return;
+        }
+        boolean visible = photoViewerWebView != null && photoViewerWebView.isSubtitlesControlAvailable();
+        if (!visible) {
+            visible = videoPlayer != null && isCurrentYouTubeVideoPlayer() && videoPlayer.hasSubtitles();
+        }
+        subtitlesItem.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (!visible) {
+            return;
+        }
+        boolean enabled = photoViewerWebView != null && photoViewerWebView.isYouTube()
+            ? photoViewerWebView.areSubtitlesEnabled()
+            : videoPlayer != null && videoPlayer.areSubtitlesEnabled();
+        subtitlesItem.setEnabledByColor(enabled, 0xFFFFFFFF, 0xFF73B4EC);
+        subtitlesItem.setSelectorColor(enabled ? 0x0F73B4EC : 0x0fffffff);
+    }
+
+    public void onYouTubeSubtitlesAvailabilityChanged() {
+        updateSubtitleItem();
+    }
+
+    private boolean isCurrentYouTubeVideoPlayer() {
+        if (currentMessageObject != null && currentMessageObject.isYouTubeVideo()) {
+            return true;
+        }
+        if (!isExternalStreamInlineResult(currentBotInlineResult)) {
+            return false;
+        }
+        String sourceUrl = null;
+        if (currentBotInlineResult.send_message != null && !TextUtils.isEmpty(currentBotInlineResult.send_message.message)) {
+            sourceUrl = currentBotInlineResult.send_message.message;
+        } else if (!TextUtils.isEmpty(currentBotInlineResult.url)) {
+            sourceUrl = currentBotInlineResult.url;
+        }
+        if (TextUtils.isEmpty(sourceUrl)) {
+            return false;
+        }
+        try {
+            return YouTubeLinkParser.parse(Uri.parse(sourceUrl)) != null;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public float getCurrentVideoSpeed() {
@@ -10675,6 +10735,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         shouldSavePositionForCurrentVideo = null;
         shouldSavePositionForCurrentVideoShortTerm = null;
         lastSaveTime = 0;
+        if (videoPlayer != null) {
+            videoPlayer.setSubtitlesEnabled(!isCurrentYouTubeVideoPlayer());
+        }
         if (newPlayerCreated) {
             seekToProgressPending = seekToProgressPending2;
             videoPlayerSeekbar.setProgress(0);
@@ -10742,6 +10805,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         videoPlayer.setLooping(playerLooping);
         loopItem.setEnabledByColor(playerLooping, 0xFFFFFFFF, 0xFF73B4EC);
         loopItem.setSelectorColor(playerLooping ? 0x0F73B4EC : 0x0fffffff);
+        updateSubtitleItem();
 
         if (currentMessageObject != null && currentMessageObject.forceSeekTo >= 0) {
             seekToProgressPending = currentMessageObject.forceSeekTo;
@@ -17853,6 +17917,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (photoViewerWebView.isControllable()) {
             setVideoPlayerControlVisible(true, true);
         }
+        updateSubtitleItem();
         videoPlayerSeekbar.clearTimestamps();
         updateVideoPlayerTime();
 

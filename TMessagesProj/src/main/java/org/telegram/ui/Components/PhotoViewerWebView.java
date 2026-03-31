@@ -14,6 +14,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -90,6 +91,10 @@ public class PhotoViewerWebView extends FrameLayout {
     private String currentYoutubeId;
     private boolean isYouTube;
     private TLRPC.WebPage currentWebpage;
+    private boolean youtubeCaptionsReady;
+    private boolean youtubeHasSubtitles;
+    private boolean youtubeSubtitlesEnabled;
+    private String youtubeSubtitleLanguageCode;
 
     private float playbackSpeed;
     private boolean setPlaybackSpeed;
@@ -263,6 +268,19 @@ public class PhotoViewerWebView extends FrameLayout {
         @JavascriptInterface
         public void onPlayerNotifyBufferedPosition(float position) {
             bufferedPosition = position;
+        }
+
+        @JavascriptInterface
+        public void onSubtitlesApiChanged(boolean captionsReady, String languageCode) {
+            AndroidUtilities.runOnUIThread(() -> {
+                youtubeCaptionsReady = captionsReady;
+                if (!TextUtils.isEmpty(languageCode)) {
+                    youtubeSubtitleLanguageCode = normalizeYouTubeLanguageCode(languageCode);
+                }
+                if (photoViewer != null) {
+                    photoViewer.onYouTubeSubtitlesAvailabilityChanged();
+                }
+            });
         }
     }
 
@@ -439,6 +457,36 @@ public class PhotoViewerWebView extends FrameLayout {
                                         }
                                     }
                                 }
+                            }
+                            JSONObject captions = obj.optJSONObject("captions");
+                            if (captions != null) {
+                                JSONObject renderer = captions.optJSONObject("playerCaptionsTracklistRenderer");
+                                org.json.JSONArray tracks = renderer != null ? renderer.optJSONArray("captionTracks") : null;
+                                final boolean hasSubtitles = tracks != null && tracks.length() > 0;
+                                String languageCode = null;
+                                if (tracks != null) {
+                                    for (int i = 0; i < tracks.length(); ++i) {
+                                        JSONObject track = tracks.optJSONObject(i);
+                                        if (track == null) {
+                                            continue;
+                                        }
+                                        String code = track.optString("languageCode", null);
+                                        if (!TextUtils.isEmpty(code)) {
+                                            languageCode = code;
+                                            break;
+                                        }
+                                    }
+                                }
+                                final String finalLanguageCode = languageCode;
+                                AndroidUtilities.runOnUIThread(() -> {
+                                    youtubeHasSubtitles = hasSubtitles;
+                                    if (!TextUtils.isEmpty(finalLanguageCode)) {
+                                        youtubeSubtitleLanguageCode = normalizeYouTubeLanguageCode(finalLanguageCode);
+                                    }
+                                    if (photoViewer != null) {
+                                        photoViewer.onYouTubeSubtitlesAvailabilityChanged();
+                                    }
+                                });
                             }
                         } catch (Exception e) {
                             FileLog.e(e);
@@ -666,11 +714,42 @@ public class PhotoViewerWebView extends FrameLayout {
             byte[] buffer = new byte[10240]; int c;
             while ((c = in.read(buffer)) != -1) { bos.write(buffer, 0, c); }
             bos.close(); in.close();
-            String html = String.format(java.util.Locale.US, bos.toString("UTF-8"), currentYoutubeId, currentPosition / 1000);
+            String languageCode = getPreferredYouTubeSubtitleLanguageCode();
+            String languageCodeArg = TextUtils.isEmpty(languageCode) ? "null" : JSONObject.quote(languageCode);
+            String html = String.format(java.util.Locale.US, bos.toString("UTF-8"), currentYoutubeId, currentPosition / 1000, youtubeSubtitlesEnabled ? 1 : 0, languageCodeArg);
             webView.loadDataWithBaseURL("https://www.youtube-nocookie.com/", html, "text/html", "UTF-8", "https://youtube.com");
         } catch (Exception e) {
             org.telegram.messenger.FileLog.e(e);
         }
+    }
+
+    private String getPreferredYouTubeSubtitleLanguageCode() {
+        if (!TextUtils.isEmpty(youtubeSubtitleLanguageCode)) {
+            return youtubeSubtitleLanguageCode;
+        }
+        LocaleController.LocaleInfo localeInfo = LocaleController.getInstance().getCurrentLocaleInfo();
+        if (localeInfo != null) {
+            String languageCode = normalizeYouTubeLanguageCode(!TextUtils.isEmpty(localeInfo.pluralLangCode) ? localeInfo.pluralLangCode : localeInfo.shortName);
+            if (!TextUtils.isEmpty(languageCode)) {
+                return languageCode;
+            }
+        }
+        Locale locale = LocaleController.getInstance().getCurrentLocale();
+        if (locale != null) {
+            StringBuilder languageTag = new StringBuilder(locale.getLanguage());
+            if (!TextUtils.isEmpty(locale.getCountry())) {
+                languageTag.append('-').append(locale.getCountry());
+            }
+            return normalizeYouTubeLanguageCode(languageTag.toString());
+        }
+        return null;
+    }
+
+    private String normalizeYouTubeLanguageCode(String languageCode) {
+        if (TextUtils.isEmpty(languageCode)) {
+            return null;
+        }
+        return languageCode.replace('_', '-').toLowerCase(Locale.US);
     }
 
     public void seekTo(long seekTo) {
@@ -777,6 +856,18 @@ public class PhotoViewerWebView extends FrameLayout {
         return isYouTube;
     }
 
+    public boolean hasSubtitles() {
+        return isSubtitlesControlAvailable();
+    }
+
+    public boolean isSubtitlesControlAvailable() {
+        return isYouTube && youtubeCaptionsReady;
+    }
+
+    public boolean areSubtitlesEnabled() {
+        return youtubeSubtitlesEnabled;
+    }
+
     public boolean isControllable() {
         return isYouTube();
     }
@@ -826,10 +917,24 @@ public class PhotoViewerWebView extends FrameLayout {
         }
     }
 
+    public void setSubtitlesEnabled(boolean enabled) {
+        youtubeSubtitlesEnabled = enabled;
+        if (!isYouTube) {
+            return;
+        }
+        String languageCode = getPreferredYouTubeSubtitleLanguageCode();
+        String languageCodeArg = TextUtils.isEmpty(languageCode) ? "null" : JSONObject.quote(languageCode);
+        runJsCode("setSubtitlesEnabled(" + enabled + ", " + languageCodeArg + ");");
+    }
+
     @SuppressLint("AddJavascriptInterface")
     public void init(int seekTime, TLRPC.WebPage webPage) {
         currentWebpage = webPage;
         currentYoutubeId = WebPlayerView.getYouTubeVideoId(webPage.embed_url);
+        youtubeCaptionsReady = false;
+        youtubeHasSubtitles = false;
+        youtubeSubtitlesEnabled = false;
+        youtubeSubtitleLanguageCode = null;
         String originalUrl = webPage.url;
         requestLayout();
 
@@ -872,7 +977,9 @@ public class PhotoViewerWebView extends FrameLayout {
                 }
                 bos.close();
                 in.close();
-                webView.loadDataWithBaseURL("https://messenger.telegram.org/", String.format(Locale.US, bos.toString("UTF-8"), currentYoutubeId, seekToTime), "text/html", "UTF-8", "https://youtube.com");
+                String languageCode = getPreferredYouTubeSubtitleLanguageCode();
+                String languageCodeArg = TextUtils.isEmpty(languageCode) ? "null" : JSONObject.quote(languageCode);
+                webView.loadDataWithBaseURL("https://messenger.telegram.org/", String.format(Locale.US, bos.toString("UTF-8"), currentYoutubeId, seekToTime, youtubeSubtitlesEnabled ? 1 : 0, languageCodeArg), "text/html", "UTF-8", "https://youtube.com");
             } else {
                 HashMap<String, String> args = new HashMap<>();
                 args.put("Referer", "messenger.telegram.org");

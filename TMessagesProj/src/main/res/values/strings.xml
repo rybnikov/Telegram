@@ -1289,6 +1289,7 @@
     <string name="QualityCached">・cached</string>
     <string name="VideoPlayerSpeed">Speed</string>
     <string name="VideoPlayerLoop">Loop</string>
+    <string name="VideoPlayerSubtitles">Subtitles</string>
     <string name="VideoPlayerChromecast">Chromecast</string>
     <string name="SendAsFile">Send as file</string>
     <string name="SendAsFiles">Send as files</string>

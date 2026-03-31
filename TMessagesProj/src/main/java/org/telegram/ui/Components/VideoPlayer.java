@@ -820,6 +820,38 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
         this.onQualityChangeListener = listener;
     }
 
+    public boolean hasSubtitles() {
+        if (player == null) {
+            return false;
+        }
+        Tracks tracks = player.getCurrentTracks();
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_TEXT) {
+                continue;
+            }
+            for (int i = 0; i < group.length; ++i) {
+                if (group.isTrackSupported(i)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public boolean areSubtitlesEnabled() {
+        return trackSelector != null && !trackSelector.getParameters().disabledTrackTypes.contains(C.TRACK_TYPE_TEXT);
+    }
+
+    public void setSubtitlesEnabled(boolean enabled) {
+        if (trackSelector == null) {
+            return;
+        }
+        if (areSubtitlesEnabled() == enabled) {
+            return;
+        }
+        trackSelector.setParameters(trackSelector.getParameters().buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !enabled).build());
+    }
+
     public static ArrayList<Quality> getQualities(int currentAccount, TLRPC.Document original, ArrayList<TLRPC.Document> alt_documents, int reference, boolean forThumb) {
         return getQualities(currentAccount, original, alt_documents, reference, forThumb, true);
     }
