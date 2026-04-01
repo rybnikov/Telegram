@@ -1,9 +1,12 @@
 name: Android Internal Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish (for example v12.5.9)"
+        required: true
+        type: string
 
 concurrency:
   group: android-internal-release
@@ -14,7 +17,7 @@ permissions:
 
 jobs:
   build-and-upload:
-    if: ${{ github.actor == 'rybnikov' }}
+    if: ${{ github.actor == 'rybnikov' && github.ref == 'refs/heads/foldogram' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: play-internal
@@ -39,13 +42,21 @@ jobs:
         run: |
           echo "RELEASE_KEYSTORE_PATH=${RUNNER_TEMP}/release.keystore" >> "$GITHUB_ENV"
 
-      - name: Resolve release version from tag
+      - name: Resolve release version from input tag
         shell: bash
         run: |
           set -euo pipefail
-          TAG_NAME="${GITHUB_REF_NAME}"
+          TAG_NAME="${{ inputs.release_tag }}"
           if [[ ! "$TAG_NAME" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
             echo "Release tag must match vX.Y.Z, got: $TAG_NAME" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF}" != "refs/heads/foldogram" ]]; then
+            echo "Internal release workflow must run from refs/heads/foldogram, got: ${GITHUB_REF}" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" > /dev/null 2>&1; then
+            echo "Release tag already exists on origin: ${TAG_NAME}" >&2
             exit 1
           fi
 
@@ -79,6 +90,7 @@ jobs:
 
           echo "RELEASE_VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION_CODE=${VERSION_CODE}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${TAG_NAME}" >> "$GITHUB_ENV"
           echo "Resolved release ${VERSION_NAME} (${VERSION_CODE}) from ${TAG_NAME}"
 
       - name: Set up Java 17
@@ -111,7 +123,7 @@ jobs:
           path: |
             TMessagesProj/.cxx
             TMessagesProj/build/intermediates/cxx
-          key: ${{ runner.os }}-ndk-cxx-${{ hashFiles('TMessagesProj/jni/CMakeLists.txt', 'TMessagesProj/jni/voip/CMakeLists.txt', 'TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'gradle.properties') }}
+          key: ${{ runner.os }}-ndk-cxx-${{ hashFiles('build.gradle', 'settings.gradle', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'TMessagesProj/jni/**/CMakeLists.txt', 'TMessagesProj/jni/**/*.cmake') }}
           restore-keys: |
             ${{ runner.os }}-ndk-cxx-
 
@@ -122,6 +134,14 @@ jobs:
         run: |
           test -n "$RELEASE_KEYSTORE_BASE64"
           echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RELEASE_KEYSTORE_PATH"
+
+      - name: Resolve Play release metadata from Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew -q :TMessagesProj_App:printAfatReleaseMetadata > "$RUNNER_TEMP/release-metadata.env"
+          grep -E '^(RELEASE_VERSION_NAME|RELEASE_VERSION_CODE|PLAY_RELEASE_VERSION_CODE)=' "$RUNNER_TEMP/release-metadata.env" >> "$GITHUB_ENV"
+          test -n "$(grep '^PLAY_RELEASE_VERSION_CODE=' "$RUNNER_TEMP/release-metadata.env" | cut -d= -f2)"
 
       - name: Validate required secrets
         shell: bash
@@ -137,6 +157,7 @@ jobs:
           test -n "$PLAY_SERVICE_ACCOUNT_JSON"
           test -n "$RELEASE_VERSION_NAME"
           test -n "$RELEASE_VERSION_CODE"
+          test -n "$PLAY_RELEASE_VERSION_CODE"
 
       - name: Build release bundle
         id: build-release-bundle
@@ -207,7 +228,7 @@ jobs:
           )"
 
           TRACK_PAYLOAD="$(
-            python3 -c 'import json,os; print(json.dumps({"track":"internal","releases":[{"name":os.environ["RELEASE_VERSION_NAME"],"versionCodes":[os.environ["RELEASE_VERSION_CODE"]],"status":"completed"}]}, separators=(",", ":")))' 
+            python3 -c 'import json,os; print(json.dumps({"track":"internal","releases":[{"name":os.environ["RELEASE_VERSION_NAME"],"versionCodes":[os.environ["PLAY_RELEASE_VERSION_CODE"]],"status":"completed"}]}, separators=(",", ":")))' 
           )"
 
           TRACK_URL="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.rbnkv.foldogram/edits/${EDIT_ID}/tracks/internal"
@@ -231,7 +252,7 @@ jobs:
             fi
 
             if [[ ( "$http_code" == "404" || "$http_code" == "409" ) && "$attempt" -lt "$max_attempts" ]]; then
-              echo "Track promote attempt ${attempt}/${max_attempts} returned HTTP ${http_code}; waiting for Play to expose uploaded version ${RELEASE_VERSION_CODE} before retrying."
+              echo "Track promote attempt ${attempt}/${max_attempts} returned HTTP ${http_code}; waiting for Play to expose uploaded version ${PLAY_RELEASE_VERSION_CODE} before retrying."
               cat "$TRACK_RESPONSE_PATH" || true
               sleep 30
               attempt=$((attempt + 1))
@@ -255,6 +276,22 @@ jobs:
             exit 1
           fi
 
+      - name: Create release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --tags origin
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" > /dev/null 2>&1; then
+            echo "Release tag already exists on origin: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE_TAG" -m "Internal release ${RELEASE_TAG}" "$GITHUB_SHA"
+          git push origin "refs/tags/${RELEASE_TAG}"
+
       - name: Publish GitHub release metadata
         shell: bash
         env:
@@ -262,12 +299,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          RELEASE_TAG="${GITHUB_REF_NAME}"
           CHECKSUM_FILE="foldogram-${RELEASE_VERSION_NAME}-checksums.txt"
           RELEASE_NOTES_FILE="${RUNNER_TEMP}/github-release-notes.md"
 
           cat > "$RELEASE_NOTES_FILE" <<EOF
-          Internal release for ${RELEASE_VERSION_NAME} (${RELEASE_VERSION_CODE}).
+          Internal release for ${RELEASE_VERSION_NAME}.
+
+          Play versionCode: ${PLAY_RELEASE_VERSION_CODE}
 
           Attached asset:
           - SHA-256 checksums
@@ -280,6 +318,7 @@ jobs:
           else
             gh release create "$RELEASE_TAG" "$CHECKSUM_FILE" \
               --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
               --title "$RELEASE_TAG" \
               --notes-file "$RELEASE_NOTES_FILE" \
               --prerelease
