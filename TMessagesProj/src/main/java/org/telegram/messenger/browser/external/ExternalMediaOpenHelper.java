@@ -66,11 +66,15 @@ public final class ExternalMediaOpenHelper {
                 if (finalMedia != null) {
                     if (finalMedia instanceof ResolvedMedia.Video && !resolver.supportsDirectVideoStreaming()) {
                         ResolvedMedia.Video vid = (ResolvedMedia.Video) finalMedia;
-                        org.telegram.ui.ActionBar.BaseFragment frag = org.telegram.ui.LaunchActivity.getSafeLastFragment();
-                        if (frag != null) {
-                            org.telegram.ui.Components.EmbedBottomSheet.show(frag, null, null, link.platformName, vid.title, link.canonicalUrl, vid.videoUrl, vid.width, vid.height, false);
+                        if ("TikTok".equals(link.platformName)) {
+                            ExternalPreviewManager.resolveAndStreamTikTok(context, link.canonicalUrl, vid);
                         } else {
-                            Browser.openUrl(context, Uri.parse(vid.videoUrl), true, true, false, null, null, false, true, false);
+                            org.telegram.ui.ActionBar.BaseFragment frag = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                            if (frag != null) {
+                                org.telegram.ui.Components.EmbedBottomSheet.show(frag, null, null, link.platformName, vid.title, link.canonicalUrl, vid.videoUrl, vid.width, vid.height, false);
+                            } else {
+                                Browser.openUrl(context, Uri.parse(vid.videoUrl), true, true, false, null, null, false, true, false);
+                            }
                         }
                         opened = true;
                     } else {
