@@ -1649,6 +1649,18 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
                 }
             }
         }
+
+        if (BuildVars.LOGS_ENABLED && (dialogsType == DialogsActivity.DIALOGS_TYPE_FOLDER1 || dialogsType == DialogsActivity.DIALOGS_TYPE_FOLDER2)) {
+            FileLog.d("dialogs adapter update type=" + dialogsType
+                    + " folderId=" + folderId
+                    + " filterId=" + (filter != null ? filter.id : 0)
+                    + " dialogsCount=" + dialogsCount
+                    + " itemCount=" + itemInternals.size()
+                    + " isEmpty=" + isEmpty
+                    + " hasChatlistHint=" + hasChatlistHint
+                    + " dialogsEndReached=" + messagesController.isDialogsEndReached(folderId)
+                    + " serverDialogsEndReached=" + messagesController.isServerDialogsEndReached(folderId));
+        }
     }
 
     public int getItemHeight(int position) {

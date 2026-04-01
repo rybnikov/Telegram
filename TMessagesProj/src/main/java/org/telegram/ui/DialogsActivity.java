@@ -7666,6 +7666,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             return;
         }
         int visibleItemCount = Math.abs(lastVisibleItem - firstVisibleItem) + 1;
+        boolean filterDialogsType = viewPage.dialogsType == DIALOGS_TYPE_FOLDER1 || viewPage.dialogsType == DIALOGS_TYPE_FOLDER2;
+        int adapterItemCount = viewPage.dialogsAdapter != null ? viewPage.dialogsAdapter.getItemCount() : 0;
+        boolean skipZeroVisibleFilterLoad = filterDialogsType
+                && visibleItemCount == 0
+                && viewPage.listView.getChildCount() == 0
+                && adapterItemCount == 0;
         if (lastVisibleItem != RecyclerView.NO_POSITION) {
             RecyclerView.ViewHolder holder = viewPage.listView.findViewHolderForAdapterPosition(lastVisibleItem);
             if (floatingForceVisible = holder != null && holder.getItemViewType() == 11) {
@@ -7678,13 +7684,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         boolean loadArchivedFromCache = false;
         boolean load = false;
         boolean loadFromCache = false;
-        if (viewPage.dialogsType == DIALOGS_TYPE_FOLDER1 || viewPage.dialogsType == DIALOGS_TYPE_FOLDER2) {
+        if (filterDialogsType) {
             ArrayList<MessagesController.DialogFilter> dialogFilters = getMessagesController().getDialogFilters();
             if (viewPage.selectedType >= 0 && viewPage.selectedType < dialogFilters.size()) {
                 MessagesController.DialogFilter filter = dialogFilters.get(viewPage.selectedType);
                 if ((filter.flags & MessagesController.DIALOG_FILTER_FLAG_EXCLUDE_ARCHIVED) == 0) {
                     if (visibleItemCount > 0 && lastVisibleItem >= getDialogsArray(currentAccount, viewPage.dialogsType, 1, dialogsListFrozen).size() - 10 ||
-                            visibleItemCount == 0 && !getMessagesController().isDialogsEndReached(1)) {
+                            visibleItemCount == 0 && !skipZeroVisibleFilterLoad && !getMessagesController().isDialogsEndReached(1)) {
                         loadArchivedFromCache = !getMessagesController().isDialogsEndReached(1);
                         if (loadArchivedFromCache || !getMessagesController().isServerDialogsEndReached(1)) {
                             loadArchived = true;
@@ -7694,11 +7700,27 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             }
         }
         if (visibleItemCount > 0 && lastVisibleItem >= getDialogsArray(currentAccount, viewPage.dialogsType, folderId, dialogsListFrozen).size() - 10 ||
-                visibleItemCount == 0 && (viewPage.dialogsType == 7 || viewPage.dialogsType == 8) && !getMessagesController().isDialogsEndReached(folderId)) {
+                visibleItemCount == 0 && filterDialogsType && !skipZeroVisibleFilterLoad && !getMessagesController().isDialogsEndReached(folderId)) {
             loadFromCache = !getMessagesController().isDialogsEndReached(folderId);
             if (loadFromCache || !getMessagesController().isServerDialogsEndReached(folderId)) {
                 load = true;
             }
+        }
+        if (BuildVars.LOGS_ENABLED && filterDialogsType && visibleItemCount == 0) {
+            MessagesController.DialogFilter filter = getMessagesController().selectedDialogFilter[viewPage.dialogsType - DIALOGS_TYPE_FOLDER1];
+            FileLog.d("dialogs checkListLoad type=" + viewPage.dialogsType
+                    + " selectedType=" + viewPage.selectedType
+                    + " filterId=" + (filter != null ? filter.id : 0)
+                    + " first=" + firstVisibleItem
+                    + " last=" + lastVisibleItem
+                    + " visible=" + visibleItemCount
+                    + " childCount=" + viewPage.listView.getChildCount()
+                    + " adapterCount=" + adapterItemCount
+                    + " skipZeroVisibleFilterLoad=" + skipZeroVisibleFilterLoad
+                    + " load=" + load
+                    + " loadArchived=" + loadArchived
+                    + " dialogsEndReached=" + getMessagesController().isDialogsEndReached(folderId)
+                    + " serverDialogsEndReached=" + getMessagesController().isServerDialogsEndReached(folderId));
         }
         if (load || loadArchived) {
             boolean loadFinal = load;
@@ -7707,6 +7729,16 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             boolean loadArchivedFromCacheFinal = loadArchivedFromCache;
             AndroidUtilities.runOnUIThread(() -> {
                 if (loadFinal) {
+                    if (BuildVars.LOGS_ENABLED) {
+                        MessagesController.DialogFilter filter = filterDialogsType ? getMessagesController().selectedDialogFilter[viewPage.dialogsType - DIALOGS_TYPE_FOLDER1] : null;
+                        FileLog.d("dialogs trigger loadDialogs offset=-1 type=" + viewPage.dialogsType
+                                + " selectedType=" + viewPage.selectedType
+                                + " filterId=" + (filter != null ? filter.id : 0)
+                                + " visible=" + visibleItemCount
+                                + " adapterCount=" + adapterItemCount
+                                + " childCount=" + viewPage.listView.getChildCount()
+                                + " fromCache=" + loadFromCacheFinal);
+                    }
                     getMessagesController().loadDialogs(folderId, -1, 100, loadFromCacheFinal);
                 }
                 if (loadArchivedFinal) {
@@ -10150,6 +10182,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         super.onConfigurationChanged(newConfig);
         if (filterOptions != null) {
             filterOptions.dismiss();
+        }
+        if (BuildVars.LOGS_ENABLED && viewPages != null && viewPages.length > 0 && viewPages[0] != null) {
+            FileLog.d("dialogs onConfigurationChanged orientation=" + newConfig.orientation
+                    + " dialogsType=" + viewPages[0].dialogsType
+                    + " selectedType=" + viewPages[0].selectedType
+                    + " openedDialogId=" + openedDialogId.dialogId
+                    + " openedTopicId=" + openedDialogId.topicId
+                    + " rightFragment=" + (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment())
+                    + " tablet=" + AndroidUtilities.isTablet());
         }
     }
 
