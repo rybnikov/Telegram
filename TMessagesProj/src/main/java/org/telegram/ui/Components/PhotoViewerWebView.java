@@ -95,7 +95,6 @@ public class PhotoViewerWebView extends FrameLayout {
     private boolean youtubeHasSubtitles;
     private boolean youtubeSubtitlesEnabled;
     private String youtubeSubtitleLanguageCode;
-
     private float playbackSpeed;
     private boolean setPlaybackSpeed;
 
@@ -209,10 +208,6 @@ public class PhotoViewerWebView extends FrameLayout {
                         photoViewer.onYouTubeAdEnded();
                     }
                 });
-            }
-            if (blockAdRequests && stateInt == YT_PLAYING) {
-                // Ad is done, unblock video stream for main content
-                blockAdRequests = false;
             }
             boolean wasPlaying = isPlaying;
             isPlaying = stateInt == YT_PLAYING || stateInt == YT_BUFFERING;
@@ -354,16 +349,6 @@ public class PhotoViewerWebView extends FrameLayout {
                         String host = request.getUrl().getHost();
                         String path = request.getUrl().getPath();
                         if (host != null && path != null) {
-                            // Block ad streams and ad tracking after user taps Skip Ad
-                            if (blockAdRequests) {
-                                if (host.contains("googlevideo.com") && path.contains("/videoplayback")) {
-                                    return new WebResourceResponse("text/plain", "UTF-8", new java.io.ByteArrayInputStream(new byte[0]));
-                                }
-                                if (path.contains("/pagead/") || path.contains("/api/stats/ads") || path.contains("/pcs/activeview")) {
-                                    return new WebResourceResponse("text/plain", "UTF-8", new java.io.ByteArrayInputStream(new byte[0]));
-                                }
-                            }
-                            // Cache video/audio stream URLs for potential reuse
                             if (host.contains("googlevideo.com") && path.contains("/videoplayback")) {
                                 String itag = request.getUrl().getQueryParameter("itag");
                                 if (itag != null) {
@@ -677,8 +662,6 @@ public class PhotoViewerWebView extends FrameLayout {
         }
     }
 
-    private boolean blockAdRequests;
-
     public String getCachedVideoStreamUrl() {
         return cachedVideoStreamUrl;
     }
@@ -693,7 +676,6 @@ public class PhotoViewerWebView extends FrameLayout {
 
     public void skipAd() {
         adPlaying = false;
-        blockAdRequests = false;
         reloadYouTubeNoCookie();
     }
 

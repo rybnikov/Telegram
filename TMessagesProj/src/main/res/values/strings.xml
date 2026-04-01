@@ -2596,6 +2596,8 @@
     <string name="DebugMenuDisableWebViewDebug">Disable WebView debug</string>
     <string name="DebugMenuWebViewDebugEnabled">Debug enabled!</string>
     <string name="DebugMenuWebViewDebugDisabled">Debug disabled!</string>
+    <string name="DebugMenuEnableYoutubeAdSkip">Enable YouTube ad skip</string>
+    <string name="DebugMenuDisableYoutubeAdSkip">Disable YouTube ad skip</string>
     <string name="ChangeLanguageLater">You can change your language later in Settings.</string>
     <string name="ChooseYourLanguage">Choose your language</string>
     <string name="ChooseYourLanguageOther">Other</string>

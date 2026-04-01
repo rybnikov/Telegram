@@ -10372,13 +10372,20 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             skipAdButton.setAlpha(1.0f);
         }
         toggleMiniProgress(false, true);
+        if (SharedConfig.youtubeAutoSkipAds) {
+            AndroidUtilities.cancelRunOnUIThread(autoSkipYouTubeAdRunnable);
+            AndroidUtilities.runOnUIThread(autoSkipYouTubeAdRunnable, 50);
+        }
     }
 
     public void onYouTubeAdEnded() {
+        AndroidUtilities.cancelRunOnUIThread(autoSkipYouTubeAdRunnable);
         if (skipAdButton != null) {
             skipAdButton.setVisibility(View.GONE);
         }
     }
+
+    private final Runnable autoSkipYouTubeAdRunnable = this::skipYouTubeAd;
 
     private void skipYouTubeAd() {
         if (photoViewerWebView != null) {
