@@ -215,6 +215,23 @@ android {
     }
 }
 
+tasks.register("printAfatReleaseMetadata") {
+    doLast {
+        def variant = android.applicationVariants.find { it.name == "afatRelease" }
+        if (variant == null) {
+            throw new GradleException("afatRelease variant not found")
+        }
+
+        def output = variant.outputs.first()
+        def baseVersionCode = variant.mergedFlavor.versionCode
+        def playVersionCode = output.versionCodeOverride ?: baseVersionCode
+
+        println "RELEASE_VERSION_NAME=${variant.versionName}"
+        println "RELEASE_VERSION_CODE=${baseVersionCode}"
+        println "PLAY_RELEASE_VERSION_CODE=${playVersionCode}"
+    }
+}
+
 // --- Generate google-services.json if missing ---
 task generateGoogleServices {
     def outputFile = file("google-services.json")
