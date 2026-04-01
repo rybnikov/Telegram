@@ -7714,7 +7714,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         boolean loadArchivedFromCache = false;
         boolean load = false;
         boolean loadFromCache = false;
-        if (viewPage.dialogsType == DIALOGS_TYPE_FOLDER1 || viewPage.dialogsType == DIALOGS_TYPE_FOLDER2) {
+        if (filterDialogsType) {
             ArrayList<MessagesController.DialogFilter> dialogFilters = getMessagesController().getDialogFilters();
             if (viewPage.selectedType >= 0 && viewPage.selectedType < dialogFilters.size()) {
                 MessagesController.DialogFilter filter = dialogFilters.get(viewPage.selectedType);
@@ -7749,6 +7749,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     + " adapterCount=" + adapterItemCount
                     + " dialogsCount=" + dialogsCount
                     + " transientEmptyLayout=" + transientEmptyLayout
+                    + " childCount=" + childCount
+                    + " adapterCount=" + adapterItemCount
+                    + " dialogsCount=" + dialogsCount
+                    + " transientEmptyLayout=" + transientEmptyLayout
                     + " skipZeroVisibleFilterLoad=" + skipZeroVisibleFilterLoad
                     + " load=" + load
                     + " loadArchived=" + loadArchived
@@ -7768,6 +7772,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                 + " selectedType=" + viewPage.selectedType
                                 + " filterId=" + (filter != null ? filter.id : 0)
                                 + " visible=" + visibleItemCount
+                                + " dialogsCount=" + dialogsCount
+                                + " transientEmptyLayout=" + transientEmptyLayout
+                                + " adapterCount=" + adapterItemCount
+                                + " childCount=" + childCount
                                 + " dialogsCount=" + dialogsCount
                                 + " transientEmptyLayout=" + transientEmptyLayout
                                 + " adapterCount=" + adapterItemCount
@@ -10220,6 +10228,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         super.onConfigurationChanged(newConfig);
         if (filterOptions != null) {
             filterOptions.dismiss();
+        }
+        if (BuildVars.LOGS_ENABLED && viewPages != null && viewPages.length > 0 && viewPages[0] != null) {
+            FileLog.d("dialogs onConfigurationChanged orientation=" + newConfig.orientation
+                    + " dialogsType=" + viewPages[0].dialogsType
+                    + " selectedType=" + viewPages[0].selectedType
+                    + " openedDialogId=" + openedDialogId.dialogId
+                    + " openedTopicId=" + openedDialogId.topicId
+                    + " rightFragment=" + (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment())
+                    + " tablet=" + AndroidUtilities.isTablet());
         }
     }
 
