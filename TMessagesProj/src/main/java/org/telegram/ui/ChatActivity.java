@@ -183,6 +183,8 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.browser.external.ExternalLinkRouter;
+import org.telegram.messenger.browser.external.ExternalMediaOpenHelper;
 import org.telegram.messenger.camera.CameraView;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.OnPostDrawView;
@@ -38982,6 +38984,32 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
             };
+            Browser.Progress currentProgress = progressDialogCurrent;
+            if (ExternalLinkRouter.openCachedPreview(getContext(), uri)) {
+                if (currentProgress != null) {
+                    currentProgress.end(true);
+                }
+                progressDialogCurrent = null;
+                return;
+            }
+            if (ExternalLinkRouter.tryOpen(
+                getContext(),
+                uri,
+                fallbackUri -> Browser.openUrl(getContext(), fallbackUri, true, true, false, currentProgress, null, false, true, false),
+                currentProgress == null ? null : new ExternalMediaOpenHelper.ProgressHandle() {
+                    @Override
+                    public void init() {
+                        currentProgress.init();
+                    }
+
+                    @Override
+                    public void end() {
+                        currentProgress.end();
+                    }
+                }
+            )) {
+                return;
+            }
             if (!safe && !Browser.isInternalUri(uri, null)) {
                 AlertsCreator.showOpenUrlAlert(ChatActivity.this, url, true, true, true, !safe, progressDialogCurrent, themeDelegate);
             } else {
@@ -39335,6 +39363,9 @@ public class ChatActivity extends BaseFragment implements
             } else if (message.isSending()) {
                 return;
             }
+            if (ExternalLinkRouter.openCachedPreview(getContext(), message.messageOwner)) {
+                return;
+            }
             if (fullPreview && message != null && message.messageOwner != null && message.messageOwner.media != null && message.messageOwner.media.webpage != null && !TextUtils.isEmpty(message.messageOwner.media.webpage.url)) {
                 final String url = message.messageOwner.media.webpage.url;
                 final String host = AndroidUtilities.getHostAuthority(url);
@@ -39622,6 +39653,24 @@ public class ChatActivity extends BaseFragment implements
                     args.putString("phone", phone);
                     args.putBoolean("addContact", true);
                     presentFragment(new ContactAddActivity(args));
+                }
+            } else if (type == 40) {
+                // External preview button (Instagram Reel, TikTok, Pinterest)
+                if (messageObject != null) {
+                    if (ExternalLinkRouter.openCachedPreview(getContext(), messageObject.messageOwner)) {
+                        return;
+                    }
+                    // Cache cold — resolve and open from URL
+                    TLRPC.WebPage wp = messageObject.messageOwner != null && messageObject.messageOwner.media != null ? messageObject.messageOwner.media.webpage : null;
+                    if (wp != null && wp.url != null) {
+                        Uri uri = Uri.parse(wp.url);
+                        boolean handled = ExternalLinkRouter.tryOpen(getContext(), uri, fallbackUri -> {
+                            Browser.openUrl(getContext(), fallbackUri, true, true, false, null, null, false, true, false);
+                        }, null);
+                        if (!handled) {
+                            Browser.openUrl(getContext(), uri, true, true, false, null, null, false, true, false);
+                        }
+                    }
                 }
             } else if (type == ChatMessageCell.INSTANT_BUTTON_TYPE_STICKER_SET || type == ChatMessageCell.INSTANT_BUTTON_TYPE_EMOJI_SET) {
                 final boolean emoji = type == ChatMessageCell.INSTANT_BUTTON_TYPE_EMOJI_SET;

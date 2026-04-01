@@ -1289,6 +1289,7 @@
     <string name="QualityCached">・cached</string>
     <string name="VideoPlayerSpeed">Speed</string>
     <string name="VideoPlayerLoop">Loop</string>
+    <string name="VideoPlayerSubtitles">Subtitles</string>
     <string name="VideoPlayerChromecast">Chromecast</string>
     <string name="SendAsFile">Send as file</string>
     <string name="SendAsFiles">Send as files</string>
@@ -2579,6 +2580,8 @@
     <string name="DebugMenuDisableWebViewDebug">Disable WebView debug</string>
     <string name="DebugMenuWebViewDebugEnabled">Debug enabled!</string>
     <string name="DebugMenuWebViewDebugDisabled">Debug disabled!</string>
+    <string name="DebugMenuEnableYoutubeAdSkip">Enable YouTube ad skip</string>
+    <string name="DebugMenuDisableYoutubeAdSkip">Disable YouTube ad skip</string>
     <string name="ChangeLanguageLater">You can change your language later in Settings.</string>
     <string name="ChooseYourLanguage">Choose your language</string>
     <string name="ChooseYourLanguageOther">Other</string>
@@ -8473,6 +8476,8 @@
     <string name="InappBrowserInfo">Open external links within the app</string>
     <string name="HideBottomPanel">Hide bottom panel</string>
     <string name="HideBottomPanelInfo">Hides the main navigation panel</string>
+    <string name="ExtendedPreviews">Extended previews</string>
+    <string name="ExtendedPreviewsInfo">Rich previews for Instagram, TikTok, Pinterest and YouTube</string>
     <string name="BrowserSettingsSearchEngine">Search Engine</string>
     <string name="BrowserSettingsSearchEngineInfo">Search Engine is used in address bar to open search and auto-complete.</string>
     <string name="BrowserExternalTitle">Open in Browser</string>

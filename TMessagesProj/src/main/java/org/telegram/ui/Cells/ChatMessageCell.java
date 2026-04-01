@@ -133,6 +133,8 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.WebFile;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.browser.external.ExternalLinkRouter;
+import org.telegram.messenger.browser.external.ExternalMediaPreviewStore;
 import org.telegram.messenger.utils.FrameTickScheduler;
 import org.telegram.messenger.utils.tlutils.TlUtils;
 import org.telegram.messenger.video.OldVideoPlayerRewinder;
@@ -2857,13 +2859,14 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         }
                     } else if (currentMessageObject != null && !currentMessageObject.preview) {
                         TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
-                        if (webPage != null && !TextUtils.isEmpty(webPage.embed_url)/* && TextUtils.isEmpty(WebPlayerView.getYouTubeVideoId(webPage.embed_url))*/) {
+                        if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && !isCustomExternalPreviewSite(webPage.site_name)/* && TextUtils.isEmpty(WebPlayerView.getYouTubeVideoId(webPage.embed_url))*/) {
                             if (delegate != null) {
                                 delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.title, webPage.url, webPage.embed_width, webPage.embed_height);
                             }
                         } else if (webPage != null) {
                             if (delegate != null) {
-                                delegate.didPressWebPage(this, webPage, webPage.url, MessageObject.getMedia(currentMessageObject.messageOwner).safe);
+                                boolean safe = MessageObject.getMedia(currentMessageObject.messageOwner).safe || isCustomExternalPreviewSite(webPage.site_name);
+                                delegate.didPressWebPage(this, webPage, webPage.url, safe);
                             } else {
                                 Browser.openUrl(getContext(), webPage.url);
                             }
@@ -2931,7 +2934,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             }
                         } else if (!currentMessageObject.preview) {
                             TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
-                            if (webPage != null && !TextUtils.isEmpty(webPage.embed_url)) {
+                            if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && !isCustomExternalPreviewSite(webPage.site_name)) {
                                 delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.title, webPage.url, webPage.embed_width, webPage.embed_height);
                             } else if (buttonState == -1 || buttonState == 3) {
                                 delegate.didPressImage(this, lastTouchX, lastTouchY, false);
@@ -5478,7 +5481,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             if (buttonState == -1) {
                 TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
                 if (webPage != null) {
-                    if (webPage.embed_url != null && webPage.embed_url.length() != 0) {
+                    if (webPage.embed_url != null && webPage.embed_url.length() != 0 && !isCustomExternalPreviewSite(webPage.site_name)) {
                         delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.description, webPage.url, webPage.embed_width, webPage.embed_height);
                     } else {
                         Browser.openUrl(getContext(), webPage.url);
@@ -6710,6 +6713,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         hasInvoicePrice = false;
                     }
                 }
+                if (!messageObject.isRestrictedMessage) {
+                    ExternalLinkRouter.requestPreviewIfNeeded(messageObject);
+                }
                 hasLinkPreview = !messageObject.isRestrictedMessage && MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage && MessageObject.getMedia(messageObject.messageOwner).webpage instanceof TLRPC.TL_webPage;
                 TLRPC.WebPage webpage = hasLinkPreview ? MessageObject.getMedia(messageObject.messageOwner).webpage : null;
                 if (messageObject.isStoryMention()) {
@@ -6719,7 +6725,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
                 drawInstantView = hasLinkPreview && webpage.cached_page != null;
                 String siteName = hasLinkPreview ? webpage.site_name : null;
-                hasEmbed = hasLinkPreview && !TextUtils.isEmpty(webpage.embed_url) && !messageObject.isGif() && !"instagram".equalsIgnoreCase(siteName);
+                if (!drawInstantView && hasLinkPreview && isCustomExternalPreviewSite(siteName)) {
+                    String btnText = ExternalLinkRouter.getInstantButtonText(siteName, webpage);
+                    if (btnText != null) {
+                        drawInstantView = true;
+                        drawInstantViewType = 40;
+                        instantViewButtonText = btnText;
+                    }
+                }
+                hasEmbed = hasLinkPreview && !TextUtils.isEmpty(webpage.embed_url) && !messageObject.isGif() && !isCustomExternalPreviewSite(siteName);
                 boolean slideshow = false;
                 String webpageType = webpage != null ? webpage.type : null;
                 TLRPC.Document androidThemeDocument = null;
@@ -7087,6 +7101,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     TLRPC.Document document;
                     TLRPC.Photo documentCover = null;
                     WebFile webDocument;
+                    String directImageUrl = null;
+                    int directImageWidth = 0;
+                    int directImageHeight = 0;
                     int duration;
                     boolean smallImage;
                     String type;
@@ -7190,7 +7207,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         }
                         type = webPage.type;
                         duration = webPage.duration;
-                        if (site_name != null && photo != null && site_name.toString().toLowerCase().equals("instagram")) {
+                        if (isCustomExternalPreviewSite(site_name) && photo == null && document == null && !TextUtils.isEmpty(webPage.embed_url)) {
+                            directImageUrl = webPage.embed_url;
+                            directImageWidth = webPage.embed_width;
+                            directImageHeight = webPage.embed_height;
+                        }
+                        if (isCustomExternalPreviewSite(site_name) && (photo != null || directImageUrl != null)) {
                             linkPreviewMaxWidth = Math.max(AndroidUtilities.displaySize.y / 3, currentMessageObject.textWidth);
                         }
                         boolean isSmallImageType = "app".equals(type) || "profile".equals(type) ||
@@ -7782,8 +7804,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                 blurredPhotoImage.getBitmap().recycle();
                                 blurredPhotoImage.setImageBitmap((Bitmap) null);
                             }
-                        } else if (currentPhotoObject != null || currentPhotoLocation != null || webDocument != null || documentAttachType == DOCUMENT_ATTACH_TYPE_WALLPAPER || documentAttachType == DOCUMENT_ATTACH_TYPE_THEME || (drawInstantViewType == 23 || drawInstantViewType == 24 || drawInstantViewType == 28) && stickers != null && !stickers.isEmpty()) {
-                            drawImageButton = photo != null && !smallImage || type != null && (type.equals("photo") || type.equals("document") && documentAttachType != DOCUMENT_ATTACH_TYPE_STICKER || type.equals("gif") || documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO || documentAttachType == DOCUMENT_ATTACH_TYPE_WALLPAPER);
+                        } else if (currentPhotoObject != null || currentPhotoLocation != null || webDocument != null || directImageUrl != null || documentAttachType == DOCUMENT_ATTACH_TYPE_WALLPAPER || documentAttachType == DOCUMENT_ATTACH_TYPE_THEME || (drawInstantViewType == 23 || drawInstantViewType == 24 || drawInstantViewType == 28) && stickers != null && !stickers.isEmpty()) {
+                            drawImageButton = photo != null && !smallImage || type != null && (type.equals("photo") || type.equals("video") || type.equals("document") && documentAttachType != DOCUMENT_ATTACH_TYPE_STICKER || type.equals("gif") || documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO || documentAttachType == DOCUMENT_ATTACH_TYPE_WALLPAPER);
                             if (isSmallImage) {
                                 drawImageButton = false;
                             }
@@ -7857,6 +7879,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                     } else if (currentPhotoObject != null) {
                                         width = currentPhotoObject.w;
                                         height = currentPhotoObject.h;
+                                    } else if (directImageUrl != null) {
+                                        width = directImageWidth > 0 ? directImageWidth : 720;
+                                        height = directImageHeight > 0 ? directImageHeight : 1280;
                                     } else {
                                         width = 30;
                                         height = 50;
@@ -7864,7 +7889,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                     float scale = width / (float) (maxPhotoWidth - dp(2));
                                     width /= scale;
                                     height /= scale;
-                                    if (site_name == null || site_name != null && !site_name.toString().toLowerCase().equals("instagram") && documentAttachType == 0) {
+                                    if (!isCustomExternalPreviewSite(site_name) && documentAttachType == 0) {
                                         if (height > AndroidUtilities.displaySize.y / 3) {
                                             height = AndroidUtilities.displaySize.y / 3;
                                         }
@@ -7922,6 +7947,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             } else if (webDocument != null) {
                                 /*TODO*/
                                 photoImage.setImage(ImageLocation.getForWebFile(webDocument), currentPhotoFilter, null, null, webDocument.size, null, messageObject, 1);
+                            } else if (directImageUrl != null) {
+                                photoImage.setImage(directImageUrl, currentPhotoFilter, null, null, 0);
                             } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_WALLPAPER) {
                                 if (messageObject.mediaExists) {
                                     photoImage.setImage(ImageLocation.getForDocument(documentAttach), currentPhotoFilter, ImageLocation.getForDocument(currentPhotoObject, document), "b1", 0, "jpg", messageObject, 1);
@@ -7965,17 +7992,30 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
                                 photoImage.setNeedsQualityThumb(true);
                                 photoImage.setShouldGenerateQualityThumb(true);
+                                boolean hasVideoFile = (currentMessageObject.mediaExists || currentMessageObject.attachPathExists);
+                                ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
+                                if (externalVideoPreview != null) {
+                                    hasVideoFile = externalVideoExists(externalVideoPreview) || currentMessageObject.attachPathExists;
+                                }
                                 if (!isSmallImage && !currentMessageObject.isHiddenSensitive() && documentCover == null && SharedConfig.isAutoplayVideo() && !currentMessageObject.isRepostPreview && (!currentMessageObject.hasMediaSpoilers() || currentMessageObject.isMediaSpoilersRevealed || currentMessageObject.revealingMediaSpoilers) && (
-                                    (currentMessageObject.mediaExists || currentMessageObject.attachPathExists) ||
+                                    hasVideoFile ||
                                     messageObject.canStreamVideo() && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject)
                                 )) {
                                     photoImage.setAllowDecodeSingleFrame(true);
                                     photoImage.setAllowStartAnimation(true);
                                     photoImage.startAnimation();
-                                    photoImage.setImage(ImageLocation.getForDocument(documentAttach), ImageLoader.AUTOPLAY_FILTER, ImageLocation.getForObject(currentPhotoObject, photoParentObject), currentPhotoFilter, ImageLocation.getForDocument(currentPhotoObjectThumb, documentAttach), currentPhotoFilterThumb, currentPhotoObjectThumbStripped, documentAttach.size, null, messageObject, 0);
+                                    if (externalVideoPreview != null) {
+                                        setExternalVideoPreviewImage(messageObject, externalVideoPreview, true);
+                                    } else {
+                                        photoImage.setImage(ImageLocation.getForDocument(documentAttach), ImageLoader.AUTOPLAY_FILTER, ImageLocation.getForObject(currentPhotoObject, photoParentObject), currentPhotoFilter, ImageLocation.getForDocument(currentPhotoObjectThumb, documentAttach), currentPhotoFilterThumb, currentPhotoObjectThumbStripped, documentAttach.size, null, messageObject, 0);
+                                    }
                                     autoPlayingMedia = true;
                                 } else {
-                                    if (currentPhotoObjectThumb != null || currentPhotoObjectThumbStripped != null) {
+                                    if (externalVideoPreview != null) {
+                                        photoImage.setAllowStartAnimation(false);
+                                        photoImage.stopAnimation();
+                                        setExternalVideoPreviewImage(messageObject, externalVideoPreview, false);
+                                    } else if (currentPhotoObjectThumb != null || currentPhotoObjectThumbStripped != null) {
                                         photoImage.setImage(ImageLocation.getForObject(currentPhotoObject, photoParentObject), currentPhotoFilter, ImageLocation.getForObject(currentPhotoObjectThumb, photoParentObject), currentPhotoFilterThumb, currentPhotoObjectThumbStripped, 0, null, messageObject, 0);
                                     } else {
                                         photoImage.setImage(null, null, ImageLocation.getForObject(currentPhotoObject, photoParentObject), currentPhotoObject instanceof TLRPC.TL_photoStrippedSize || "s".equals(currentPhotoObject.type) ? currentPhotoFilterThumb : currentPhotoFilter, currentPhotoObjectThumbStripped, 0, null, messageObject, 0);
@@ -16442,10 +16482,83 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
     }
 
+    private ExternalMediaPreviewStore.VideoPreview getExternalVideoPreview() {
+        if (documentAttachType != DOCUMENT_ATTACH_TYPE_VIDEO || currentMessageObject == null || currentMessageObject.messageOwner == null || documentAttach == null) {
+            return null;
+        }
+        if (!(currentMessageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage)) {
+            return null;
+        }
+        TLRPC.WebPage webPage = ((TLRPC.TL_messageMediaWebPage) currentMessageObject.messageOwner.media).webpage;
+        if (webPage == null || !ExternalMediaPreviewStore.isExternalPreviewDocument(webPage.id, documentAttach)) {
+            return null;
+        }
+        return ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+    }
+
+    private ImageLocation getExternalVideoLocation(ExternalMediaPreviewStore.VideoPreview preview) {
+        return preview == null ? null : ImageLocation.getForWebFile(preview.videoWebFile);
+    }
+
+    private ImageLocation getExternalPosterLocation(ExternalMediaPreviewStore.VideoPreview preview) {
+        if (preview != null && preview.posterWebFile != null) {
+            return ImageLocation.getForWebFile(preview.posterWebFile);
+        }
+        if (currentPhotoObject != null) {
+            return ImageLocation.getForObject(currentPhotoObject, photoParentObject);
+        }
+        if (currentPhotoObjectThumb != null) {
+            return ImageLocation.getForObject(currentPhotoObjectThumb, photoParentObject);
+        }
+        return null;
+    }
+
+    private ImageLocation getExternalThumbLocation() {
+        return currentPhotoObjectThumb == null ? null : ImageLocation.getForObject(currentPhotoObjectThumb, photoParentObject);
+    }
+
+    private boolean isCustomExternalPreviewSite(CharSequence siteName) {
+        return siteName != null && ExternalLinkRouter.isExternalPreviewSite(siteName.toString());
+    }
+
+    private String getExternalPosterFilter() {
+        if (currentPhotoObject instanceof TLRPC.TL_photoStrippedSize || currentPhotoObject != null && "s".equals(currentPhotoObject.type)) {
+            return currentPhotoFilterThumb;
+        }
+        return currentPhotoFilter != null ? currentPhotoFilter : currentPhotoFilterThumb;
+    }
+
+    private boolean externalVideoExists(ExternalMediaPreviewStore.VideoPreview preview) {
+        ImageLocation videoLocation = getExternalVideoLocation(preview);
+        return videoLocation != null && FileLoader.getInstance(currentAccount).getLocalFile(videoLocation) != null;
+    }
+
+    private void setExternalVideoPreviewImage(MessageObject messageObject, ExternalMediaPreviewStore.VideoPreview preview, boolean autoplay) {
+        ImageLocation posterLocation = getExternalPosterLocation(preview);
+        ImageLocation thumbLocation = getExternalThumbLocation();
+        String posterFilter = getExternalPosterFilter();
+        String thumbFilter = currentPhotoFilterThumb != null ? currentPhotoFilterThumb : posterFilter;
+        if (autoplay) {
+            ImageLocation videoLocation = getExternalVideoLocation(preview);
+            if (videoLocation != null) {
+                photoImage.setImage(videoLocation, ImageLoader.AUTOPLAY_FILTER, posterLocation, posterFilter, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, preview.videoWebFile != null ? preview.videoWebFile.size : 0, null, messageObject, 1);
+                return;
+            }
+        }
+        if (posterLocation != null) {
+            photoImage.setImage(posterLocation, posterFilter, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, 0, null, messageObject, 1);
+        } else if (thumbLocation != null || currentPhotoObjectThumbStripped != null) {
+            photoImage.setImage(null, null, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, 0, null, messageObject, 0);
+        } else {
+            photoImage.setImageBitmap((Drawable) null);
+        }
+    }
+
     public void updateButtonState(boolean ifSame, boolean animated, boolean fromSet) {
         if (currentMessageObject == null) {
             return;
         }
+        ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
         if (currentMessageObject.type == MessageObject.TYPE_STORY && currentMessageObject.isVideoStory()) {
             buttonState = 2;
             getIconForCurrentState();
@@ -16481,6 +16594,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             if (currentMessageObject.attachPathExists && !TextUtils.isEmpty(currentMessageObject.messageOwner.attachPath)) {
                 fileName = currentMessageObject.messageOwner.attachPath;
                 fileExists = true;
+            } else if (externalVideoPreview != null) {
+                fileName = FileLoader.getAttachFileName(externalVideoPreview.videoWebFile);
+                fileExists = externalVideoExists(externalVideoPreview);
             } else if (!currentMessageObject.isSendError() || documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO || documentAttachType == DOCUMENT_ATTACH_TYPE_MUSIC) {
                 fileName = currentMessageObject.getFileName();
 //                currentMessageObject.updateQualitiesCached(true);
@@ -16730,7 +16846,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
                 boolean isLoadingVideo = false;
                 if ((documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO || documentAttachType == DOCUMENT_ATTACH_TYPE_GIF || documentAttachType == DOCUMENT_ATTACH_TYPE_ROUND) && autoPlayingMedia) {
-                    isLoadingVideo = FileLoader.getInstance(currentAccount).isLoadingVideo(documentAttach, MediaController.getInstance().isPlayingMessage(currentMessageObject));
+                    if (externalVideoPreview != null) {
+                        isLoadingVideo = !TextUtils.isEmpty(fileName) && FileLoader.getInstance(currentAccount).isLoadingFile(fileName);
+                    } else {
+                        isLoadingVideo = FileLoader.getInstance(currentAccount).isLoadingVideo(documentAttach, MediaController.getInstance().isPlayingMessage(currentMessageObject));
+                    }
                     AnimatedFileDrawable animation = photoImage.getAnimation();
                     if (animation != null) {
                         if (currentMessageObject.hadAnimationNotReadyLoading) {
@@ -16743,7 +16863,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_GIF && !fileExists) {
                         currentMessageObject.hadAnimationNotReadyLoading = true;
                     } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && !isLoadingVideo) {
-                        String key = ImageLocation.getForDocument(documentAttach).getKey(null, null, false);
+                        ImageLocation imageLocation = externalVideoPreview != null ? getExternalVideoLocation(externalVideoPreview) : ImageLocation.getForDocument(documentAttach);
+                        String key = imageLocation != null ? imageLocation.getKey(null, null, false) : null;
                         if (key != null) {
                             isLoadingVideo = ImageLoader.getInstance().imageLoadingKeys.contains(key);
                         }
@@ -16890,6 +17011,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private void didPressMiniButton(boolean animated) {
+        ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
         if (miniButtonState == 0) {
             miniButtonState = 1;
             radialProgress.setProgress(0, false);
@@ -16901,7 +17023,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 currentMessageObject.loadingCancelled = false;
             } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO || documentAttachType == DOCUMENT_ATTACH_TYPE_ROUND) {
                 createLoadingProgressLayout(documentAttach);
-                FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL_UP, currentMessageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
+                if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && externalVideoPreview != null) {
+                    FileLoader.getInstance(currentAccount).loadFile(externalVideoPreview.videoWebFile, FileLoader.PRIORITY_NORMAL_UP, 1);
+                } else {
+                    FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL_UP, currentMessageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
+                }
                 currentMessageObject.loadingCancelled = false;
             }
             radialProgress.setMiniIcon(getMiniIconForCurrentState(), false, true);
@@ -16914,13 +17040,18 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
             miniButtonState = 0;
             currentMessageObject.loadingCancelled = true;
-            FileLoader.getInstance(currentAccount).cancelLoadFile(documentAttach);
+            if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && externalVideoPreview != null) {
+                FileLoader.getInstance(currentAccount).cancelLoadFile(externalVideoPreview.videoWebFile);
+            } else {
+                FileLoader.getInstance(currentAccount).cancelLoadFile(documentAttach);
+            }
             radialProgress.setMiniIcon(getMiniIconForCurrentState(), false, true);
             invalidate();
         }
     }
 
     private void didPressButton(boolean animated, boolean video) {
+        ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
         if (delegate != null && currentMessageObject.isSensitive() && currentMessageObject.hasMediaSpoilers() && !currentMessageObject.needDrawBluredPreview() && !currentMessageObject.isMediaSpoilersRevealed) {
             delegate.didPressRevealSensitiveContent(this);
             return;
@@ -16986,7 +17117,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         createLoadingProgressLayout(documentAttach);
                     }
                 } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
-                    FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL, cacheType);
+                    if (externalVideoPreview != null) {
+                        FileLoader.getInstance(currentAccount).loadFile(externalVideoPreview.videoWebFile, FileLoader.PRIORITY_NORMAL, 1);
+                    } else {
+                        FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL, cacheType);
+                    }
                     if (currentMessageObject.loadedFileSize > 0) {
                         createLoadingProgressLayout(currentMessageObject.getDocument());
                     }
@@ -17038,7 +17173,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT ||
                         documentAttachType == DOCUMENT_ATTACH_TYPE_WALLPAPER
                     ) {
-                        FileLoader.getInstance(currentAccount).cancelLoadFile(documentAttach);
+                        if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && externalVideoPreview != null) {
+                            FileLoader.getInstance(currentAccount).cancelLoadFile(externalVideoPreview.videoWebFile);
+                        } else {
+                            FileLoader.getInstance(currentAccount).cancelLoadFile(documentAttach);
+                        }
                     } else if (
                         currentMessageObject.type == MessageObject.TYPE_TEXT ||
                         currentMessageObject.type == MessageObject.TYPE_PHOTO ||
@@ -17138,6 +17277,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     @Override
     public void onSuccessDownload(String fileName) {
+        ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
         if (documentAttachType == DOCUMENT_ATTACH_TYPE_STICKER && currentMessageObject.isDice()) {
             DownloadController.getInstance(currentAccount).removeLoadingFileObserver(this);
             setCurrentDiceValue(true);
@@ -17157,6 +17297,23 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     photoImage.setAllowStartAnimation(true);
                     photoImage.startAnimation();
                     autoPlayingMedia = true;
+                } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && externalVideoPreview != null) {
+                    if (!isSmallImage && !currentMessageObject.isHiddenSensitive() && !currentMessageObject.hasVideoCover() && SharedConfig.isAutoplayVideo() && !currentMessageObject.isRepostPreview && (currentPosition == null || (currentPosition.flags & MessageObject.POSITION_FLAG_LEFT) != 0 && (currentPosition.flags & MessageObject.POSITION_FLAG_RIGHT) != 0)) {
+                        animatingNoSound = 2;
+                        photoImage.setAllowDecodeSingleFrame(true);
+                        setExternalVideoPreviewImage(currentMessageObject, externalVideoPreview, true);
+                        if (!PhotoViewer.isPlayingMessage(currentMessageObject)) {
+                            photoImage.setAllowStartAnimation(true);
+                            photoImage.startAnimation();
+                        } else {
+                            photoImage.setAllowStartAnimation(false);
+                        }
+                        autoPlayingMedia = true;
+                    } else {
+                        photoImage.setAllowStartAnimation(false);
+                        photoImage.stopAnimation();
+                        setExternalVideoPreviewImage(currentMessageObject, externalVideoPreview, false);
+                    }
                 } else if (!isSmallImage && !currentMessageObject.isHiddenSensitive() && !currentMessageObject.hasVideoCover() && SharedConfig.isAutoplayVideo() && !currentMessageObject.isRepostPreview && documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && (currentPosition == null || (currentPosition.flags & MessageObject.POSITION_FLAG_LEFT) != 0 && (currentPosition.flags & MessageObject.POSITION_FLAG_RIGHT) != 0)) {
                     animatingNoSound = 2;
                     if (currentMessageObject.cachedQuality != null) {

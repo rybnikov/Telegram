@@ -1412,6 +1412,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 SharedConfig.canBlurChat() && Build.VERSION.SDK_INT >= 31 ? SharedConfig.useNewBlur ? "back to cpu blur" : "use new gpu blur" : null,
                 SharedConfig.adaptableColorInBrowser ? "Disabled adaptive browser colors" : "Enable adaptive browser colors",
                 SharedConfig.debugVideoQualities ? "Disable video qualities debug" : "Enable video qualities debug",
+                SharedConfig.youtubeAutoSkipAds ? getString(R.string.DebugMenuDisableYoutubeAdSkip) : getString(R.string.DebugMenuEnableYoutubeAdSkip),
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? getString(SharedConfig.useSystemBoldFont ? R.string.DebugMenuDontUseSystemBoldFont : R.string.DebugMenuUseSystemBoldFont) : null,
                 "Reload app config",
                 !SharedConfig.forceForumTabs ? "Force Forum Tabs" : "Do Not Force Forum Tabs",
@@ -1706,21 +1707,23 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             } else if (which == 33) {
                 SharedConfig.toggleDebugVideoQualities();
             } else if (which == 34) {
-                SharedConfig.toggleUseSystemBoldFont();
+                SharedConfig.toggleYoutubeAutoSkipAds();
             } else if (which == 35) {
-                MessagesController.getInstance(currentAccount).loadAppConfig(true);
+                SharedConfig.toggleUseSystemBoldFont();
             } else if (which == 36) {
-                SharedConfig.toggleForceForumTabs();
+                MessagesController.getInstance(currentAccount).loadAppConfig(true);
             } else if (which == 37) {
-                FileLog.getInstance().dumpMemory(true);
+                SharedConfig.toggleForceForumTabs();
             } else if (which == 38) {
-                SharedConfig.toggleFastWallpaperDisabled();
+                FileLog.getInstance().dumpMemory(true);
             } else if (which == 39) {
+                SharedConfig.toggleFastWallpaperDisabled();
+            } else if (which == 40) {
                 SharedConfig.toggleFrameMetricsEnabled();
                 if (LaunchActivity.instance != null) {
                     LaunchActivity.instance.checkFrameMetrics();
                 }
-            } else if (which == 40) {
+            } else if (which == 41) {
                 final SharedPreferences prefs = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
                 prefs.edit().putBoolean("shadowsInSections", SharedConfig.shadowsInSections = !SharedConfig.shadowsInSections).apply();
             }

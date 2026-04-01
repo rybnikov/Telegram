@@ -288,7 +288,9 @@ public class SharedConfig {
     public static boolean customTabs = true;
     public static boolean inappBrowser = true;
     public static boolean hideBottomPanel = false;
+    public static boolean extendedPreviews = true;
     public static boolean adaptableColorInBrowser = true;
+    public static boolean youtubeAutoSkipAds = true;
     public static boolean onlyLocalInstantView = false;
     public static boolean directShare = true;
     public static boolean inappCamera = true;
@@ -597,7 +599,9 @@ public class SharedConfig {
             customTabs = preferences.getBoolean("custom_tabs", true);
             inappBrowser = preferences.getBoolean("inapp_browser", true);
             hideBottomPanel = preferences.getBoolean("hideBottomPanel", false);
+            extendedPreviews = preferences.getBoolean("extendedPreviews", true);
             adaptableColorInBrowser = preferences.getBoolean("adaptableBrowser", false);
+            youtubeAutoSkipAds = preferences.getBoolean("youtubeAutoSkipAds", true);
             onlyLocalInstantView = preferences.getBoolean("onlyLocalInstantView", BuildVars.DEBUG_PRIVATE_VERSION);
             directShare = preferences.getBoolean("direct_share", true);
             shuffleMusic = preferences.getBoolean("shuffleMusic", false);
@@ -1290,6 +1294,14 @@ public class SharedConfig {
         editor.apply();
     }
 
+    public static void toggleExtendedPreviews() {
+        extendedPreviews = !extendedPreviews;
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("extendedPreviews", extendedPreviews);
+        editor.apply();
+    }
+
     public static void toggleHideBottomPanel() {
         hideBottomPanel = !hideBottomPanel;
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
@@ -1304,6 +1316,14 @@ public class SharedConfig {
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         SharedPreferences.Editor editor = preferences.edit();
         editor.putBoolean("adaptableBrowser", adaptableColorInBrowser);
+        editor.apply();
+    }
+
+    public static void toggleYoutubeAutoSkipAds() {
+        youtubeAutoSkipAds = !youtubeAutoSkipAds;
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("youtubeAutoSkipAds", youtubeAutoSkipAds);
         editor.apply();
     }
 

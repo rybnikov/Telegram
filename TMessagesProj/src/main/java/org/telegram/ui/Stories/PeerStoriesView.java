@@ -8113,7 +8113,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
        // public ReplaceableIconDrawable muteDrawable;
         public RLottieDrawable muteDrawable;
 
-        SharedResources(Context context) {
+        public SharedResources(Context context) {
             shareDrawable = ContextCompat.getDrawable(context, R.drawable.media_share);
             likeDrawable = ContextCompat.getDrawable(context, R.drawable.media_like);
             repostDrawable = ContextCompat.getDrawable(context, R.drawable.media_repost);
