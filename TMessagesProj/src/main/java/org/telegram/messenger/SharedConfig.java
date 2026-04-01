@@ -290,6 +290,7 @@ public class SharedConfig {
     public static boolean hideBottomPanel = false;
     public static boolean extendedPreviews = true;
     public static boolean adaptableColorInBrowser = true;
+    public static boolean youtubeAutoSkipAds = true;
     public static boolean onlyLocalInstantView = false;
     public static boolean directShare = true;
     public static boolean inappCamera = true;
@@ -600,6 +601,7 @@ public class SharedConfig {
             hideBottomPanel = preferences.getBoolean("hideBottomPanel", false);
             extendedPreviews = preferences.getBoolean("extendedPreviews", true);
             adaptableColorInBrowser = preferences.getBoolean("adaptableBrowser", false);
+            youtubeAutoSkipAds = preferences.getBoolean("youtubeAutoSkipAds", true);
             onlyLocalInstantView = preferences.getBoolean("onlyLocalInstantView", BuildVars.DEBUG_PRIVATE_VERSION);
             directShare = preferences.getBoolean("direct_share", true);
             shuffleMusic = preferences.getBoolean("shuffleMusic", false);
@@ -1314,6 +1316,14 @@ public class SharedConfig {
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         SharedPreferences.Editor editor = preferences.edit();
         editor.putBoolean("adaptableBrowser", adaptableColorInBrowser);
+        editor.apply();
+    }
+
+    public static void toggleYoutubeAutoSkipAds() {
+        youtubeAutoSkipAds = !youtubeAutoSkipAds;
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("youtubeAutoSkipAds", youtubeAutoSkipAds);
         editor.apply();
     }
 
