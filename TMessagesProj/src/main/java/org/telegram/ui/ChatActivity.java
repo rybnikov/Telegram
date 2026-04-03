@@ -78,6 +78,7 @@ import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.ImageSpan;
 import android.text.style.URLSpan;
+import android.util.Log;
 import android.util.Pair;
 import android.util.Property;
 import android.util.SparseArray;
@@ -22797,10 +22798,32 @@ public class ChatActivity extends BaseFragment implements
                 }
                 MessageObject currentMessage = messagesDict[did == dialog_id ? 0 : 1].get(message.id);
                 if (currentMessage != null) {
+                    if (BuildVars.DEBUG_PRIVATE_VERSION && BuildVars.LOGS_ENABLED) {
+                        Log.d("tmessages", "Chat didReceivedWebpages update mid=" + message.id
+                            + " did=" + did
+                            + " currentMedia=" + (currentMessage.messageOwner.media != null ? currentMessage.messageOwner.media.getClass().getSimpleName() : "null")
+                            + " incomingWebPage=" + (message.media != null && message.media.webpage != null ? message.media.webpage.getClass().getSimpleName() : "null")
+                            + " site=" + (message.media != null && message.media.webpage != null ? message.media.webpage.site_name : "null"));
+                    }
                     currentMessage.messageOwner.media = new TLRPC.TL_messageMediaWebPage();
                     currentMessage.messageOwner.media.webpage = message.media.webpage;
                     currentMessage.generateThumbs(true);
+                    currentMessage.forceUpdate = true;
+                    currentMessage.setType();
+                    if (chatAdapter != null) {
+                        chatAdapter.updateRowWithMessageObject(currentMessage, false, false);
+                    }
                     updated = true;
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("Chat didReceivedWebpages updated mid=" + message.id + " did=" + did + " type=" + currentMessage.type + " site=" + (message.media != null && message.media.webpage != null ? message.media.webpage.site_name : "null"));
+                    }
+                } else {
+                    if (BuildVars.DEBUG_PRIVATE_VERSION && BuildVars.LOGS_ENABLED) {
+                        Log.d("tmessages", "Chat didReceivedWebpages missing mid=" + message.id + " did=" + did);
+                    }
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("Chat didReceivedWebpages missing mid=" + message.id + " did=" + did);
+                    }
                 }
             }
             if (updated) {
@@ -38986,6 +39009,9 @@ public class ChatActivity extends BaseFragment implements
             };
             Browser.Progress currentProgress = progressDialogCurrent;
             if (ExternalLinkRouter.openCachedPreview(getContext(), uri)) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("Chat didPressWebPage cache hit " + url);
+                }
                 if (currentProgress != null) {
                     currentProgress.end(true);
                 }
@@ -39008,7 +39034,13 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
             )) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("Chat didPressWebPage handled by external router " + url);
+                }
                 return;
+            }
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("Chat didPressWebPage fallback browser/alert " + url);
             }
             if (!safe && !Browser.isInternalUri(uri, null)) {
                 AlertsCreator.showOpenUrlAlert(ChatActivity.this, url, true, true, true, !safe, progressDialogCurrent, themeDelegate);
@@ -39658,6 +39690,9 @@ public class ChatActivity extends BaseFragment implements
                 // External preview button (Instagram Reel, TikTok, Pinterest)
                 if (messageObject != null) {
                     if (ExternalLinkRouter.openCachedPreview(getContext(), messageObject.messageOwner)) {
+                        if (BuildVars.LOGS_ENABLED) {
+                            FileLog.d("Chat instant preview cache hit mid=" + messageObject.getId());
+                        }
                         return;
                     }
                     // Cache cold — resolve and open from URL
@@ -39665,8 +39700,14 @@ public class ChatActivity extends BaseFragment implements
                     if (wp != null && wp.url != null) {
                         Uri uri = Uri.parse(wp.url);
                         boolean handled = ExternalLinkRouter.tryOpen(getContext(), uri, fallbackUri -> {
+                            if (BuildVars.LOGS_ENABLED) {
+                                FileLog.d("Chat instant preview fallback " + fallbackUri + " mid=" + messageObject.getId());
+                            }
                             Browser.openUrl(getContext(), fallbackUri, true, true, false, null, null, false, true, false);
                         }, null);
+                        if (BuildVars.LOGS_ENABLED) {
+                            FileLog.d("Chat instant preview handled=" + handled + " mid=" + messageObject.getId() + " url=" + wp.url);
+                        }
                         if (!handled) {
                             Browser.openUrl(getContext(), uri, true, true, false, null, null, false, true, false);
                         }

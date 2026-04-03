@@ -22,6 +22,7 @@ import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
+import android.util.Log;
 import android.util.Pair;
 import android.util.SparseArray;
 import android.util.SparseIntArray;
@@ -111,7 +112,7 @@ public class MessagesStorage extends BaseController {
         }
     }
 
-    public final static int LAST_DB_VERSION = 168;
+    public final static int LAST_DB_VERSION = 169;
     private boolean databaseMigrationInProgress;
     public boolean showClearDatabaseAlert;
 
@@ -522,7 +523,8 @@ public class MessagesStorage extends BaseController {
             "topics",
             "media_counts_topics",
             "reaction_mentions_topics",
-            "emoji_groups"
+            "emoji_groups",
+            "external_previews_v1"
     };
 
     public static void createTables(SQLiteDatabase database) throws SQLiteException {
@@ -725,6 +727,8 @@ public class MessagesStorage extends BaseController {
         database.executeFast("CREATE TABLE unconfirmed_auth (data BLOB);").stepThis().dispose();
 
         database.executeFast("CREATE TABLE saved_reaction_tags (topic_id INTEGER PRIMARY KEY, data BLOB);").stepThis().dispose();
+        database.executeFast("CREATE TABLE external_previews_v1(id INTEGER PRIMARY KEY, canonical_url TEXT NOT NULL UNIQUE, platform TEXT NOT NULL, webpage BLOB NOT NULL, preview_kind INTEGER NOT NULL, media_url TEXT, poster_url TEXT, width INTEGER, height INTEGER, title TEXT, description TEXT, updated_at INTEGER NOT NULL);").stepThis().dispose();
+        database.executeFast("CREATE INDEX IF NOT EXISTS external_previews_v1_updated_at_idx ON external_previews_v1(updated_at);").stepThis().dispose();
 
         database.executeFast("CREATE TABLE tag_message_id(mid INTEGER, topic_id INTEGER, tag INTEGER, text TEXT);").stepThis().dispose();
         database.executeFast("CREATE INDEX IF NOT EXISTS tag_idx_tag_message_id ON tag_message_id(tag);").stepThis().dispose();
@@ -10846,10 +10850,9 @@ public class MessagesStorage extends BaseController {
         }
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;
-            SQLitePreparedStatement state = null;
-            SQLitePreparedStatement state2 = null;
+            SQLitePreparedStatement deletePendingState = null;
             try {
-                ArrayList<TLRPC.Message> messages = new ArrayList<>();
+                ArrayList<StoredWebPageTarget> targets = new ArrayList<>();
                 for (int a = 0, N = webPages.size(); a < N; a++) {
                     cursor = database.queryFinalized("SELECT mid, uid FROM webpage_pending_v2 WHERE id = " + webPages.keyAt(a));
                     LongSparseArray<ArrayList<Integer>> dialogs = new LongSparseArray<>();
@@ -10880,9 +10883,26 @@ public class MessagesStorage extends BaseController {
                                 message.readAttachPath(data, getUserConfig().clientUserId);
                                 data.reuse();
                                 if (message.media instanceof TLRPC.TL_messageMediaWebPage) {
-                                    message.id = mid;
                                     message.media.webpage = webPages.valueAt(a);
-                                    messages.add(message);
+                                    targets.add(new StoredWebPageTarget(mid, dialogId, 0, false, message));
+                                }
+                            }
+                        }
+                        cursor.dispose();
+                        cursor = null;
+
+                        cursor = database.queryFinalized(String.format(Locale.US, "SELECT mid, topic_id, data FROM messages_topics WHERE mid IN (%s) AND uid = %d", TextUtils.join(",", mids), dialogId));
+                        while (cursor.next()) {
+                            int mid = cursor.intValue(0);
+                            long topicId = cursor.longValue(1);
+                            NativeByteBuffer data = cursor.byteBufferValue(2);
+                            if (data != null) {
+                                TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                                message.readAttachPath(data, getUserConfig().clientUserId);
+                                data.reuse();
+                                if (message.media instanceof TLRPC.TL_messageMediaWebPage) {
+                                    message.media.webpage = webPages.valueAt(a);
+                                    targets.add(new StoredWebPageTarget(mid, dialogId, topicId, true, message));
                                 }
                             }
                         }
@@ -10891,41 +10911,25 @@ public class MessagesStorage extends BaseController {
                     }
                 }
 
-                if (messages.isEmpty()) {
+                if (targets.isEmpty()) {
                     return;
                 }
 
-                database.beginTransaction();
-
-                state = database.executeFast("UPDATE messages_v2 SET data = ? WHERE mid = ? AND uid = ?");
-                state2 = database.executeFast("UPDATE media_v4 SET data = ? WHERE mid = ? AND uid = ?");
-                for (int a = 0; a < messages.size(); a++) {
-                    TLRPC.Message message = messages.get(a);
-                    MessageObject.normalizeFlags(message);
-                    NativeByteBuffer data = new NativeByteBuffer(message.getObjectSize());
-                    message.serializeToStream(data);
-
-                    state.requery();
-                    state.bindByteBuffer(1, data);
-                    state.bindInteger(2, message.id);
-                    state.bindLong(3, MessageObject.getDialogId(message));
-                    state.step();
-
-                    state2.requery();
-                    state2.bindByteBuffer(1, data);
-                    state2.bindInteger(2, message.id);
-                    state2.bindLong(3, MessageObject.getDialogId(message));
-                    state2.step();
-
-                    data.reuse();
+                persistStoredWebPageTargets(targets);
+                deletePendingState = database.executeFast("DELETE FROM webpage_pending_v2 WHERE mid = ? AND uid = ?");
+                for (int i = 0; i < targets.size(); i++) {
+                    StoredWebPageTarget target = targets.get(i);
+                    deletePendingState.requery();
+                    deletePendingState.bindInteger(1, target.messageId);
+                    deletePendingState.bindLong(2, target.dialogId);
+                    deletePendingState.step();
                 }
-                state.dispose();
-                state = null;
-                state2.dispose();
-                state2 = null;
-
-                database.commitTransaction();
-
+                deletePendingState.dispose();
+                deletePendingState = null;
+                ArrayList<TLRPC.Message> messages = new ArrayList<>(targets.size());
+                for (int i = 0; i < targets.size(); i++) {
+                    messages.add(targets.get(i).message);
+                }
                 AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.didReceivedWebpages, messages));
             } catch (Exception e) {
                 checkSQLException(e);
@@ -10933,17 +10937,534 @@ public class MessagesStorage extends BaseController {
                 if (cursor != null) {
                     cursor.dispose();
                 }
-                if (state != null) {
-                    state.dispose();
-                }
-                if (state2 != null) {
-                    state2.dispose();
+                if (deletePendingState != null) {
+                    deletePendingState.dispose();
                 }
                 if (database != null) {
                     database.commitTransaction();
                 }
             }
         });
+    }
+
+    private static final int EXTERNAL_PREVIEW_RETENTION_SECONDS = 30 * 24 * 60 * 60;
+    private static final int EXTERNAL_PREVIEW_TOUCH_INTERVAL_SECONDS = 6 * 60 * 60;
+    private static final int EXTERNAL_PREVIEW_MAX_ROWS = 1000;
+    public static final int EXTERNAL_PREVIEW_KIND_IMAGE = 0;
+    public static final int EXTERNAL_PREVIEW_KIND_VIDEO = 1;
+    public static final int EXTERNAL_PREVIEW_KIND_PREVIEW = 2;
+
+    public void putExternalPreview(ExternalPreviewRecord preview) {
+        if (preview == null || TextUtils.isEmpty(preview.canonicalUrl) || preview.webPage == null) {
+            return;
+        }
+        storageQueue.postRunnable(() -> {
+            SQLitePreparedStatement state = null;
+            try {
+                logExternalPreviewStorage("put start id=" + preview.webPageId + " kind=" + preview.previewKind + " url=" + preview.canonicalUrl);
+                NativeByteBuffer data = new NativeByteBuffer(preview.webPage.getObjectSize());
+                preview.webPage.serializeToStream(data);
+
+                state = database.executeFast("REPLACE INTO external_previews_v1 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                state.bindLong(1, preview.webPageId);
+                state.bindString(2, preview.canonicalUrl);
+                state.bindString(3, preview.platform);
+                state.bindByteBuffer(4, data);
+                state.bindInteger(5, preview.previewKind);
+                bindStringOrNull(state, 6, preview.mediaUrl);
+                bindStringOrNull(state, 7, preview.posterUrl);
+                state.bindInteger(8, preview.width);
+                state.bindInteger(9, preview.height);
+                bindStringOrNull(state, 10, preview.title);
+                bindStringOrNull(state, 11, preview.description);
+                state.bindLong(12, System.currentTimeMillis() / 1000L);
+                state.step();
+                data.reuse();
+                state.dispose();
+                state = null;
+
+                logExternalPreviewStorage("put success id=" + preview.webPageId + " kind=" + preview.previewKind + " url=" + preview.canonicalUrl);
+                pruneExternalPreviewsLocked();
+            } catch (Exception e) {
+                logExternalPreviewStorage("put failed url=" + preview.canonicalUrl + " error=" + e.getClass().getSimpleName() + ":" + e.getMessage());
+                checkSQLException(e);
+            } finally {
+                if (state != null) {
+                    state.dispose();
+                }
+            }
+        });
+    }
+
+    public void getExternalPreview(String canonicalUrl, Utilities.Callback<ExternalPreviewRecord> onComplete) {
+        if (TextUtils.isEmpty(canonicalUrl)) {
+            if (onComplete != null) {
+                AndroidUtilities.runOnUIThread(() -> onComplete.run(null));
+            }
+            return;
+        }
+        storageQueue.postRunnable(() -> {
+            SQLiteCursor cursor = null;
+            SQLitePreparedStatement touchState = null;
+            ExternalPreviewRecord result = null;
+            try {
+                logExternalPreviewStorage("get start url=" + canonicalUrl);
+                cursor = database.queryFinalized("SELECT id, platform, webpage, preview_kind, media_url, poster_url, width, height, title, description, updated_at FROM external_previews_v1 WHERE canonical_url = ?", canonicalUrl);
+                long now = System.currentTimeMillis() / 1000L;
+                if (cursor.next()) {
+                    NativeByteBuffer data = cursor.byteBufferValue(2);
+                    if (data != null) {
+                        TLRPC.WebPage webPage = TLRPC.WebPage.TLdeserialize(data, data.readInt32(false), false);
+                        data.reuse();
+                        if (webPage != null) {
+                            result = new ExternalPreviewRecord(
+                                cursor.longValue(0),
+                                canonicalUrl,
+                                cursor.stringValue(1),
+                                webPage,
+                                cursor.intValue(3),
+                                cursor.stringValue(4),
+                                cursor.stringValue(5),
+                                cursor.intValue(6),
+                                cursor.intValue(7),
+                                cursor.stringValue(8),
+                                cursor.stringValue(9)
+                            );
+                            long updatedAt = cursor.longValue(10);
+                            if (now - updatedAt >= EXTERNAL_PREVIEW_TOUCH_INTERVAL_SECONDS) {
+                                touchState = database.executeFast("UPDATE external_previews_v1 SET updated_at = ? WHERE id = ?");
+                                touchState.bindLong(1, now);
+                                touchState.bindLong(2, result.webPageId);
+                                touchState.step();
+                                touchState.dispose();
+                                touchState = null;
+                            }
+                        }
+                    }
+                }
+                if (cursor != null) {
+                    cursor.dispose();
+                    cursor = null;
+                }
+                if (result != null) {
+                    logExternalPreviewStorage("get hit id=" + result.webPageId + " kind=" + result.previewKind + " url=" + canonicalUrl);
+                } else {
+                    logExternalPreviewStorage("get miss url=" + canonicalUrl);
+                }
+            } catch (Exception e) {
+                logExternalPreviewStorage("get failed url=" + canonicalUrl + " error=" + e.getClass().getSimpleName() + ":" + e.getMessage());
+                checkSQLException(e);
+            } finally {
+                if (cursor != null) {
+                    cursor.dispose();
+                }
+                if (touchState != null) {
+                    touchState.dispose();
+                }
+            }
+            ExternalPreviewRecord callbackResult = result;
+            if (onComplete != null) {
+                AndroidUtilities.runOnUIThread(() -> onComplete.run(callbackResult));
+            }
+        });
+    }
+
+    public void clearBrokenLocalPreviewPendingState(Utilities.Callback<ExternalPreviewResetResult> onComplete) {
+        storageQueue.postRunnable(() -> {
+            int clearedExternalPreviews = clearExternalPreviewCacheLocked();
+            int clearedLegacyRows = cleanupLegacyLocalPreviewStateLocked();
+            if (onComplete != null) {
+                AndroidUtilities.runOnUIThread(() -> onComplete.run(new ExternalPreviewResetResult(clearedExternalPreviews, clearedLegacyRows)));
+            }
+        });
+    }
+
+    public void cleanupLegacyLocalPreviewState(Utilities.Callback<Integer> onComplete) {
+        storageQueue.postRunnable(() -> {
+            int result = cleanupLegacyLocalPreviewStateLocked();
+            if (onComplete != null) {
+                AndroidUtilities.runOnUIThread(() -> onComplete.run(result));
+            }
+        });
+    }
+
+    private int cleanupLegacyLocalPreviewStateLocked() {
+        SQLiteCursor cursor = null;
+        SQLitePreparedStatement updateMessageState = null;
+        SQLitePreparedStatement updateTopicMessageState = null;
+        SQLitePreparedStatement deleteMediaState = null;
+        SQLitePreparedStatement deleteMediaTopicState = null;
+        SQLitePreparedStatement deletePendingState = null;
+        int fixedCount = 0;
+        try {
+            LinkedHashMap<String, PendingStateGroup> pendingGroups = new LinkedHashMap<>();
+            cursor = database.queryFinalized("SELECT id, mid, uid FROM webpage_pending_v2 ORDER BY mid, uid");
+            while (cursor.next()) {
+                long webPageId = cursor.longValue(0);
+                int messageId = cursor.intValue(1);
+                long dialogId = cursor.longValue(2);
+                String key = messageId + "_" + dialogId;
+                PendingStateGroup group = pendingGroups.get(key);
+                if (group == null) {
+                    group = new PendingStateGroup(messageId, dialogId);
+                    pendingGroups.put(key, group);
+                }
+                if (!group.webPageIds.contains(webPageId)) {
+                    group.webPageIds.add(webPageId);
+                }
+            }
+            if (cursor != null) {
+                cursor.dispose();
+                cursor = null;
+            }
+
+            ArrayList<StoredWebPageTarget> targets = new ArrayList<>();
+            ArrayList<PendingStateGroup> groupsToDelete = new ArrayList<>();
+            for (PendingStateGroup group : pendingGroups.values()) {
+                ArrayList<StoredWebPageTarget> candidateTargets = new ArrayList<>();
+                loadStoredWebPageTargets(candidateTargets, group.messageId, group.dialogId);
+                boolean shouldDeletePending = !candidateTargets.isEmpty();
+                for (int i = 0; i < candidateTargets.size(); i++) {
+                    StoredWebPageTarget target = candidateTargets.get(i);
+                    if (!hasAnyStoredWebPage(target.message, group.webPageIds, false)) {
+                        clearWebPageFromStoredMessage(target.message);
+                        targets.add(target);
+                    }
+                }
+                if (shouldDeletePending || candidateTargets.isEmpty()) {
+                    groupsToDelete.add(group);
+                }
+            }
+
+            if (!targets.isEmpty() || !groupsToDelete.isEmpty()) {
+                database.beginTransaction();
+                updateMessageState = database.executeFast("UPDATE messages_v2 SET data = ? WHERE mid = ? AND uid = ?");
+                updateTopicMessageState = database.executeFast("UPDATE messages_topics SET data = ? WHERE mid = ? AND uid = ? AND topic_id = ?");
+                deleteMediaState = database.executeFast("DELETE FROM media_v4 WHERE mid = ? AND uid = ?");
+                deleteMediaTopicState = database.executeFast("DELETE FROM media_topics WHERE mid = ? AND uid = ? AND topic_id = ?");
+                deletePendingState = database.executeFast("DELETE FROM webpage_pending_v2 WHERE mid = ? AND uid = ?");
+
+                for (int i = 0; i < targets.size(); i++) {
+                    StoredWebPageTarget target = targets.get(i);
+                    TLRPC.Message message = target.message;
+                    prepareStoredWebPageMessage(message, target.messageId, target.dialogId);
+
+                    NativeByteBuffer data = new NativeByteBuffer(message.getObjectSize());
+                    message.serializeToStream(data);
+
+                    if (target.isTopic) {
+                        updateTopicMessageState.requery();
+                        updateTopicMessageState.bindByteBuffer(1, data);
+                        updateTopicMessageState.bindInteger(2, target.messageId);
+                        updateTopicMessageState.bindLong(3, target.dialogId);
+                        updateTopicMessageState.bindLong(4, target.topicId);
+                        updateTopicMessageState.step();
+
+                        deleteMediaTopicState.requery();
+                        deleteMediaTopicState.bindInteger(1, target.messageId);
+                        deleteMediaTopicState.bindLong(2, target.dialogId);
+                        deleteMediaTopicState.bindLong(3, target.topicId);
+                        deleteMediaTopicState.step();
+                    } else {
+                        updateMessageState.requery();
+                        updateMessageState.bindByteBuffer(1, data);
+                        updateMessageState.bindInteger(2, target.messageId);
+                        updateMessageState.bindLong(3, target.dialogId);
+                        updateMessageState.step();
+
+                        deleteMediaState.requery();
+                        deleteMediaState.bindInteger(1, target.messageId);
+                        deleteMediaState.bindLong(2, target.dialogId);
+                        deleteMediaState.step();
+                    }
+
+                    data.reuse();
+                }
+
+                for (int i = 0; i < groupsToDelete.size(); i++) {
+                    PendingStateGroup group = groupsToDelete.get(i);
+                    deletePendingState.requery();
+                    deletePendingState.bindInteger(1, group.messageId);
+                    deletePendingState.bindLong(2, group.dialogId);
+                    deletePendingState.step();
+                    fixedCount++;
+                }
+                database.commitTransaction();
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+            if (updateMessageState != null) {
+                updateMessageState.dispose();
+            }
+            if (updateTopicMessageState != null) {
+                updateTopicMessageState.dispose();
+            }
+            if (deleteMediaState != null) {
+                deleteMediaState.dispose();
+            }
+            if (deleteMediaTopicState != null) {
+                deleteMediaTopicState.dispose();
+            }
+            if (deletePendingState != null) {
+                deletePendingState.dispose();
+            }
+            if (database != null) {
+                database.commitTransaction();
+            }
+        }
+        return fixedCount;
+    }
+
+    private void loadStoredWebPageTargets(ArrayList<StoredWebPageTarget> targets, int messageId, long dialogId) throws Exception {
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE mid = %d AND uid = %d", messageId, dialogId));
+            while (cursor.next()) {
+                NativeByteBuffer data = cursor.byteBufferValue(0);
+                if (data != null) {
+                    TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                    message.readAttachPath(data, getUserConfig().clientUserId);
+                    data.reuse();
+                    targets.add(new StoredWebPageTarget(messageId, dialogId, 0, false, message));
+                }
+            }
+            cursor.dispose();
+            cursor = null;
+
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT topic_id, data FROM messages_topics WHERE mid = %d AND uid = %d", messageId, dialogId));
+            while (cursor.next()) {
+                long topicId = cursor.longValue(0);
+                NativeByteBuffer data = cursor.byteBufferValue(1);
+                if (data != null) {
+                    TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                    message.readAttachPath(data, getUserConfig().clientUserId);
+                    data.reuse();
+                    targets.add(new StoredWebPageTarget(messageId, dialogId, topicId, true, message));
+                }
+            }
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
+    private void persistStoredWebPageTargets(ArrayList<StoredWebPageTarget> targets) throws Exception {
+        SQLitePreparedStatement updateMessageState = null;
+        SQLitePreparedStatement replaceMessageTopicState = null;
+        SQLitePreparedStatement replaceMediaState = null;
+        SQLitePreparedStatement replaceMediaTopicState = null;
+        try {
+            database.beginTransaction();
+
+            updateMessageState = database.executeFast("UPDATE messages_v2 SET data = ? WHERE mid = ? AND uid = ?");
+            replaceMessageTopicState = database.executeFast("UPDATE messages_topics SET data = ? WHERE mid = ? AND uid = ? AND topic_id = ?");
+            replaceMediaState = database.executeFast("REPLACE INTO media_v4 VALUES(?, ?, ?, ?, ?)");
+            replaceMediaTopicState = database.executeFast("REPLACE INTO media_topics VALUES(?, ?, ?, ?, ?, ?)");
+
+            for (int i = 0; i < targets.size(); i++) {
+                StoredWebPageTarget target = targets.get(i);
+                TLRPC.Message message = target.message;
+                prepareStoredWebPageMessage(message, target.messageId, target.dialogId);
+
+                NativeByteBuffer data = new NativeByteBuffer(message.getObjectSize());
+                message.serializeToStream(data);
+
+                if (target.isTopic) {
+                    replaceMessageTopicState.requery();
+                    replaceMessageTopicState.bindByteBuffer(1, data);
+                    replaceMessageTopicState.bindInteger(2, target.messageId);
+                    replaceMessageTopicState.bindLong(3, target.dialogId);
+                    replaceMessageTopicState.bindLong(4, target.topicId);
+                    replaceMessageTopicState.step();
+
+                    replaceMediaTopicState.requery();
+                    replaceMediaTopicState.bindInteger(1, target.messageId);
+                    replaceMediaTopicState.bindLong(2, target.dialogId);
+                    replaceMediaTopicState.bindLong(3, target.topicId);
+                    replaceMediaTopicState.bindInteger(4, message.date);
+                    replaceMediaTopicState.bindInteger(5, MediaDataController.getMediaType(message));
+                    replaceMediaTopicState.bindByteBuffer(6, data);
+                    replaceMediaTopicState.step();
+                } else {
+                    updateMessageState.requery();
+                    updateMessageState.bindByteBuffer(1, data);
+                    updateMessageState.bindInteger(2, target.messageId);
+                    updateMessageState.bindLong(3, target.dialogId);
+                    updateMessageState.step();
+
+                    replaceMediaState.requery();
+                    replaceMediaState.bindInteger(1, target.messageId);
+                    replaceMediaState.bindLong(2, target.dialogId);
+                    replaceMediaState.bindInteger(3, message.date);
+                    replaceMediaState.bindInteger(4, MediaDataController.getMediaType(message));
+                    replaceMediaState.bindByteBuffer(5, data);
+                    replaceMediaState.step();
+                }
+
+                data.reuse();
+            }
+
+            database.commitTransaction();
+        } finally {
+            if (updateMessageState != null) {
+                updateMessageState.dispose();
+            }
+            if (replaceMessageTopicState != null) {
+                replaceMessageTopicState.dispose();
+            }
+            if (replaceMediaState != null) {
+                replaceMediaState.dispose();
+            }
+            if (replaceMediaTopicState != null) {
+                replaceMediaTopicState.dispose();
+            }
+        }
+    }
+
+    private void prepareStoredWebPageMessage(TLRPC.Message message, int messageId, long dialogId) {
+        message.id = messageId;
+        message.dialog_id = dialogId;
+        if (message.media != null && !(message.media instanceof TLRPC.TL_messageMediaEmpty)) {
+            message.flags |= 512;
+        } else {
+            message.flags &= ~512;
+        }
+        MessageObject.normalizeFlags(message);
+    }
+
+    private void clearWebPageFromStoredMessage(TLRPC.Message message) {
+        message.media = new TLRPC.TL_messageMediaEmpty();
+        message.flags &= ~512;
+        MessageObject.normalizeFlags(message);
+    }
+
+    private boolean hasAnyStoredWebPage(TLRPC.Message message, ArrayList<Long> webPageIds, boolean pending) {
+        for (int i = 0; i < webPageIds.size(); i++) {
+            if (message.media instanceof TLRPC.TL_messageMediaWebPage
+                && message.media.webpage != null
+                && message.media.webpage.id == webPageIds.get(i)
+                && (pending ? message.media.webpage instanceof TLRPC.TL_webPagePending : message.media.webpage instanceof TLRPC.TL_webPage)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int clearExternalPreviewCacheLocked() {
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized("SELECT COUNT(*) FROM external_previews_v1");
+            int count = cursor.next() ? cursor.intValue(0) : 0;
+            cursor.dispose();
+            cursor = null;
+            if (count > 0) {
+                database.executeFast("DELETE FROM external_previews_v1").stepThis().dispose();
+            }
+            return count;
+        } catch (Exception e) {
+            checkSQLException(e);
+            return 0;
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
+    private void pruneExternalPreviewsLocked() {
+        long now = System.currentTimeMillis() / 1000L;
+        long cutoff = now - EXTERNAL_PREVIEW_RETENTION_SECONDS;
+        executeNoException("DELETE FROM external_previews_v1 WHERE updated_at < " + cutoff);
+        executeNoException("DELETE FROM external_previews_v1 WHERE id IN (SELECT id FROM external_previews_v1 ORDER BY updated_at DESC LIMIT -1 OFFSET " + EXTERNAL_PREVIEW_MAX_ROWS + ")");
+    }
+
+    private void bindStringOrNull(SQLitePreparedStatement state, int index, String value) throws Exception {
+        if (value != null) {
+            state.bindString(index, value);
+        } else {
+            state.bindNull(index);
+        }
+    }
+
+    private void logExternalPreviewStorage(String message) {
+        if (!BuildVars.DEBUG_PRIVATE_VERSION && !BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        String line = "ExternalPreviewStorage: " + message;
+        Log.d("tmessages", line);
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d(line);
+        }
+    }
+
+    private static class PendingStateGroup {
+        final int messageId;
+        final long dialogId;
+        final ArrayList<Long> webPageIds = new ArrayList<>();
+
+        PendingStateGroup(int messageId, long dialogId) {
+            this.messageId = messageId;
+            this.dialogId = dialogId;
+        }
+    }
+
+    public static final class ExternalPreviewRecord {
+        public final long webPageId;
+        public final String canonicalUrl;
+        public final String platform;
+        public final TLRPC.WebPage webPage;
+        public final int previewKind;
+        public final String mediaUrl;
+        public final String posterUrl;
+        public final int width;
+        public final int height;
+        public final String title;
+        public final String description;
+
+        public ExternalPreviewRecord(long webPageId, String canonicalUrl, String platform, TLRPC.WebPage webPage, int previewKind, String mediaUrl, String posterUrl, int width, int height, String title, String description) {
+            this.webPageId = webPageId;
+            this.canonicalUrl = canonicalUrl;
+            this.platform = platform;
+            this.webPage = webPage;
+            this.previewKind = previewKind;
+            this.mediaUrl = mediaUrl;
+            this.posterUrl = posterUrl;
+            this.width = width;
+            this.height = height;
+            this.title = title;
+            this.description = description;
+        }
+    }
+
+    public static final class ExternalPreviewResetResult {
+        public final int clearedExternalPreviews;
+        public final int clearedLegacyRows;
+
+        public ExternalPreviewResetResult(int clearedExternalPreviews, int clearedLegacyRows) {
+            this.clearedExternalPreviews = clearedExternalPreviews;
+            this.clearedLegacyRows = clearedLegacyRows;
+        }
+    }
+
+    private static class StoredWebPageTarget {
+        final int messageId;
+        final long dialogId;
+        final long topicId;
+        final boolean isTopic;
+        final TLRPC.Message message;
+
+        StoredWebPageTarget(int messageId, long dialogId, long topicId, boolean isTopic, TLRPC.Message message) {
+            this.messageId = messageId;
+            this.dialogId = dialogId;
+            this.topicId = topicId;
+            this.isTopic = isTopic;
+            this.message = message;
+        }
     }
 
     public void overwriteChannel(long channelId, TLRPC.TL_updates_channelDifferenceTooLong difference, int newDialogType, Runnable onDone) {

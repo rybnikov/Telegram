@@ -29,6 +29,7 @@ import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Layout;
@@ -76,6 +77,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLoader;
@@ -96,6 +98,8 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.browser.external.ExternalLinkRouter;
+import org.telegram.messenger.browser.external.ExternalPreviewManager;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -167,6 +171,7 @@ import java.util.Objects;
 
 @SuppressWarnings("unchecked")
 public class SharedMediaLayout extends FrameLayout implements NotificationCenter.NotificationCenterDelegate, DialogCell.DialogCellDelegate {
+    private static final int LINK_PREVIEW_LOOKAHEAD_COUNT = 8;
 
     private final static boolean SHOW_CONTEXT_VIEW_AS_BUBBLE = true;
 
@@ -1614,6 +1619,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         mediaColumnsCount[1] = overrideColumnsCount() <= 0 ? SharedConfig.storiesColumnsCount : overrideColumnsCount();
 
         profileActivity.getNotificationCenter().addObserver(this, NotificationCenter.mediaDidLoad);
+        profileActivity.getNotificationCenter().addObserver(this, NotificationCenter.didReceivedWebpages);
         profileActivity.getNotificationCenter().addObserver(this, NotificationCenter.messagesDeleted);
         profileActivity.getNotificationCenter().addObserver(this, NotificationCenter.didReceiveNewMessages);
         profileActivity.getNotificationCenter().addObserver(this, NotificationCenter.messageReceivedByServer);
@@ -3297,6 +3303,9 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                 @Override
                 public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
                     scrolling = newState != RecyclerView.SCROLL_STATE_IDLE;
+                    if (mediaPage.selectedType == TAB_LINKS) {
+                        promoteVisibleLinkPreviews((RecyclerListView) recyclerView);
+                    }
                 }
 
                 @Override
@@ -3311,6 +3320,9 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     mediaPage.listView.checkSection(true);
                     if (mediaPage.fastScrollHintView != null) {
                         mediaPage.invalidate();
+                    }
+                    if (mediaPage.selectedType == TAB_LINKS) {
+                        promoteVisibleLinkPreviews((RecyclerListView) recyclerView);
                     }
                     invalidateBlur();
                 }
@@ -4821,6 +4833,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
     public void onDestroy() {
         profileActivity.getNotificationCenter().removeObserver(this, NotificationCenter.mediaDidLoad);
+        profileActivity.getNotificationCenter().removeObserver(this, NotificationCenter.didReceivedWebpages);
         profileActivity.getNotificationCenter().removeObserver(this, NotificationCenter.didReceiveNewMessages);
         profileActivity.getNotificationCenter().removeObserver(this, NotificationCenter.messagesDeleted);
         profileActivity.getNotificationCenter().removeObserver(this, NotificationCenter.messageReceivedByServer);
@@ -5936,6 +5949,9 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     sharedMediaData[type].totalCount = (Integer) args[1];
                 }
                 ArrayList<MessageObject> arr = (ArrayList<MessageObject>) args[2];
+                if (type == 3 && !arr.isEmpty()) {
+                    ExternalPreviewManager.preloadPreviews(arr);
+                }
 
                 boolean enc = DialogObject.isEncryptedDialog(dialog_id);
                 int loadIndex = uid == dialog_id ? 0 : 1;
@@ -6059,7 +6075,47 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                         sharedMediaData[type].loadingAfterFastScroll = false;
                     }
                 }
+                if (type == 3) {
+                    RecyclerListView listView = findListViewForAdapter(linksAdapter);
+                    if (listView != null) {
+                        promoteVisibleLinkPreviews(listView);
+                    }
+                }
                 scrolling = true;
+            } else if (id == NotificationCenter.didReceivedWebpages) {
+                ArrayList<TLRPC.Message> arrayList = (ArrayList<TLRPC.Message>) args[0];
+                boolean updated = false;
+                for (int a = 0; a < arrayList.size(); a++) {
+                    TLRPC.Message message = arrayList.get(a);
+                    long did = MessageObject.getDialogId(message);
+                    if (did != dialog_id && did != mergeDialogId) {
+                        continue;
+                    }
+                    int loadIndex = did == dialog_id ? 0 : 1;
+                    MessageObject currentMessage = sharedMediaData[3].messagesDict[loadIndex].get(message.id);
+                    if (currentMessage != null) {
+                        currentMessage.messageOwner.media = new TLRPC.TL_messageMediaWebPage();
+                        currentMessage.messageOwner.media.webpage = message.media.webpage;
+                        currentMessage.generateThumbs(true);
+                        updated = true;
+                        if (BuildVars.LOGS_ENABLED) {
+                            FileLog.d("Links didReceivedWebpages found mid=" + message.id + " loadIndex=" + loadIndex + " did=" + did);
+                        }
+                    } else if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("Links didReceivedWebpages missing mid=" + message.id + " did=" + did);
+                    }
+                }
+                if (updated) {
+                    if (linksAdapter != null) {
+                        linksAdapter.notifyDataSetChanged();
+                    }
+                    if (linksSearchAdapter != null) {
+                        linksSearchAdapter.notifyDataSetChanged();
+                    }
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("Links didReceivedWebpages adapters refreshed");
+                    }
+                }
             } else if (sharedMediaPreloader != null && sharedMediaData[type].messages.isEmpty() && !sharedMediaData[type].loadingAfterFastScroll) {
                 if (fillMediaData(type)) {
                     RecyclerListView.Adapter adapter = null;
@@ -7602,10 +7658,16 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                 }
             } else if (selectedMode == TAB_LINKS) {
                 try {
+                    ExternalPreviewManager.applyCachedPreviewIfAvailable(message);
                     TLRPC.WebPage webPage = MessageObject.getMedia(message.messageOwner) != null ? MessageObject.getMedia(message.messageOwner).webpage : null;
                     String link = null;
                     if (webPage != null && !(webPage instanceof TLRPC.TL_webPageEmpty)) {
-                        if (webPage.cached_page != null) {
+                        if (webPage.site_name != null && ExternalLinkRouter.isExternalPreviewSite(webPage.site_name) && webPage.url != null) {
+                            if (tryOpenExternalPreview(webPage.url)) {
+                                return;
+                            }
+                            link = webPage.url;
+                        } else if (webPage.cached_page != null) {
                             if (LaunchActivity.instance != null && LaunchActivity.instance.getBottomSheetTabs() != null && LaunchActivity.instance.getBottomSheetTabs().tryReopenTab(message) != null) {
                                 return;
                             }
@@ -7644,11 +7706,41 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
     }
 
     private void openUrl(String link) {
+        if (tryOpenExternalPreview(link)) {
+            return;
+        }
         if (AndroidUtilities.shouldShowUrlInAlert(link)) {
             AlertsCreator.showOpenUrlAlert(profileActivity, link, true, true);
         } else {
             Browser.openUrl(profileActivity.getParentActivity(), link);
         }
+    }
+
+    private boolean tryOpenExternalPreview(String link) {
+        if (TextUtils.isEmpty(link)) {
+            return false;
+        }
+        Uri uri = Uri.parse(link);
+        if (ExternalLinkRouter.openCachedPreview(profileActivity.getContext(), uri)) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("Links tryOpenExternalPreview cache hit " + link);
+            }
+            return true;
+        }
+        boolean handled = ExternalLinkRouter.tryOpen(profileActivity.getContext(), uri, fallbackUri -> {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("Links tryOpenExternalPreview fallback " + fallbackUri);
+            }
+            if (AndroidUtilities.shouldShowUrlInAlert(fallbackUri.toString())) {
+                AlertsCreator.showOpenUrlAlert(profileActivity, fallbackUri.toString(), true, true);
+            } else {
+                Browser.openUrl(profileActivity.getParentActivity(), fallbackUri);
+            }
+        }, null);
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("Links tryOpenExternalPreview handled=" + handled + " " + link);
+        }
+        return handled;
     }
 
     private void openWebView(TLRPC.WebPage webPage, MessageObject message) {
@@ -7726,7 +7818,24 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
         @Override
         public Object getItem(int section, int position) {
-            return null;
+            if (sharedMediaData[3].sections.size() == 0 && !sharedMediaData[3].loading) {
+                return null;
+            }
+            if (section >= sharedMediaData[3].sections.size()) {
+                return null;
+            }
+            String name = sharedMediaData[3].sections.get(section);
+            ArrayList<MessageObject> messageObjects = sharedMediaData[3].sectionArrays.get(name);
+            if (messageObjects == null) {
+                return null;
+            }
+            if (section != 0) {
+                position--;
+            }
+            if (position < 0 || position >= messageObjects.size()) {
+                return null;
+            }
+            return messageObjects.get(position);
         }
 
         @Override
@@ -7825,6 +7934,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                         }
                         SharedLinkCell sharedLinkCell = (SharedLinkCell) holder.itemView;
                         MessageObject messageObject = messageObjects.get(position);
+                        ExternalPreviewManager.applyCachedPreviewIfAvailable(messageObject);
                         sharedLinkCell.setLink(messageObject, position != messageObjects.size() - 1 || section == sharedMediaData[3].sections.size() - 1 && sharedMediaData[3].loading);
                         if (isActionModeShowed) {
                             sharedLinkCell.setChecked(selectedFiles[messageObject.getDialogId() == dialog_id ? 0 : 1].indexOfKey(messageObject.getId()) >= 0, !scrolling);
@@ -8826,6 +8936,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                 if (!(holder.itemView instanceof SharedLinkCell)) return;
                 SharedLinkCell sharedLinkCell = (SharedLinkCell) holder.itemView;
                 MessageObject messageObject = getItem(position);
+                ExternalPreviewManager.applyCachedPreviewIfAvailable(messageObject);
                 sharedLinkCell.setLink(messageObject, position != getItemCount() - 1);
                 if (isActionModeShowed) {
                     sharedLinkCell.setChecked(selectedFiles[messageObject.getDialogId() == dialog_id ? 0 : 1].indexOfKey(messageObject.getId()) >= 0, !scrolling);
@@ -11892,6 +12003,72 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         }
         if (giftsContainer != null) {
             giftsContainer.initBlurCapture(parent);
+        }
+    }
+
+    private RecyclerListView findListViewForAdapter(RecyclerView.Adapter adapter) {
+        if (adapter == null) {
+            return null;
+        }
+        for (int a = 0; a < mediaPages.length; a++) {
+            if (mediaPages[a] != null && mediaPages[a].listView != null && mediaPages[a].listView.getAdapter() == adapter) {
+                return mediaPages[a].listView;
+            }
+        }
+        return null;
+    }
+
+    private void promoteVisibleLinkPreviews(RecyclerListView listView) {
+        if (listView == null || listView.getAdapter() != linksAdapter || !(listView.getLayoutManager() instanceof LinearLayoutManager)) {
+            return;
+        }
+        LinearLayoutManager layoutManager = (LinearLayoutManager) listView.getLayoutManager();
+        int firstVisible = layoutManager.findFirstVisibleItemPosition();
+        int lastVisible = layoutManager.findLastVisibleItemPosition();
+        if (firstVisible == RecyclerView.NO_POSITION || lastVisible < firstVisible) {
+            return;
+        }
+
+        ArrayList<MessageObject> visibleMessages = new ArrayList<>();
+        ArrayList<MessageObject> lookaheadMessages = new ArrayList<>();
+        StringBuilder visibleIds = BuildVars.LOGS_ENABLED ? new StringBuilder() : null;
+        StringBuilder lookaheadIds = BuildVars.LOGS_ENABLED ? new StringBuilder() : null;
+
+        for (int position = firstVisible; position <= lastVisible; position++) {
+            Object item = linksAdapter.getItem(position);
+            if (item instanceof MessageObject) {
+                MessageObject messageObject = (MessageObject) item;
+                visibleMessages.add(messageObject);
+                if (visibleIds != null) {
+                    if (visibleIds.length() > 0) {
+                        visibleIds.append(',');
+                    }
+                    visibleIds.append(messageObject.getId());
+                }
+            }
+        }
+
+        int maxLookahead = Math.min(lastVisible + LINK_PREVIEW_LOOKAHEAD_COUNT, linksAdapter.getItemCount() - 1);
+        for (int position = lastVisible + 1; position <= maxLookahead; position++) {
+            Object item = linksAdapter.getItem(position);
+            if (item instanceof MessageObject) {
+                MessageObject messageObject = (MessageObject) item;
+                lookaheadMessages.add(messageObject);
+                if (lookaheadIds != null) {
+                    if (lookaheadIds.length() > 0) {
+                        lookaheadIds.append(',');
+                    }
+                    lookaheadIds.append(messageObject.getId());
+                }
+            }
+        }
+
+        if (!visibleMessages.isEmpty() || !lookaheadMessages.isEmpty()) {
+            ExternalPreviewManager.reprioritizePreviews(visibleMessages, lookaheadMessages);
+        }
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("Links visible window first=" + firstVisible + " last=" + lastVisible
+                + " visible=[" + visibleIds + "] lookahead=[" + lookaheadIds + "]");
         }
     }
 }
