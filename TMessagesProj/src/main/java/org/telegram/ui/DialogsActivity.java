@@ -7665,12 +7665,22 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (tabsAnimationInProgress || startedTracking || filterTabsView != null && filterTabsView.getVisibility() == View.VISIBLE && filterTabsView.isAnimatingIndicator()) {
             return;
         }
-        int visibleItemCount = Math.abs(lastVisibleItem - firstVisibleItem) + 1;
         boolean filterDialogsType = viewPage.dialogsType == DIALOGS_TYPE_FOLDER1 || viewPage.dialogsType == DIALOGS_TYPE_FOLDER2;
         int adapterItemCount = viewPage.dialogsAdapter != null ? viewPage.dialogsAdapter.getItemCount() : 0;
+        int childCount = viewPage.listView.getChildCount();
+        int dialogsCount = getDialogsArray(currentAccount, viewPage.dialogsType, folderId, dialogsListFrozen).size();
+        boolean invalidVisibleWindow = firstVisibleItem == RecyclerView.NO_POSITION
+                || lastVisibleItem == RecyclerView.NO_POSITION
+                || lastVisibleItem < firstVisibleItem;
+        boolean transientEmptyLayout = childCount == 0
+                && dialogsCount > 0
+                && (adapterItemCount == 0
+                || invalidVisibleWindow
+                || firstVisibleItem == 0 && lastVisibleItem == 0);
+        int visibleItemCount = transientEmptyLayout ? 0 : Math.abs(lastVisibleItem - firstVisibleItem) + 1;
         boolean skipZeroVisibleFilterLoad = filterDialogsType
                 && visibleItemCount == 0
-                && viewPage.listView.getChildCount() == 0
+                && childCount == 0
                 && adapterItemCount == 0;
         if (lastVisibleItem != RecyclerView.NO_POSITION) {
             RecyclerView.ViewHolder holder = viewPage.listView.findViewHolderForAdapterPosition(lastVisibleItem);
@@ -7689,8 +7699,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (viewPage.selectedType >= 0 && viewPage.selectedType < dialogFilters.size()) {
                 MessagesController.DialogFilter filter = dialogFilters.get(viewPage.selectedType);
                 if ((filter.flags & MessagesController.DIALOG_FILTER_FLAG_EXCLUDE_ARCHIVED) == 0) {
-                    if (visibleItemCount > 0 && lastVisibleItem >= getDialogsArray(currentAccount, viewPage.dialogsType, 1, dialogsListFrozen).size() - 10 ||
-                            visibleItemCount == 0 && !skipZeroVisibleFilterLoad && !getMessagesController().isDialogsEndReached(1)) {
+                    int archivedDialogsCount = getDialogsArray(currentAccount, viewPage.dialogsType, 1, dialogsListFrozen).size();
+                    if (visibleItemCount > 0 && lastVisibleItem >= archivedDialogsCount - 10 ||
+                            visibleItemCount == 0 && !transientEmptyLayout && !skipZeroVisibleFilterLoad && !getMessagesController().isDialogsEndReached(1)) {
                         loadArchivedFromCache = !getMessagesController().isDialogsEndReached(1);
                         if (loadArchivedFromCache || !getMessagesController().isServerDialogsEndReached(1)) {
                             loadArchived = true;
@@ -7699,23 +7710,25 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 }
             }
         }
-        if (visibleItemCount > 0 && lastVisibleItem >= getDialogsArray(currentAccount, viewPage.dialogsType, folderId, dialogsListFrozen).size() - 10 ||
-                visibleItemCount == 0 && filterDialogsType && !skipZeroVisibleFilterLoad && !getMessagesController().isDialogsEndReached(folderId)) {
+        if (visibleItemCount > 0 && lastVisibleItem >= dialogsCount - 10 ||
+                visibleItemCount == 0 && filterDialogsType && !transientEmptyLayout && !skipZeroVisibleFilterLoad && !getMessagesController().isDialogsEndReached(folderId)) {
             loadFromCache = !getMessagesController().isDialogsEndReached(folderId);
             if (loadFromCache || !getMessagesController().isServerDialogsEndReached(folderId)) {
                 load = true;
             }
         }
-        if (BuildVars.LOGS_ENABLED && filterDialogsType && visibleItemCount == 0) {
-            MessagesController.DialogFilter filter = getMessagesController().selectedDialogFilter[viewPage.dialogsType - DIALOGS_TYPE_FOLDER1];
+        if (BuildVars.LOGS_ENABLED && (filterDialogsType || transientEmptyLayout) && visibleItemCount == 0) {
+            MessagesController.DialogFilter filter = filterDialogsType ? getMessagesController().selectedDialogFilter[viewPage.dialogsType - DIALOGS_TYPE_FOLDER1] : null;
             FileLog.d("dialogs checkListLoad type=" + viewPage.dialogsType
                     + " selectedType=" + viewPage.selectedType
                     + " filterId=" + (filter != null ? filter.id : 0)
                     + " first=" + firstVisibleItem
                     + " last=" + lastVisibleItem
                     + " visible=" + visibleItemCount
-                    + " childCount=" + viewPage.listView.getChildCount()
+                    + " childCount=" + childCount
                     + " adapterCount=" + adapterItemCount
+                    + " dialogsCount=" + dialogsCount
+                    + " transientEmptyLayout=" + transientEmptyLayout
                     + " skipZeroVisibleFilterLoad=" + skipZeroVisibleFilterLoad
                     + " load=" + load
                     + " loadArchived=" + loadArchived
@@ -7735,8 +7748,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                 + " selectedType=" + viewPage.selectedType
                                 + " filterId=" + (filter != null ? filter.id : 0)
                                 + " visible=" + visibleItemCount
+                                + " dialogsCount=" + dialogsCount
+                                + " transientEmptyLayout=" + transientEmptyLayout
                                 + " adapterCount=" + adapterItemCount
-                                + " childCount=" + viewPage.listView.getChildCount()
+                                + " childCount=" + childCount
                                 + " fromCache=" + loadFromCacheFinal);
                     }
                     getMessagesController().loadDialogs(folderId, -1, 100, loadFromCacheFinal);
