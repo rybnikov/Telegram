@@ -4373,6 +4373,9 @@ public class MediaDataController extends BaseController {
             return -1;
         }
         final TLRPC.MessageMedia media = MessageObject.getMedia(message);
+        if (media instanceof TLRPC.TL_messageMediaWebPage && media.webpage instanceof TLRPC.TL_webPage) {
+            return MEDIA_URL;
+        }
         if (media instanceof TLRPC.TL_messageMediaPoll) {
             return MEDIA_POLL;
         } else if (media instanceof TLRPC.TL_messageMediaPhoto) {
@@ -4446,6 +4449,12 @@ public class MediaDataController extends BaseController {
             }
             FileLog.d("process load media messagesCount " + messagesCount + " did " + dialogId + " topicId " + topicId + " count = " + count + " max_id=" + max_id + " min_id=" + min_id + " type = " + type + " cache = " + fromCache + " classGuid = " + classGuid + " topReached=" + topReached);
         }
+        boolean shouldRefreshUrlFromNetwork =
+            fromCache != 0
+            && type == MEDIA_URL
+            && max_id == 0
+            && min_id == 0
+            && !DialogObject.isEncryptedDialog(dialogId);
         if (fromCache != 0 && res != null && res.messages != null && ((res.messages.isEmpty() && min_id == 0) || (res.messages.size() <= 1 && min_id != 0)) && !DialogObject.isEncryptedDialog(dialogId)) {
             if (fromCache == 2) {
                 return;
@@ -4497,6 +4506,12 @@ public class MediaDataController extends BaseController {
                     notify.run();
                 }
             });
+            if (shouldRefreshUrlFromNetwork) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("process load media refresh urls from network did " + dialogId + " topicId " + topicId + " classGuid = " + classGuid + " requestIndex = " + requestIndex);
+                }
+                loadMedia(dialogId, count, max_id, min_id, type, topicId, 0, classGuid, requestIndex, null, null);
+            }
         }
     }
 

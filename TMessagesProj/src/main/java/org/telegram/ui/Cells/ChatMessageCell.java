@@ -103,6 +103,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BotForumHelper;
 import org.telegram.messenger.BotInlineKeyboard;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatMessageSharedResources;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ContactsController;
@@ -135,6 +136,7 @@ import org.telegram.messenger.WebFile;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.browser.external.ExternalLinkRouter;
 import org.telegram.messenger.browser.external.ExternalMediaPreviewStore;
+import org.telegram.messenger.browser.external.ExternalPreviewManager;
 import org.telegram.messenger.utils.CountdownTimer;
 import org.telegram.messenger.utils.DrawableUtils;
 import org.telegram.messenger.utils.FrameTickScheduler;
@@ -7240,7 +7242,18 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         hasInvoicePrice = false;
                     }
                 }
+                TLRPC.MessageMedia previewMedia = MessageObject.getMedia(messageObject.messageOwner);
+                String mediaClass = previewMedia != null ? previewMedia.getClass().getSimpleName() : "null";
+                String webPageClass = previewMedia != null && previewMedia.webpage != null ? previewMedia.webpage.getClass().getSimpleName() : "null";
+                if (BuildVars.DEBUG_PRIVATE_VERSION && BuildVars.LOGS_ENABLED) {
+                    Log.d("tmessages", "ChatMessageCell bind mid=" + messageObject.getId()
+                        + " uid=" + messageObject.getDialogId()
+                        + " type=" + messageObject.type
+                        + " mediaClass=" + mediaClass
+                        + " webPageClass=" + webPageClass);
+                }
                 if (!messageObject.isRestrictedMessage) {
+                    ExternalPreviewManager.applyCachedPreviewIfAvailable(messageObject);
                     ExternalLinkRouter.requestPreviewIfNeeded(messageObject);
                 }
                 hasLinkPreview = !messageObject.isRestrictedMessage && MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage && MessageObject.getMedia(messageObject.messageOwner).webpage instanceof TLRPC.TL_webPage;
@@ -7734,10 +7747,17 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         }
                         type = webPage.type;
                         duration = webPage.duration;
-                        if (isCustomExternalPreviewSite(site_name) && photo == null && document == null && !TextUtils.isEmpty(webPage.embed_url)) {
-                            directImageUrl = webPage.embed_url;
-                            directImageWidth = webPage.embed_width;
-                            directImageHeight = webPage.embed_height;
+                        if (isCustomExternalPreviewSite(site_name) && photo == null && document == null) {
+                            ExternalMediaPreviewStore.VideoPreview preview = ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+                            if (preview != null && !TextUtils.isEmpty(preview.posterUrl)) {
+                                directImageUrl = preview.posterUrl;
+                                directImageWidth = preview.width;
+                                directImageHeight = preview.height;
+                            } else if (!TextUtils.isEmpty(webPage.embed_url)) {
+                                directImageUrl = webPage.embed_url;
+                                directImageWidth = webPage.embed_width;
+                                directImageHeight = webPage.embed_height;
+                            }
                         }
                         if (isCustomExternalPreviewSite(site_name) && (photo != null || directImageUrl != null)) {
                             linkPreviewMaxWidth = Math.max(AndroidUtilities.displaySize.y / 3, currentMessageObject.textWidth);

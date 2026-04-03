@@ -83,6 +83,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.browser.external.ExternalPreviewManager;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -1422,6 +1423,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 (SharedConfig.frameMetricsEnabled ? "hide frame metrics" : "show frame metrics"),
                 BuildVars.DEBUG_PRIVATE_VERSION ? (SharedConfig.shadowsInSections ? "disable shadows in settings" : "enable shadows in settings") : null,
                 BuildVars.DEBUG_PRIVATE_VERSION ? (SharedConfig.debugViewMetrics ? "disable debug view metrics" : "enable debug view metrics") : null,
+                BuildVars.DEBUG_PRIVATE_VERSION ? getString(R.string.DebugMenuResetBrokenLocalPreviews) : null
         };
 
         builder.setItems(items, (dialog, which) -> {
@@ -1728,9 +1730,17 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             } else if (which == 41) {
                 final SharedPreferences prefs = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
                 prefs.edit().putBoolean("shadowsInSections", SharedConfig.shadowsInSections = !SharedConfig.shadowsInSections).apply();
-            } else if (which == 41) {
+            } else if (which == 42) {
                 final SharedPreferences prefs = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
                 prefs.edit().putBoolean("debugViewMetrics", SharedConfig.debugViewMetrics = !SharedConfig.debugViewMetrics).apply();
+            } else if (which == 43) {
+                ExternalPreviewManager.clearDebugState();
+                getMessagesStorage().clearBrokenLocalPreviewPendingState(result -> {
+                    if (getParentActivity() == null) {
+                        return;
+                    }
+                    Toast.makeText(getParentActivity(), "Reset local preview cache: metadata=" + result.clearedExternalPreviews + ", legacy=" + result.clearedLegacyRows, Toast.LENGTH_SHORT).show();
+                });
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);

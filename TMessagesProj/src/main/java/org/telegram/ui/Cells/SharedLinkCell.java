@@ -42,6 +42,7 @@ import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.browser.external.ExternalLinkRouter;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
@@ -253,6 +254,9 @@ public class SharedLinkCell extends FrameLayout {
                 message.generateThumbs(true);
             }
             hasPhoto = webPage.photo != null && message.photoThumbs != null;
+            if (!hasPhoto && !TextUtils.isEmpty(webPage.embed_url) && ExternalLinkRouter.isExternalPreviewSite(webPage.site_name)) {
+                hasPhoto = true;
+            }
             title = webPage.title;
             if (title == null) {
                 title = webPage.site_name;
@@ -463,22 +467,26 @@ public class SharedLinkCell extends FrameLayout {
         letterDrawable.setBounds(x, dp(11), x + maxPhotoWidth, dp(63));
 
         if (hasPhoto) {
-            TLRPC.PhotoSize currentPhotoObject = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, maxPhotoWidth, true);
-            TLRPC.PhotoSize currentPhotoObjectThumb = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, 80);
-            if (currentPhotoObjectThumb == currentPhotoObject) {
-                currentPhotoObjectThumb = null;
-            }
-            if (currentPhotoObject != null) {
-                currentPhotoObject.size = -1;
-            }
-            if (currentPhotoObjectThumb != null) {
-                currentPhotoObjectThumb.size = -1;
-            }
             linkImageView.setImageCoords(x, dp(11), maxPhotoWidth, maxPhotoWidth);
-            String fileName = FileLoader.getAttachFileName(currentPhotoObject);
             String filter = String.format(Locale.US, "%d_%d", maxPhotoWidth, maxPhotoWidth);
-            String thumbFilter = String.format(Locale.US, "%d_%d_b", maxPhotoWidth, maxPhotoWidth);
-            linkImageView.setImage(ImageLocation.getForObject(currentPhotoObject, message.photoThumbsObject), filter, ImageLocation.getForObject(currentPhotoObjectThumb, message.photoThumbsObject), thumbFilter, 0, null, message, 0);
+            TLRPC.WebPage webPage = message.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage ? message.messageOwner.media.webpage : null;
+            if (message.photoThumbs != null) {
+                TLRPC.PhotoSize currentPhotoObject = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, maxPhotoWidth, true);
+                TLRPC.PhotoSize currentPhotoObjectThumb = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, 80);
+                if (currentPhotoObjectThumb == currentPhotoObject) {
+                    currentPhotoObjectThumb = null;
+                }
+                if (currentPhotoObject != null) {
+                    currentPhotoObject.size = -1;
+                }
+                if (currentPhotoObjectThumb != null) {
+                    currentPhotoObjectThumb.size = -1;
+                }
+                String thumbFilter = String.format(Locale.US, "%d_%d_b", maxPhotoWidth, maxPhotoWidth);
+                linkImageView.setImage(ImageLocation.getForObject(currentPhotoObject, message.photoThumbsObject), filter, ImageLocation.getForObject(currentPhotoObjectThumb, message.photoThumbsObject), thumbFilter, 0, null, message, 0);
+            } else if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && ExternalLinkRouter.isExternalPreviewSite(webPage.site_name)) {
+                linkImageView.setImage(ImageLocation.getForPath(webPage.embed_url), filter, null, null, 0, null, message, 0);
+            }
             drawLinkImageView = true;
         }
 
@@ -614,7 +622,9 @@ public class SharedLinkCell extends FrameLayout {
                             } else if (linkPreviewPressed) {
                                 try {
                                     TLRPC.WebPage webPage = pressedLinkIndex == 0 && message.messageOwner.media != null ? message.messageOwner.media.webpage : null;
-                                    if (webPage != null && webPage.embed_url != null && webPage.embed_url.length() != 0) {
+                                    if (webPage != null && ExternalLinkRouter.isExternalPreviewSite(webPage.site_name) && !TextUtils.isEmpty(webPage.url)) {
+                                        delegate.onLinkPress(webPage.url, false);
+                                    } else if (webPage != null && webPage.embed_url != null && webPage.embed_url.length() != 0) {
                                         delegate.needOpenWebView(webPage, message);
                                     } else {
                                         delegate.onLinkPress(links.get(pressedLinkIndex).toString(), false);
