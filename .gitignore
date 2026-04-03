@@ -16,6 +16,7 @@ TMessagesProj_AppHuawei/afat/
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Sensitive credentials
 google-services.json
