@@ -41,6 +41,13 @@ jobs:
         shell: bash
         run: |
           echo "RELEASE_KEYSTORE_PATH=${RUNNER_TEMP}/release.keystore" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_COMPRESS=true" >> "$GITHUB_ENV"
+          echo "CCACHE_COMPRESSLEVEL=6" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+          echo "CCACHE_SLOPPINESS=time_macros" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=${{ github.workspace }}" >> "$GITHUB_ENV"
+          echo "ANDROID_CCACHE=ccache" >> "$GITHUB_ENV"
 
       - name: Resolve release version from input tag
         shell: bash
@@ -116,16 +123,22 @@ jobs:
             "cmake;3.10.2.4988404" \
             "ndk;21.4.7075529"
 
-      - name: Restore native .cxx state
-        id: restore-native-cxx
+      - name: Install ccache
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+          ccache --version
+          which ccache
+
+      - name: Restore native ccache state
+        id: restore-native-ccache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: |
-            TMessagesProj/.cxx
-            TMessagesProj/build/intermediates/cxx
-          key: ${{ runner.os }}-ndk-cxx-${{ hashFiles('build.gradle', 'settings.gradle', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'TMessagesProj/jni/**/CMakeLists.txt', 'TMessagesProj/jni/**/*.cmake') }}
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-ndk-ccache-r21e-afatRelease-${{ hashFiles('build.gradle', 'settings.gradle', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'TMessagesProj/jni/**/CMakeLists.txt', 'TMessagesProj/jni/**/*.cmake', 'TMessagesProj/jni/**/*.c', 'TMessagesProj/jni/**/*.cc', 'TMessagesProj/jni/**/*.cpp', 'TMessagesProj/jni/**/*.cxx', 'TMessagesProj/jni/**/*.h', 'TMessagesProj/jni/**/*.hpp') }}
           restore-keys: |
-            ${{ runner.os }}-ndk-cxx-
+            ${{ runner.os }}-ndk-ccache-r21e-afatRelease-
 
       - name: Restore release keystore
         shell: bash
@@ -159,18 +172,28 @@ jobs:
           test -n "$RELEASE_VERSION_CODE"
           test -n "$PLAY_RELEASE_VERSION_CODE"
 
+      - name: Reset ccache stats
+        shell: bash
+        run: |
+          ccache --zero-stats
+          ccache --show-config | grep -E 'cache_dir|max_size|base_dir|compiler_check' || true
+          ccache -s
+
       - name: Build release bundle
         id: build-release-bundle
         run: ./gradlew :TMessagesProj_App:bundleAfatRelease
 
-      - name: Save native .cxx state
-        if: ${{ !cancelled() && steps.build-release-bundle.outcome == 'success' && steps.restore-native-cxx.outputs.cache-hit != 'true' }}
+      - name: Show ccache stats
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: ccache -s
+
+      - name: Save native ccache state
+        if: ${{ !cancelled() && steps.build-release-bundle.outcome == 'success' && steps.restore-native-ccache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: |
-            TMessagesProj/.cxx
-            TMessagesProj/build/intermediates/cxx
-          key: ${{ steps.restore-native-cxx.outputs.cache-primary-key }}
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.restore-native-ccache.outputs.cache-primary-key }}
 
       - name: Generate release checksums
         shell: bash
