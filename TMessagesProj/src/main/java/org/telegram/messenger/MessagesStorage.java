@@ -11144,6 +11144,8 @@ public class MessagesStorage extends BaseController {
         SQLitePreparedStatement deleteMediaState = null;
         SQLitePreparedStatement deleteMediaTopicState = null;
         SQLitePreparedStatement deletePendingState = null;
+        boolean transactionStarted = false;
+        boolean transactionCommitted = false;
         int fixedCount = 0;
         try {
             LinkedHashMap<String, PendingStateGroup> pendingGroups = new LinkedHashMap<>();
@@ -11187,6 +11189,7 @@ public class MessagesStorage extends BaseController {
 
             if (!targets.isEmpty() || !groupsToDelete.isEmpty()) {
                 database.beginTransaction();
+                transactionStarted = true;
                 updateMessageState = database.executeFast("UPDATE messages_v2 SET data = ? WHERE mid = ? AND uid = ?");
                 updateTopicMessageState = database.executeFast("UPDATE messages_topics SET data = ? WHERE mid = ? AND uid = ? AND topic_id = ?");
                 deleteMediaState = database.executeFast("DELETE FROM media_v4 WHERE mid = ? AND uid = ?");
@@ -11239,6 +11242,7 @@ public class MessagesStorage extends BaseController {
                     fixedCount++;
                 }
                 database.commitTransaction();
+                transactionCommitted = true;
             }
         } catch (Exception e) {
             checkSQLException(e);
@@ -11261,7 +11265,7 @@ public class MessagesStorage extends BaseController {
             if (deletePendingState != null) {
                 deletePendingState.dispose();
             }
-            if (database != null) {
+            if (database != null && transactionStarted && !transactionCommitted) {
                 database.commitTransaction();
             }
         }
