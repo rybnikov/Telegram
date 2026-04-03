@@ -145,8 +145,14 @@ public final class ExternalMediaOpenHelper {
         }
         entries.add(result);
         boolean opened = photoViewer.openPhotoForSelect(entries, 0, PhotoViewer.SELECT_TYPE_NO_SELECT, false, new ExternalPhotoViewerProvider(preview.sourceName, 1), null);
-        if (opened && !TextUtils.isEmpty(preview.sourceName)) {
-            photoViewer.setTitle(preview.sourceName);
+        if (opened) {
+            if (!TextUtils.isEmpty(preview.sourceName)) {
+                photoViewer.setTitle(preview.sourceName);
+            }
+            String captionText = buildCaption(preview.title, preview.description);
+            if (captionText != null) {
+                photoViewer.setCaption(captionText);
+            }
         }
         return opened;
     }
@@ -279,8 +285,10 @@ public final class ExternalMediaOpenHelper {
     }
 
     private static String buildCaption(ResolvedMedia media) {
-        String title = media.title;
-        String description = media.description;
+        return buildCaption(media.title, media.description);
+    }
+
+    private static String buildCaption(String title, String description) {
         if (!TextUtils.isEmpty(title) && !TextUtils.isEmpty(description)) {
             return title + "\n\n" + description;
         } else if (!TextUtils.isEmpty(description)) {

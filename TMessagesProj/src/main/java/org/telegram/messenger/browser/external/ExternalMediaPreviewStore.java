@@ -54,6 +54,12 @@ public final class ExternalMediaPreviewStore {
         return preview != null && document != null && preview.document != null && preview.document.id == document.id;
     }
 
+    public static void clearDebugState() {
+        synchronized (lock) {
+            videoCache.clear();
+        }
+    }
+
     private static void trimCache() {
         while (videoCache.size() > MAX_CACHE_SIZE) {
             Map.Entry<Long, VideoPreview> entry = videoCache.entrySet().iterator().next();
