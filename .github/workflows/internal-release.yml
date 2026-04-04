@@ -7,6 +7,11 @@ on:
         description: "Release tag to publish (for example v12.5.9)"
         required: true
         type: string
+      promote_release:
+        description: "Attempt automatic Google Play promote after upload"
+        required: true
+        default: true
+        type: boolean
 
 concurrency:
   group: android-internal-release
@@ -217,6 +222,9 @@ jobs:
           status: draft
 
       - name: Promote Google Play internal release
+        id: promote-google-play
+        if: ${{ inputs.promote_release }}
+        continue-on-error: true
         shell: bash
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -255,7 +263,7 @@ jobs:
           )"
 
           TRACK_URL="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.rbnkv.foldogram/edits/${EDIT_ID}/tracks/internal"
-          COMMIT_URL="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.rbnkv.foldogram/edits/${EDIT_ID}:commit?changesNotSentForReview=true"
+          COMMIT_URL="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.rbnkv.foldogram/edits/${EDIT_ID}:commit"
           TRACK_RESPONSE_PATH="${RUNNER_TEMP}/play-track-response.json"
           COMMIT_RESPONSE_PATH="${RUNNER_TEMP}/play-commit-response.json"
 
@@ -298,6 +306,22 @@ jobs:
             cat "$COMMIT_RESPONSE_PATH" || true
             exit 1
           fi
+
+      - name: Report Play promote result
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          if [[ "${{ inputs.promote_release }}" != "true" ]]; then
+            echo "Automatic Play promote skipped by workflow input."
+            exit 0
+          fi
+
+          if [[ "${{ steps.promote-google-play.outcome }}" == "success" ]]; then
+            echo "Automatic Play promote succeeded."
+            exit 0
+          fi
+
+          echo "Automatic Play promote failed; continuing so the release can be completed and promoted manually later."
 
       - name: Create release tag
         shell: bash
