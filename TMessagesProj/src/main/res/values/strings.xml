@@ -10588,7 +10588,6 @@
     <string name="RelativeDateCopied">Date copied to clipboard</string>
     <string name="GiftResaleStarsOnly">Show listings for stars only</string>
 
-<<<<<<< HEAD
     <string name="PollV2ShowWhoVoted">Show Who Voted</string>
     <string name="PollV2ShowWhoVotedInfo">Display voter name on each option</string>
     <string name="PollV2AllowMultipleAnswers">Allow Multiple Answers</string>

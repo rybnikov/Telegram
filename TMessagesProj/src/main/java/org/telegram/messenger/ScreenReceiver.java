@@ -28,12 +28,12 @@ public class ScreenReceiver extends BroadcastReceiver {
             if (BuildVars.LOGS_ENABLED) {
                 FileLog.d("screen on");
             }
-            if (ApplicationLoader.isAnyInteractiveInterfaceActive()) {
+            if (!ApplicationLoader.mainInterfacePaused) {
                 ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, true);
             } else {
                 // Fold/wake can deliver SCREEN_ON before interactive flags are lifted.
                 AndroidUtilities.runOnUIThread(() -> {
-                    if (ApplicationLoader.isScreenOn && ApplicationLoader.isAnyInteractiveInterfaceActive()) {
+                    if (ApplicationLoader.isScreenOn && !ApplicationLoader.mainInterfacePaused) {
                         ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, true);
                     }
                 }, 700);

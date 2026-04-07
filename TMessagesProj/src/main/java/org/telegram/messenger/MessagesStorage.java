@@ -11432,8 +11432,12 @@ public class MessagesStorage extends BaseController {
     private void pruneExternalPreviewsLocked() {
         long now = System.currentTimeMillis() / 1000L;
         long cutoff = now - EXTERNAL_PREVIEW_RETENTION_SECONDS;
-        executeNoException("DELETE FROM external_previews_v1 WHERE updated_at < " + cutoff);
-        executeNoException("DELETE FROM external_previews_v1 WHERE id IN (SELECT id FROM external_previews_v1 ORDER BY updated_at DESC LIMIT -1 OFFSET " + EXTERNAL_PREVIEW_MAX_ROWS + ")");
+        try {
+            database.executeFast("DELETE FROM external_previews_v1 WHERE updated_at < " + cutoff).stepThis().dispose();
+            database.executeFast("DELETE FROM external_previews_v1 WHERE id IN (SELECT id FROM external_previews_v1 ORDER BY updated_at DESC LIMIT -1 OFFSET " + EXTERNAL_PREVIEW_MAX_ROWS + ")").stepThis().dispose();
+        } catch (Exception e) {
+            checkSQLException(e);
+        }
     }
 
     private void bindStringOrNull(SQLitePreparedStatement state, int index, String value) throws Exception {
