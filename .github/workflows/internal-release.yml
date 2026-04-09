@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build-and-upload:
-    if: ${{ github.actor == 'rybnikov' && github.ref == 'refs/heads/foldogram' }}
+    if: ${{ github.actor == 'rybnikov' && (github.ref == 'refs/heads/foldogram' || startsWith(github.ref, 'refs/heads/foldogram-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: play-internal
