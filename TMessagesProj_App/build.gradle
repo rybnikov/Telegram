@@ -328,5 +328,4 @@ afterEvaluate {
         dependsOn generateGoogleServices
     }
 }
-
 apply plugin: 'com.google.gms.google-services'

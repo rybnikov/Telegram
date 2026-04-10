@@ -35,6 +35,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
@@ -71,9 +72,11 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.utils.ViewOutlineProviderImpl;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.BackButtonMenu;
 import org.telegram.ui.EmptyBaseFragment;
+import org.telegram.ui.GradientHeaderActivity;
 import org.telegram.ui.MainTabsActivity;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.Components.Bulletin;
@@ -1600,10 +1603,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     private AnimatorSet backAnimator;
     private void animateBackEndAnimation(boolean backAnimation) {
         final BaseFragment currentFragment = !fragmentsStack.isEmpty() ? fragmentsStack.get(fragmentsStack.size() - 1) : null;
-        if (currentFragment == null) {
-            forceResetAnimationState();
-            return;
-        }
+        if (currentFragment == null) return;
 
         float x = containerView.getX();
         AnimatorSet animatorSet = new AnimatorSet();
@@ -1688,10 +1688,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             predictiveBackInProgress = false;
             predictiveInput = false;
         }
-        if (transitionAnimationPreviewMode || startedTracking || checkTransitionAnimation()) {
-            return;
-        }
-        if (fragmentsStack.isEmpty()) {
+        if (transitionAnimationPreviewMode || startedTracking || checkTransitionAnimation() || fragmentsStack.isEmpty()) {
             return;
         }
         if (GroupCallPip.onBackPressed()) {
@@ -2101,16 +2098,13 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         containerView.setTranslationY(0);
 
         if (preview) {
-            fragmentView.setOutlineProvider(new ViewOutlineProvider() {
-                @Override
-                public void getOutline(View view, Outline outline) {
-                    outline.setRoundRect(0,
-                        isSupportEdgeToEdge ? 0 : AndroidUtilities.statusBarHeight,
-                        view.getMeasuredWidth(), view.getMeasuredHeight(), dp(6));
-                }
-            });
+            fragmentView.setOutlineProvider(ViewOutlineProviderImpl.boundsWithPaddingRoundRect(0, dp(menu == null ? 24 : 12)));
             fragmentView.setClipToOutline(true);
             fragmentView.setElevation(dp(4));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                 fragmentView.setOutlineSpotShadowColor(0xB0000000);
+                 fragmentView.setOutlineAmbientShadowColor(0xB0000000);
+            }
             if (previewBackgroundDrawable == null) {
                 previewBackgroundDrawable = new ColorDrawable(0x2e000000);
             }
@@ -3220,8 +3214,16 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         if (parentActivity == null) {
             return;
         }
-        if (transitionAnimationInProgress || animationInProgress || startedTracking) {
-            forceResetAnimationState();
+        if (transitionAnimationInProgress) {
+            if (currentAnimation != null) {
+                currentAnimation.cancel();
+                currentAnimation = null;
+            }
+            if (onCloseAnimationEndRunnable != null) {
+                onCloseAnimationEnd();
+            } else if (onOpenAnimationEndRunnable != null) {
+                onOpenAnimationEnd();
+            }
             containerView.invalidate();
         }
         if (intent != null) {

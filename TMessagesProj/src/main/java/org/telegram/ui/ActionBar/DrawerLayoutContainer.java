@@ -20,6 +20,7 @@ import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.graphics.Insets;
+import androidx.core.view.DisplayCutoutCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
@@ -34,6 +35,8 @@ public class DrawerLayoutContainer extends FrameLayout {
     private final Paint backgroundPaint = new Paint();
 
     private int behindKeyboardColor;
+
+    private boolean hasCutout;
 
     private boolean inLayout;
 
@@ -72,6 +75,10 @@ public class DrawerLayoutContainer extends FrameLayout {
             firstLayout = false;
             drawerLayoutContainer.setWillNotDraw(insets.getSystemWindowInsetTop() <= 0 && getBackground() == null);
 
+            if (Build.VERSION.SDK_INT >= 28) {
+                DisplayCutoutCompat cutout = insets.getDisplayCutout();
+                hasCutout = cutout != null && !cutout.getBoundingRects().isEmpty();
+            }
             invalidate();
 
             return onApplyWindowInsets(v, insets);
@@ -207,6 +214,18 @@ public class DrawerLayoutContainer extends FrameLayout {
                 getMeasuredHeight(),
                 internalNavbarPaint
             );
+        }
+
+        if (hasCutout) {
+            backgroundPaint.setColor(0xff000000);
+            int left = insets.left;
+            if (left != 0) {
+                canvas.drawRect(0, 0, left, getMeasuredHeight(), backgroundPaint);
+            }
+            int right = insets.right;
+            if (right != 0) {
+                canvas.drawRect(right, 0, getMeasuredWidth(), getMeasuredHeight(), backgroundPaint);
+            }
         }
     }
 
