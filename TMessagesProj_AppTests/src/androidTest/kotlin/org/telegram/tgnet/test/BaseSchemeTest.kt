@@ -11,10 +11,12 @@ import com.appmattus.kotlinfixture.decorator.nullability.nullabilityStrategy
 import com.appmattus.kotlinfixture.decorator.recursion.RecursionStrategy
 import com.appmattus.kotlinfixture.decorator.recursion.recursionStrategy
 import org.junit.BeforeClass
+import org.junit.Assume.assumeNoException
 import org.telegram.tgnet.ConnectionsManager
 import org.telegram.tgnet.InputSerializedData
 import org.telegram.tgnet.NativeByteBuffer
 import org.telegram.tgnet.TLObject
+import org.telegram.tgnet.TLParseException
 import org.telegram.tgnet.model.TlGen_Object
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
@@ -23,6 +25,7 @@ import kotlin.test.assertEquals
 
 open class BaseSchemeTest {
     companion object {
+        private lateinit var baseConfiguration: Configuration
         lateinit var fixture: Fixture
         protected lateinit var safeRecursionStrategy: SafeRecursionStrategy
 
@@ -32,7 +35,12 @@ open class BaseSchemeTest {
         @JvmStatic
         @BeforeClass
         fun setup() {
-            fixture = Fixture()
+            baseConfiguration = ConfigurationBuilder().apply {
+                resolvers.removeAll { resolver ->
+                    resolver::class.qualifiedName == "com.appmattus.kotlinfixture.resolver.AbstractClassResolver"
+                }
+            }.build()
+            fixture = Fixture(baseConfiguration)
             safeRecursionStrategy = SafeRecursionStrategy(fixture)
 
             buffer = NativeByteBuffer(1024 * 1024)
@@ -70,6 +78,9 @@ open class BaseSchemeTest {
                 }
             } catch (t: Throwable) {
                 println(generated.toString())
+                if (isLegacyLayer != null && isUnsupportedLegacyConstructor(t)) {
+                    assumeNoException("Legacy constructor not supported by current runtime", t)
+                }
                 throw t
             }
         }
@@ -121,6 +132,17 @@ open class BaseSchemeTest {
         }
     }
 
+    private fun isUnsupportedLegacyConstructor(throwable: Throwable): Boolean {
+        var current: Throwable? = throwable
+        while (current != null) {
+            if (current is TLParseException && current.message?.contains("can't parse magic") == true) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
+    }
+
 
 
     private fun assertBuffersEquals(buffer1: NativeByteBuffer, buffer2: NativeByteBuffer) {
@@ -142,7 +164,7 @@ open class BaseSchemeTest {
 
     private fun createConfigs(clazz: KClass<out TlGen_Object>, builder: ((ConfigurationBuilder) -> Unit)?): List<Configuration> {
         val nullableFields = clazz.memberProperties.filter { it.returnType.isMarkedNullable }
-        val neverNull = ConfigurationBuilder().let {
+        val neverNull = ConfigurationBuilder(baseConfiguration).let {
             it.recursionStrategy(safeRecursionStrategy)
             it.nullabilityStrategy(NeverNullStrategy)
             builder?.invoke(it)
@@ -153,14 +175,14 @@ open class BaseSchemeTest {
             return listOf(neverNull)
         }
 
-        val randomNull = ConfigurationBuilder().let {
+        val randomNull = ConfigurationBuilder(baseConfiguration).let {
             it.recursionStrategy(safeRecursionStrategy)
             it.nullabilityStrategy(RandomlyNullStrategy)
             builder?.invoke(it)
             it.build()
         }
 
-        val alwaysNull = ConfigurationBuilder().let {
+        val alwaysNull = ConfigurationBuilder(baseConfiguration).let {
             it.recursionStrategy(safeRecursionStrategy)
             it.nullabilityStrategy(AlwaysNullStrategy)
             builder?.invoke(it)

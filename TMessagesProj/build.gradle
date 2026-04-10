@@ -57,7 +57,6 @@ dependencies {
 
     implementation "androidx.credentials:credentials:1.6.0-alpha04"
     implementation "androidx.credentials:credentials-play-services-auth:1.6.0-alpha04"
-
     implementation 'androidx.car.app:app:1.7.0'
     implementation 'androidx.car.app:app-projected:1.7.0'
 
@@ -131,7 +130,7 @@ android {
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + resolvedAppVersionName + "\""
             buildConfigField "String", "APP_CENTER_HASH", "\"\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_PRIVATE_URL") + "\""
-            buildConfigField "boolean", "DEBUG_VERSION", "false"
+            buildConfigField "boolean", "DEBUG_VERSION", "true"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
             buildConfigField "boolean", "BUNDLE", "false"
             buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
@@ -257,6 +256,7 @@ task checkVisibility {
     }
 }
 
+preBuild.dependsOn checkVisibility
 preBuild.dependsOn checkVisibility
 
 // --- Generate BuildVars.java from template ---
