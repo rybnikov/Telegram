@@ -231,6 +231,38 @@ jobs:
         run: |
           set -euo pipefail
 
+          classify_play_error() {
+            python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+http_code = sys.argv[1]
+path = sys.argv[2]
+
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+except Exception:
+    print("other")
+    raise SystemExit(0)
+
+error = data.get("error") or {}
+message = (error.get("message") or "").lower()
+status = error.get("status") or ""
+code = str(error.get("code") or "")
+
+if (
+    http_code == "400"
+    and code == "400"
+    and status == "INVALID_ARGUMENT"
+    and "only releases with status draft may be created on draft app" in message
+):
+    print("draft_app")
+else:
+    print("other")
+PY
+          }
+
           SA_JSON_PATH="${RUNNER_TEMP}/play-service-account.json"
           SA_KEY_PATH="${RUNNER_TEMP}/play-service-account.pem"
           printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$SA_JSON_PATH"
@@ -290,6 +322,13 @@ jobs:
               continue
             fi
 
+            if [[ "$(classify_play_error "$http_code" "$TRACK_RESPONSE_PATH")" == "draft_app" ]]; then
+              echo "result=draft_app" >> "$GITHUB_OUTPUT"
+              echo "Play rejected completed promote because the app is still draft. Upload succeeded; leaving release as draft."
+              cat "$TRACK_RESPONSE_PATH" || true
+              exit 0
+            fi
+
             echo "Track promote failed with HTTP ${http_code}"
             cat "$TRACK_RESPONSE_PATH" || true
             exit 1
@@ -302,10 +341,19 @@ jobs:
           )"
 
           if [[ ! "$commit_http_code" =~ ^2 ]]; then
+            if [[ "$(classify_play_error "$commit_http_code" "$COMMIT_RESPONSE_PATH")" == "draft_app" ]]; then
+              echo "result=draft_app" >> "$GITHUB_OUTPUT"
+              echo "Play rejected completed promote during edit commit because the app is still draft. Upload succeeded; leaving release as draft."
+              cat "$COMMIT_RESPONSE_PATH" || true
+              exit 0
+            fi
+
             echo "Edit commit failed with HTTP ${commit_http_code}"
             cat "$COMMIT_RESPONSE_PATH" || true
             exit 1
           fi
+
+          echo "result=completed" >> "$GITHUB_OUTPUT"
 
       - name: Report Play promote result
         if: ${{ !cancelled() }}
@@ -316,8 +364,13 @@ jobs:
             exit 0
           fi
 
-          if [[ "${{ steps.promote-google-play.outcome }}" == "success" ]]; then
+          if [[ "${{ steps.promote-google-play.outputs.result }}" == "completed" ]]; then
             echo "Automatic Play promote succeeded."
+            exit 0
+          fi
+
+          if [[ "${{ steps.promote-google-play.outputs.result }}" == "draft_app" ]]; then
+            echo "Upload succeeded, but Google Play still treats this app as draft. The internal release remains draft and must follow the manual first-publish/review path."
             exit 0
           fi
 
