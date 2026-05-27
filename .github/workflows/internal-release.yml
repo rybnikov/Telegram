@@ -126,7 +126,7 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0" \
             "cmake;3.10.2.4988404" \
-            "ndk;21.4.7075529"
+            "ndk;27.2.12479018"
 
       - name: Install ccache
         shell: bash
@@ -141,9 +141,9 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-ndk-ccache-r21e-afatRelease-${{ hashFiles('build.gradle', 'settings.gradle', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'TMessagesProj/jni/**/CMakeLists.txt', 'TMessagesProj/jni/**/*.cmake', 'TMessagesProj/jni/**/*.c', 'TMessagesProj/jni/**/*.cc', 'TMessagesProj/jni/**/*.cpp', 'TMessagesProj/jni/**/*.cxx', 'TMessagesProj/jni/**/*.h', 'TMessagesProj/jni/**/*.hpp') }}
+          key: ${{ runner.os }}-ndk-ccache-r27c-afatRelease-${{ hashFiles('build.gradle', 'settings.gradle', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'TMessagesProj/jni/**/CMakeLists.txt', 'TMessagesProj/jni/**/*.cmake', 'TMessagesProj/jni/**/*.c', 'TMessagesProj/jni/**/*.cc', 'TMessagesProj/jni/**/*.cpp', 'TMessagesProj/jni/**/*.cxx', 'TMessagesProj/jni/**/*.h', 'TMessagesProj/jni/**/*.hpp') }}
           restore-keys: |
-            ${{ runner.os }}-ndk-ccache-r21e-afatRelease-
+            ${{ runner.os }}-ndk-ccache-r27c-afatRelease-
 
       - name: Restore release keystore
         shell: bash

@@ -329,6 +329,7 @@ public class SharedConfig {
     public static boolean shadowsInSections;
     public static boolean debugViewMetrics;
     public static boolean photoHighQualityDefault;
+    public static boolean photoLiveDefault;
 
     public static TLRPC.TL_help_appUpdate pendingAppUpdate;
     public static int pendingAppUpdateBuildVersion;
@@ -597,7 +598,7 @@ public class SharedConfig {
             nextMediaTap = preferences.getBoolean("next_media_on_tap", true);
             recordViaSco = preferences.getBoolean("record_via_sco", false);
             customTabs = preferences.getBoolean("custom_tabs", true);
-            inappBrowser = preferences.getBoolean("inapp_browser", true);
+            inappBrowser = preferences.getBoolean("inapp_browser", false);
             hideBottomPanel = preferences.getBoolean("hideBottomPanel", false);
             extendedPreviews = preferences.getBoolean("extendedPreviews", true);
             adaptableColorInBrowser = preferences.getBoolean("adaptableBrowser", false);
@@ -684,6 +685,7 @@ public class SharedConfig {
             shadowsInSections = preferences.getBoolean("shadowsInSections", false);
             debugViewMetrics = preferences.getBoolean("debugViewMetrics", false);
             photoHighQualityDefault = preferences.getBoolean("photoHighQualityDefault", false);
+            photoLiveDefault = preferences.getBoolean("photoLiveDefault", false);
 
             loadDebugConfig(preferences);
 

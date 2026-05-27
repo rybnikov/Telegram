@@ -61,7 +61,8 @@ object TlSchemaRules {
                 "updateChatParticipant",
                 "updateInlineBotCallbackQuery",
                 "updatePtsChanged",
-                "updateSmsJob"
+                "updateSmsJob",
+                "updateBotGuestChatQuery"
             ),
             "MessageAction" to setOf(
                 "messageActionRequestedPeerSentMe",
