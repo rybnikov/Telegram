@@ -1169,6 +1169,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private void logLifecycleState(String reason) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
         String message = "nav-life " + reason
                 + " instance=" + instanceId
                 + " currentInstance=" + (instance != null ? instance.instanceId : 0)
@@ -8548,6 +8551,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private void logBackState(String reason) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
         String message = "nav-host " + reason + " " + dumpHostNavigationState();
         Log.d("tmessages", message);
         FileLog.d(message);
@@ -8593,6 +8599,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private void logMainTabsStateFromHost(String reason) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
         if (actionBarLayout == null || actionBarLayout.getFragmentStack().isEmpty()) {
             return;
         }

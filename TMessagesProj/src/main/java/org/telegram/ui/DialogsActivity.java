@@ -12458,7 +12458,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     private void logDialogsUiState(String reason) {
-        if (!BuildConfig.DEBUG_VERSION) {
+        if (!BuildVars.LOGS_ENABLED) {
             return;
         }
         String message = "nav-ui " + dumpDialogsUiState(reason);

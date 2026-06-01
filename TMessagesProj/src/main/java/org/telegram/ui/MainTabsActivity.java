@@ -33,6 +33,7 @@ import androidx.core.view.WindowInsetsCompat;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BuildConfig;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLoader;
@@ -1034,7 +1035,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     }
 
     private void logMainTabsState(String reason) {
-        if (!BuildConfig.DEBUG_VERSION) {
+        if (!BuildVars.LOGS_ENABLED) {
             return;
         }
         String message = dumpMainTabsState(reason);
