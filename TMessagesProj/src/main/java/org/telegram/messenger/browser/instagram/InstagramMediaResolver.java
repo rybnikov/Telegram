@@ -58,8 +58,23 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
 
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
-        String html = ExternalHtmlUtils.fetchHtml(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADERS);
-        return extractMedia(link, html);
+        ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADERS);
+        ParsedLink resolvedLink = canonicalizeFinalUrl(link, fetchResult.finalUrl);
+        return extractMedia(resolvedLink, fetchResult.html);
+    }
+
+    private ParsedLink canonicalizeFinalUrl(ParsedLink link, String finalUrl) {
+        if (TextUtils.isEmpty(finalUrl) || finalUrl.equals(link.canonicalUrl)) {
+            return link;
+        }
+        try {
+            ParsedLink parsedLink = InstagramLinkParser.parse(Uri.parse(finalUrl));
+            if (parsedLink != null && !TextUtils.isEmpty(parsedLink.canonicalUrl)) {
+                return new ParsedLink(link.originalUrl, parsedLink.canonicalUrl, parsedLink.id, link.platformName);
+            }
+        } catch (Exception ignore) {
+        }
+        return link;
     }
 
     private ResolvedMedia extractMedia(ParsedLink link, String html) {

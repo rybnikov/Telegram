@@ -412,6 +412,9 @@ public final class ExternalPreviewManager {
         }
         TLRPC.WebPage webPage = messageMedia.webpage;
         long stableId = computeStableId(link.canonicalUrl);
+        if (resolver != null && resolver.overridesServerPreview() && webPage.id == stableId && shouldRefreshExternalVideoPreview(webPage, link)) {
+            return false;
+        }
         if (resolver != null && resolver.overridesServerPreview() && webPage.id == stableId && !hasRenderableExternalPreview(webPage)) {
             return false;
         }
@@ -425,6 +428,22 @@ public final class ExternalPreviewManager {
         return webPage.photo != null
             || webPage.document != null
             || !TextUtils.isEmpty(webPage.embed_url);
+    }
+
+    private static boolean shouldRefreshExternalVideoPreview(TLRPC.WebPage webPage, ParsedLink link) {
+        if (webPage == null || webPage.document != null || link == null || TextUtils.isEmpty(link.canonicalUrl)) {
+            return false;
+        }
+        if (!"Instagram".equals(link.platformName)) {
+            return false;
+        }
+        try {
+            Uri uri = Uri.parse(link.canonicalUrl);
+            ArrayList<String> segments = new ArrayList<>(uri.getPathSegments());
+            return !segments.isEmpty() && ("reel".equalsIgnoreCase(segments.get(0)) || "reels".equalsIgnoreCase(segments.get(0)));
+        } catch (Exception ignore) {
+            return false;
+        }
     }
 
     private static void trimCache() {
@@ -629,7 +648,7 @@ public final class ExternalPreviewManager {
         if (previewMedia instanceof ResolvedMedia.Video) {
             ResolvedMedia.Video video = (ResolvedMedia.Video) previewMedia;
             boolean supportsDirectVideoStreaming = resolver == null || resolver.supportsDirectVideoStreaming();
-            ExternalMediaPreviewStore.putVideo(
+            TLRPC.Document videoDocument = ExternalMediaPreviewStore.putVideo(
                 webpage.id, link.platformName, link.canonicalUrl,
                 video.videoUrl, video.posterUrl, video.width, video.height,
                 webpage.title, webpage.description
@@ -638,7 +657,8 @@ public final class ExternalPreviewManager {
             if (TextUtils.isEmpty(posterUrl)) {
                 return null;
             }
-            webpage.type = "photo";
+            webpage.type = "video";
+            webpage.document = videoDocument;
             webpage.embed_url = posterUrl;
             webpage.embed_width = video.width;
             webpage.embed_height = video.height;
@@ -663,6 +683,9 @@ public final class ExternalPreviewManager {
 
     private static TLRPC.WebPage ensureRenderableStoredWebPage(MessagesStorage.ExternalPreviewRecord preview) {
         if (preview.webPage instanceof TLRPC.TL_webPage && hasRenderableExternalPreview(preview.webPage)) {
+            if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO) {
+                ensureStoredVideoDocument((TLRPC.TL_webPage) preview.webPage, preview);
+            }
             normalizeWebPageFlags((TLRPC.TL_webPage) preview.webPage);
             return preview.webPage;
         }
@@ -673,18 +696,38 @@ public final class ExternalPreviewManager {
         webPage.site_name = preview.platform;
         webPage.title = preview.title;
         webPage.description = preview.description;
-        webPage.type = "photo";
         if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO) {
+            webPage.type = "video";
             webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
+            ensureStoredVideoDocument(webPage, preview);
         } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_IMAGE) {
+            webPage.type = "photo";
             webPage.embed_url = preview.mediaUrl;
         } else {
+            webPage.type = "photo";
             webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
         }
         webPage.embed_width = preview.width;
         webPage.embed_height = preview.height;
         normalizeWebPageFlags(webPage);
         return webPage;
+    }
+
+    private static void ensureStoredVideoDocument(TLRPC.TL_webPage webPage, MessagesStorage.ExternalPreviewRecord preview) {
+        if (webPage == null || preview == null) {
+            return;
+        }
+        webPage.type = "video";
+        if (TextUtils.isEmpty(webPage.embed_url)) {
+            webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
+        }
+        if (webPage.document == null) {
+            webPage.document = ExternalMediaPreviewStore.putVideo(
+                preview.webPageId, preview.platform, preview.canonicalUrl,
+                preview.mediaUrl, preview.posterUrl, preview.width, preview.height,
+                preview.title, preview.description
+            );
+        }
     }
 
     private static void normalizeWebPageFlags(TLRPC.TL_webPage webPage) {
