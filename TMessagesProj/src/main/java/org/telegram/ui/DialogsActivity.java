@@ -60,6 +60,7 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ImageSpan;
 import android.util.LongSparseArray;
+import android.util.Log;
 import android.util.Property;
 import android.util.StateSet;
 import android.util.TypedValue;
@@ -7078,6 +7079,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 }
             }
         }
+        logDialogsUiState("onResume:end");
     }
 
     @Override
@@ -7102,6 +7104,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onPause() {
+        logDialogsUiState("onPause:start");
         super.onPause();
         if (storiesBulletin != null) {
             storiesBulletin.hide();
@@ -7126,6 +7129,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 viewPages[a].dialogsAdapter.pause();
             }
         }
+        logDialogsUiState("onPause:end");
     }
 
     @Override
@@ -7220,6 +7224,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onBecomeFullyVisible() {
         super.onBecomeFullyVisible();
+        logDialogsUiState("onBecomeFullyVisible:start");
         if (isArchive()) {
             SharedPreferences preferences = MessagesController.getGlobalMainSettings();
             boolean showArchiveHint = preferences.getBoolean("archivehint", true);
@@ -7239,6 +7244,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             storyHint.show();
         }
         AndroidUtilities.runOnUIThread(this::createSearchViewPager, 200);
+        logDialogsUiState("onBecomeFullyVisible:end");
     }
 
     private void showArchiveHelp() {
@@ -7329,6 +7335,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     private void showSearch(boolean show, boolean startFromDownloads, boolean animated, boolean forceNotOnlyDialogs) {
+        logDialogsUiState("showSearch:start show=" + show + " animated=" + animated + " force=" + forceNotOnlyDialogs);
         animatorSearchVisible.setValue(show, animated);
 
         if (!show) {
@@ -7458,6 +7465,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (searchAnimator != animation) {
                         return;
                     }
+                    logDialogsUiState("showSearch:onAnimationEnd:before show=" + show);
                     setDialogsListFrozen(false);
                     if (show) {
                         viewPages[0].listView.hide();
@@ -7501,18 +7509,21 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         searchViewPager.setBackground(null);
                     }
                     searchAnimator = null;
+                    logDialogsUiState("showSearch:onAnimationEnd:after show=" + show);
                 }
 
                 @Override
                 public void onAnimationCancel(Animator animation) {
                     notificationsLocker.unlock();
                     if (searchAnimator == animation) {
+                        logDialogsUiState("showSearch:onAnimationCancel:before show=" + show);
                         if (show) {
                             viewPages[0].listView.hide();
                         } else {
                             viewPages[0].listView.show();
                         }
                         searchAnimator = null;
+                        logDialogsUiState("showSearch:onAnimationCancel:after show=" + show);
                     }
                 }
             });
@@ -7570,6 +7581,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         checkUi_searchFiltersVisibility();
         updateDialogsHint();
+        logDialogsUiState("showSearch:end show=" + show + " animated=" + animated);
     }
 
     public boolean onlyDialogsAdapter() {
@@ -12334,6 +12346,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void prepareFragmentToSlide(boolean topFragment, boolean beginSlide) {
+        logDialogsUiState("prepareFragmentToSlide:start top=" + topFragment + " begin=" + beginSlide);
         if (!topFragment && beginSlide) {
             isSlideBackTransition = true;
             setFragmentIsSliding(true);
@@ -12343,6 +12356,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             setFragmentIsSliding(false);
             setSlideTransitionProgress(1f);
         }
+        logDialogsUiState("prepareFragmentToSlide:end top=" + topFragment + " begin=" + beginSlide);
     }
 
     private void setFragmentIsSliding(boolean sliding) {
@@ -12394,12 +12408,94 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onSlideProgress(boolean isOpen, float progress) {
+        if (progress == 0f || progress == 1f || progress > .98f) {
+            logDialogsUiState("onSlideProgress open=" + isOpen + " progress=" + progress);
+        }
         if (SharedConfig.getDevicePerformanceClass() <= SharedConfig.PERFORMANCE_CLASS_LOW && !BuildVars.DEBUG_PRIVATE_VERSION) {
             return;
         }
         if (isSlideBackTransition && slideBackTransitionAnimator == null) {
             setSlideTransitionProgress(progress);
         }
+    }
+
+    public String dumpDialogsUiState(String reason) {
+        StringBuilder builder = new StringBuilder("dialogs[");
+        builder.append(reason).append("] paused=").append(isPaused());
+        builder.append(" searchShowed=").append(searchIsShowed);
+        builder.append(" searchFully=").append(searchWasFullyShowed);
+        builder.append(" searchAnimator=").append(searchAnimator != null);
+        builder.append(" searchProgress=").append(searchAnimationProgress);
+        builder.append(" searchFactor=").append(animatorSearchVisible.getFloatValue());
+        builder.append(" frozen=").append(dialogsListFrozen);
+        builder.append(" searching=").append(searching);
+        builder.append(" slideBack=").append(isSlideBackTransition);
+        builder.append(" slideProgress=").append(slideFragmentProgress);
+        builder.append(" rightHas=").append(rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment());
+        builder.append(" rightProgress=").append(getRightSlidingProgress());
+        builder.append(" fragmentView=").append(viewState(fragmentView));
+        builder.append(" actionBar=").append(viewState(actionBar));
+        builder.append(" blurred=").append(viewState(blurredView));
+        builder.append(" searchPager=").append(viewState(searchViewPager));
+        builder.append(" searchTabs=").append(viewState(searchTabsView));
+        builder.append(" searchFilters=").append(viewState(searchTabsAndFiltersLayout));
+        builder.append(" filters=").append(viewState(filtersView));
+        builder.append(" filterTabs=").append(viewState(filterTabsView));
+        builder.append(" topPanel=").append(viewState(topPanelLayout));
+        builder.append(" stories=").append(viewState(dialogStoriesCell));
+        builder.append(" rightContainer=").append(viewState(rightSlidingDialogContainer));
+        if (viewPages != null && viewPages.length > 0) {
+            builder.append(" page0=").append(viewState(viewPages[0]));
+            builder.append(" list0=").append(viewState(viewPages[0] != null ? viewPages[0].listView : null));
+            if (viewPages[0] != null && viewPages[0].listView != null) {
+                builder.append(" list0Adapter=").append(viewPages[0].listView.getAdapter() != null ? viewPages[0].listView.getAdapter().getItemCount() : -1);
+                builder.append(" list0Children=").append(viewPages[0].listView.getChildCount());
+            }
+        } else {
+            builder.append(" page0=null list0=null");
+        }
+        return builder.toString();
+    }
+
+    private void logDialogsUiState(String reason) {
+        if (!BuildConfig.DEBUG_VERSION) {
+            return;
+        }
+        String message = "nav-ui " + dumpDialogsUiState(reason);
+        Log.d("tmessages", message);
+        FileLog.d(message);
+    }
+
+    private static String viewState(View view) {
+        if (view == null) {
+            return "null";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append(visibilityName(view.getVisibility()));
+        builder.append("/a=").append(view.getAlpha());
+        builder.append("/sx=").append(view.getScaleX());
+        builder.append("/sy=").append(view.getScaleY());
+        builder.append("/tx=").append(view.getTranslationX());
+        builder.append("/ty=").append(view.getTranslationY());
+        builder.append("/wh=").append(view.getWidth()).append("x").append(view.getHeight());
+        builder.append("/parent=").append(view.getParent() != null ? view.getParent().getClass().getSimpleName() : "null");
+        if (view instanceof ViewGroup) {
+            builder.append("/children=").append(((ViewGroup) view).getChildCount());
+        }
+        return builder.toString();
+    }
+
+    private static String visibilityName(int visibility) {
+        if (visibility == View.VISIBLE) {
+            return "VISIBLE";
+        }
+        if (visibility == View.INVISIBLE) {
+            return "INVISIBLE";
+        }
+        if (visibility == View.GONE) {
+            return "GONE";
+        }
+        return String.valueOf(visibility);
     }
 
     private void setSlideTransitionProgress(float progress) {

@@ -46,6 +46,7 @@ import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
+import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.animation.AccelerateDecelerateInterpolator;
@@ -930,12 +931,131 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         return innerTranslationX;
     }
 
+    private String debugName() {
+        if (isLayersLayout) {
+            return "layers";
+        }
+        if (main) {
+            return "main";
+        }
+        return useAlphaAnimations ? "alpha" : "secondary";
+    }
+
+    private String debugFragmentName(BaseFragment fragment) {
+        return fragment == null ? "null" : fragment.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(fragment));
+    }
+
+    public String dumpNavigationState(String reason) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("nav-state[").append(debugName()).append("] ").append(reason)
+                .append(" stack=").append(fragmentsStack != null ? fragmentsStack.size() : -1)
+                .append(" top=").append(fragmentsStack != null && !fragmentsStack.isEmpty() ? debugFragmentName(fragmentsStack.get(fragmentsStack.size() - 1)) : "null")
+                .append(" back=").append(fragmentsStack != null && fragmentsStack.size() > 1 ? debugFragmentName(fragmentsStack.get(fragmentsStack.size() - 2)) : "null")
+                .append(" containerChildren=").append(containerView != null ? containerView.getChildCount() : -1)
+                .append(" backChildren=").append(containerViewBack != null ? containerViewBack.getChildCount() : -1)
+                .append(" backVisibility=").append(containerViewBack != null ? containerViewBack.getVisibility() : -1)
+                .append(" container=").append(viewState(containerView))
+                .append(" backContainer=").append(viewState(containerViewBack))
+                .append(" x=").append(containerView != null ? containerView.getTranslationX() : 0)
+                .append(" innerX=").append(innerTranslationX)
+                .append(" transition=").append(transitionAnimationInProgress)
+                .append(" animation=").append(animationInProgress)
+                .append(" predictiveInput=").append(predictiveInput)
+                .append(" predictiveBack=").append(predictiveBackInProgress)
+                .append(" predictiveProgress=").append(predictiveBackHasProgress)
+                .append(" startedTracking=").append(startedTracking)
+                .append(" maybeTracking=").append(maybeStartTracking)
+                .append(" backAnimator=").append(backAnimator != null)
+                .append(" backAnimatorIsBack=").append(backAnimatorIsBack)
+                .append(" closeRunnable=").append(onCloseAnimationEndRunnable != null)
+                .append(" openRunnable=").append(onOpenAnimationEndRunnable != null)
+                .append(" layoutToIgnore=").append(layoutToIgnore == containerView ? "container" : layoutToIgnore == containerViewBack ? "back" : layoutToIgnore == null ? "null" : layoutToIgnore.getClass().getSimpleName());
+        return builder.toString();
+    }
+
+    public void logNavigationState(String reason) {
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d(dumpNavigationState(reason));
+        }
+    }
+
+    private void checkNavigationInvariant(String reason) {
+        if (!BuildVars.LOGS_ENABLED || fragmentsStack == null) {
+            return;
+        }
+        BaseFragment topFragment = fragmentsStack.isEmpty() ? null : fragmentsStack.get(fragmentsStack.size() - 1);
+        View topView = topFragment != null ? topFragment.fragmentView : null;
+        ViewParentState topParent = ViewParentState.of(topView, containerView, containerViewBack);
+        boolean backVisibleWithoutState = containerViewBack != null
+                && containerViewBack.getVisibility() == View.VISIBLE
+                && containerViewBack.getChildCount() > 0
+                && !startedTracking
+                && !animationInProgress
+                && !predictiveInput
+                && !predictiveBackInProgress
+                && !transitionAnimationInProgress;
+        boolean missingTopView = topFragment != null
+                && topView != null
+                && topParent == ViewParentState.OTHER;
+        if (backVisibleWithoutState || missingTopView) {
+            FileLog.w("nav-invariant[" + debugName() + "] " + reason
+                    + " backVisibleWithoutState=" + backVisibleWithoutState
+                    + " missingTopView=" + missingTopView
+                    + " topParent=" + topParent
+                    + " " + dumpNavigationState(reason));
+        }
+    }
+
+    private enum ViewParentState {
+        NULL,
+        CONTAINER,
+        BACK,
+        OTHER;
+
+        static ViewParentState of(View view, View containerView, View containerViewBack) {
+            if (view == null) {
+                return NULL;
+            }
+            ViewParent parent = view.getParent();
+            if (parent == containerView) {
+                return CONTAINER;
+            }
+            if (parent == containerViewBack) {
+                return BACK;
+            }
+            return OTHER;
+        }
+    }
+
+    private static String viewState(View view) {
+        if (view == null) {
+            return "null";
+        }
+        StringBuilder builder = new StringBuilder(view.getClass().getSimpleName());
+        builder.append("/v=").append(view.getVisibility());
+        builder.append("/a=").append(view.getAlpha());
+        builder.append("/sx=").append(view.getScaleX());
+        builder.append("/sy=").append(view.getScaleY());
+        builder.append("/tx=").append(view.getTranslationX());
+        builder.append("/ty=").append(view.getTranslationY());
+        builder.append("/wh=").append(view.getWidth()).append("x").append(view.getHeight());
+        builder.append("/mw=").append(view.getMeasuredWidth()).append("x").append(view.getMeasuredHeight());
+        builder.append("/laid=").append(view.isLaidOut());
+        builder.append("/att=").append(view.isAttachedToWindow());
+        builder.append("/parent=").append(view.getParent() != null ? view.getParent().getClass().getSimpleName() : "null");
+        if (view instanceof ViewGroup) {
+            builder.append("/children=").append(((ViewGroup) view).getChildCount());
+        }
+        return builder.toString();
+    }
+
     /**
      * Force-resets all animation state flags to unblock navigation.
      * Called when animation state may have become stale (e.g., after pause/resume cycle,
      * or when animation has been running longer than expected).
      */
     private void forceResetAnimationState() {
+        logNavigationState("forceResetAnimationState:before");
         if (animationRunnable != null) {
             AndroidUtilities.cancelRunOnUIThread(animationRunnable);
             animationRunnable = null;
@@ -992,19 +1112,25 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             containerViewBack.setVisibility(View.INVISIBLE);
         }
         setInnerTranslationX(0);
+        logNavigationState("forceResetAnimationState:after");
+        checkNavigationInvariant("forceResetAnimationState");
     }
 
     public void resetNavigationStateIfNeeded() {
+        logNavigationState("resetNavigationStateIfNeeded:entry");
         boolean animationStuck = transitionAnimationInProgress || animationInProgress
                 || predictiveInput || predictiveBackInProgress || startedTracking;
         if (!animationStuck) {
+            checkNavigationInvariant("resetNavigationStateIfNeeded:no-stuck");
             return;
         }
         long now = System.currentTimeMillis();
         if (transitionAnimationStartTime > 0 && now - transitionAnimationStartTime < 400) {
+            logNavigationState("resetNavigationStateIfNeeded:transition-too-fresh");
             return;
         }
         if (animationInProgressStartTime > 0 && now - animationInProgressStartTime < 400) {
+            logNavigationState("resetNavigationStateIfNeeded:animation-too-fresh");
             return;
         }
         forceResetAnimationState();
@@ -1012,6 +1138,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
 
     @Override
     public void onResume() {
+        logNavigationState("onResume:before");
         resetNavigationStateIfNeeded();
         if (!fragmentsStack.isEmpty()) {
             BaseFragment lastFragment = fragmentsStack.get(fragmentsStack.size() - 1);
@@ -1020,6 +1147,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         if (sheetFragment != null) {
             sheetFragment.onResume();
         }
+        logNavigationState("onResume:after");
+        checkNavigationInvariant("onResume");
     }
 
     @Override
@@ -1035,6 +1164,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
 
     @Override
     public void onPause() {
+        logNavigationState("onPause:before");
         if (!fragmentsStack.isEmpty()) {
             BaseFragment lastFragment = fragmentsStack.get(fragmentsStack.size() - 1);
             lastFragment.onPause();
@@ -1042,6 +1172,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         if (sheetFragment != null) {
             sheetFragment.onPause();
         }
+        logNavigationState("onPause:after");
+        checkNavigationInvariant("onPause");
     }
 
     @Override
@@ -1333,9 +1465,11 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     }
 
     private void onSlideAnimationEnd(final boolean backAnimation) {
+        logNavigationState("onSlideAnimationEnd:before backAnimation=" + backAnimation);
         if (!backAnimation) {
             if (fragmentsStack.size() < 2) {
                 checkBlackScreen("onSlideAnimationEnd exit");
+                logNavigationState("onSlideAnimationEnd:empty-stack");
                 return;
             }
             BaseFragment lastFragment = fragmentsStack.get(fragmentsStack.size() - 1);
@@ -1397,9 +1531,12 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         containerViewBack.setTranslationX(0);
         containerView.setLayerType(LAYER_TYPE_NONE, null);
         setInnerTranslationX(0);
+        logNavigationState("onSlideAnimationEnd:after backAnimation=" + backAnimation);
+        checkNavigationInvariant("onSlideAnimationEnd");
     }
 
     private void prepareForMoving() {
+        logNavigationState("prepareForMoving:before");
         maybeStartTracking = false;
         startedTracking = true;
         layoutToIgnore = containerViewBack;
@@ -1450,6 +1587,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         BaseFragment currentFragment = fragmentsStack.get(fragmentsStack.size() - 1);
         currentFragment.prepareFragmentToSlide(true, true);
         lastFragment.prepareFragmentToSlide(false, true);
+        logNavigationState("prepareForMoving:after");
+        checkNavigationInvariant("prepareForMoving");
     }
 
     @Override
@@ -1568,35 +1707,48 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     private float predictiveBackY;
     private boolean predictiveBackLeft;
     public boolean onBackStarted(float touchX, float touchY) {
+        logNavigationState("onBackStarted:entry x=" + touchX + " y=" + touchY);
         if (animationInProgress) {
             if (backAnimator != null) {
+                logNavigationState("onBackStarted:end-existing-backAnimator");
                 backAnimator.end();
                 backAnimator = null;
             } else if (animationInProgressStartTime < System.currentTimeMillis() - 1500) {
+                logNavigationState("onBackStarted:drop-stale-animation");
                 animationInProgress = false;
                 startedTracking = false;
             } else {
+                logNavigationState("onBackStarted:blocked-animation");
                 return false;
             }
-            if (animationInProgress) return false;
+            if (animationInProgress) {
+                logNavigationState("onBackStarted:still-animation");
+                return false;
+            }
         }
         if (predictiveBackInProgress || predictiveInput) {
+            logNavigationState("onBackStarted:blocked-predictive-active");
             return false;
         }
         if (transitionAnimationPreviewMode || startedTracking || checkTransitionAnimation() || fragmentsStack.size() <= 1) {
+            logNavigationState("onBackStarted:blocked-state");
             return false;
         }
         if (isInPreviewMode()) {
+            logNavigationState("onBackStarted:blocked-preview");
             return false;
         }
         if (sheetFragment != null && sheetFragment.hasShownSheet()) {
+            logNavigationState("onBackStarted:blocked-sheet");
             return false;
         }
         final BaseFragment currentFragment = fragmentsStack.get(fragmentsStack.size() - 1);
         if (!currentFragment.onBackPressed(false)) {
+            logNavigationState("onBackStarted:blocked-fragment-onBackPressed");
             return false;
         }
         if (currentFragment.hasShownSheet() || !currentFragment.canBeginSlide()) {
+            logNavigationState("onBackStarted:blocked-canBeginSlide");
             return false;
         }
         predictiveBackHasProgress = false;
@@ -1609,11 +1761,16 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             AndroidUtilities.hideKeyboard(parentActivity.getCurrentFocus());
         }
         currentFragment.onBeginSlide();
+        logNavigationState("onBackStarted:started");
+        checkNavigationInvariant("onBackStarted");
         return true;
     }
 
     public void onBackProgress(float t) {
         if (!predictiveInput) return;
+        if (!predictiveBackHasProgress && t > 0) {
+            logNavigationState("onBackProgress:first t=" + t);
+        }
         final float dx = dp(56) * CubicBezierInterpolator.StandardDecelerate.getInterpolation(t);
         predictiveBackHasProgress = t > 0;
         containerView.setTranslationX(dx);
@@ -1622,11 +1779,13 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
 
     public void onBackCancelled() {
         if (!predictiveInput) return;
+        logNavigationState("onBackCancelled");
         predictiveInput = false;
         animateBackEndAnimation(true);
     }
 
     public void onBackInvoked() {
+        logNavigationState("onBackInvoked:entry");
         if (!predictiveInput) {
             onBackPressed();
             return;
@@ -1642,6 +1801,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     private boolean backAnimatorIsBack;
     private AnimatorSet backAnimator;
     private void animateBackEndAnimation(boolean backAnimation) {
+        logNavigationState("animateBackEndAnimation:start backAnimation=" + backAnimation);
         final BaseFragment currentFragment = !fragmentsStack.isEmpty() ? fragmentsStack.get(fragmentsStack.size() - 1) : null;
         if (currentFragment == null) return;
 
@@ -1694,18 +1854,22 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             @Override
             public void onAnimationCancel(Animator animation) {
                 cancelled = true;
+                logNavigationState("animateBackEndAnimation:cancel backAnimation=" + backAnimation);
                 predictiveBackInProgress = false;
                 containerView.setAlpha(1.0f);
                 onSlideAnimationEnd(true);
                 backAnimator = null;
+                checkNavigationInvariant("animateBackEndAnimation:cancel");
             }
             @Override
             public void onAnimationEnd(Animator animator) {
                 if (cancelled) return;
+                logNavigationState("animateBackEndAnimation:end backAnimation=" + backAnimation);
                 predictiveBackInProgress = false;
                 containerView.setAlpha(1.0f);
                 onSlideAnimationEnd(backAnimation);
                 backAnimator = null;
+                checkNavigationInvariant("animateBackEndAnimation:end");
             }
         });
         backAnimator = animatorSet;
@@ -1718,8 +1882,10 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
 
     @Override
     public void onBackPressed() {
+        logNavigationState("onBackPressed:entry");
         if (animationInProgress && animationInProgressStartTime < System.currentTimeMillis() - 1500) {
             if (backAnimator != null) {
+                logNavigationState("onBackPressed:end-stale-backAnimator");
                 backAnimator.end();
                 backAnimator = null;
             }
@@ -1729,9 +1895,11 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             predictiveInput = false;
         }
         if (transitionAnimationPreviewMode || startedTracking || checkTransitionAnimation() || fragmentsStack.isEmpty()) {
+            logNavigationState("onBackPressed:blocked");
             return;
         }
         if (GroupCallPip.onBackPressed()) {
+            logNavigationState("onBackPressed:group-call-pip");
             return;
         }
         if (!storyViewerAttached() && currentActionBar != null && !currentActionBar.isActionModeShowed() && currentActionBar.isSearchFieldVisible) {
@@ -1739,6 +1907,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             return;
         }
         if (sheetFragment != null && !sheetFragment.onBackPressed(true)) {
+            logNavigationState("onBackPressed:sheet");
             return;
         }
         BaseFragment lastFragment = fragmentsStack.get(fragmentsStack.size() - 1);
@@ -1747,6 +1916,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
                 closeLastFragment(true);
             }
         }
+        logNavigationState("onBackPressed:exit");
+        checkNavigationInvariant("onBackPressed");
     }
 
     @Override

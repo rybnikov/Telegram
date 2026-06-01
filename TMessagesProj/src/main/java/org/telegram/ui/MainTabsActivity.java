@@ -14,6 +14,7 @@ import android.graphics.drawable.ShapeDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -223,6 +224,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         Bulletin.addDelegate(contentView, delegate);
 
         showAccountChangeHint();
+        logMainTabsState("onResume:end");
     }
 
     private void checkContactsTabBadge() {
@@ -241,12 +243,14 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     public void onPause() {
+        logMainTabsState("onPause:start");
         super.onPause();
         Bulletin.removeDelegate(this);
         Bulletin.removeDelegate(contentView);
         if (accountSwitchHint != null) {
             accountSwitchHint.hide();
         }
+        logMainTabsState("onPause:end");
     }
 
     @Override
@@ -989,6 +993,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     @Override
     public void onBeginSlide() {
         super.onBeginSlide();
+        logMainTabsState("onBeginSlide");
         final BaseFragment fragment = getCurrentVisibleFragment();
         if (fragment != null) {
             fragment.onBeginSlide();
@@ -997,6 +1002,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     public void onSlideProgress(boolean isOpen, float progress) {
+        if (progress == 0f || progress == 1f || progress > .98f) {
+            logMainTabsState("onSlideProgress open=" + isOpen + " progress=" + progress);
+        }
         final BaseFragment fragment = getCurrentVisibleFragment();
         if (fragment != null) {
             fragment.onSlideProgress(isOpen, progress);
@@ -1011,10 +1019,83 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     public void prepareFragmentToSlide(boolean topFragment, boolean beginSlide) {
+        logMainTabsState("prepareFragmentToSlide:start top=" + topFragment + " begin=" + beginSlide);
         final BaseFragment fragment = getCurrentVisibleFragment();
         if (fragment != null) {
             fragment.prepareFragmentToSlide(topFragment, beginSlide);
         }
+        logMainTabsState("prepareFragmentToSlide:end top=" + topFragment + " begin=" + beginSlide);
+    }
+
+    @Override
+    public void onBecomeFullyVisible() {
+        super.onBecomeFullyVisible();
+        logMainTabsState("onBecomeFullyVisible");
+    }
+
+    private void logMainTabsState(String reason) {
+        if (!BuildConfig.DEBUG_VERSION) {
+            return;
+        }
+        String message = dumpMainTabsState(reason);
+        Log.d("tmessages", message);
+        FileLog.d(message);
+    }
+
+    public String dumpMainTabsState(String reason) {
+        final BaseFragment fragment = getCurrentVisibleFragment();
+        StringBuilder builder = new StringBuilder("nav-ui mainTabs[");
+        builder.append(reason).append("] paused=").append(isPaused());
+        builder.append(" fragment=").append(fragment != null ? fragment.getClass().getSimpleName() : "null");
+        builder.append(" fragmentView=").append(viewState(fragment != null ? fragment.getFragmentView() : null));
+        builder.append(" self=").append(viewState(fragmentView));
+        builder.append(" content=").append(viewState(contentView));
+        builder.append(" tabsWrapper=").append(viewState(tabsViewWrapper));
+        builder.append(" tabs=").append(viewState(tabsView));
+        builder.append(" fade=").append(viewState(fadeView));
+        if (viewPager != null) {
+            builder.append(" vpCurrent=").append(viewPager.getCurrentPosition());
+            builder.append(" vpAnimated=").append(viewPager.getPositionAnimated());
+            builder.append(" vp=").append(viewState(viewPager));
+        } else {
+            builder.append(" vp=null");
+        }
+        if (fragment instanceof DialogsActivity) {
+            builder.append(" | ").append(((DialogsActivity) fragment).dumpDialogsUiState(reason));
+        }
+        return builder.toString();
+    }
+
+    private static String viewState(View view) {
+        if (view == null) {
+            return "null";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append(visibilityName(view.getVisibility()));
+        builder.append("/a=").append(view.getAlpha());
+        builder.append("/sx=").append(view.getScaleX());
+        builder.append("/sy=").append(view.getScaleY());
+        builder.append("/tx=").append(view.getTranslationX());
+        builder.append("/ty=").append(view.getTranslationY());
+        builder.append("/wh=").append(view.getWidth()).append("x").append(view.getHeight());
+        builder.append("/parent=").append(view.getParent() != null ? view.getParent().getClass().getSimpleName() : "null");
+        if (view instanceof ViewGroup) {
+            builder.append("/children=").append(((ViewGroup) view).getChildCount());
+        }
+        return builder.toString();
+    }
+
+    private static String visibilityName(int visibility) {
+        if (visibility == View.VISIBLE) {
+            return "VISIBLE";
+        }
+        if (visibility == View.INVISIBLE) {
+            return "INVISIBLE";
+        }
+        if (visibility == View.GONE) {
+            return "GONE";
+        }
+        return String.valueOf(visibility);
     }
 
 

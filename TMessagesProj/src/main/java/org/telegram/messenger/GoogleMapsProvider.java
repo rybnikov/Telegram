@@ -39,7 +39,15 @@ public class GoogleMapsProvider implements IMapsProvider {
 
     @Override
     public void initializeMaps(Context context) {
-        MapsInitializer.initialize(context);
+        try {
+            MapsInitializer.initialize(context);
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("maps initialize ok package=" + context.getPackageName());
+            }
+        } catch (Throwable t) {
+            FileLog.e("maps initialize failed package=" + context.getPackageName() + " error=" + t);
+            throw t;
+        }
     }
 
     @Override
@@ -587,7 +595,13 @@ public class GoogleMapsProvider implements IMapsProvider {
 
         @Override
         public void getMapAsync(Consumer<IMap> callback) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("maps getMapAsync requested");
+            }
             mapView.getMapAsync(googleMap -> {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("maps getMapAsync ready");
+                }
                 callback.accept(new GoogleMapImpl(googleMap));
                 findGlSurfaceView(mapView);
             });

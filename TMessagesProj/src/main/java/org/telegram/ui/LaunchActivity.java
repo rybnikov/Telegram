@@ -21,6 +21,7 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.Dialog;
 import android.app.PictureInPictureParams;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -48,6 +49,7 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ClickableSpan;
 import android.util.Base64;
+import android.util.Log;
 import android.util.SparseIntArray;
 import android.view.ActionMode;
 import android.view.Gravity;
@@ -385,6 +387,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onCreate(Bundle savedInstanceState) {
         isActive = true;
         activeInstanceCount++;
+        logLifecycleState("onCreate:begin");
         if (BuildVars.DEBUG_VERSION) {
             StrictMode.setVmPolicy(new StrictMode.VmPolicy.Builder(StrictMode.getVmPolicy())
                 .detectLeakedClosableObjects()
@@ -535,6 +538,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
         });
         setupActionBarLayout();
+        logLifecycleState("onCreate:after-setupActionBarLayout");
         drawerLayoutContainer.setParentActionBarLayout(actionBarLayout);
         actionBarLayout.setDrawerLayoutContainer(drawerLayoutContainer);
         actionBarLayout.setFragmentStack(mainFragmentsStack);
@@ -733,6 +737,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     @Override
                     public void onBackInvoked() {
                         invoked = true;
+                        logBackState("callback:onBackInvoked");
                         if (locked) {
                             locker.unlock();
                             locked = false;
@@ -756,17 +761,20 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         started = true;
                         invoked = false;
                         predictiveBackStarted = false;
+                        logBackState("callback:onBackStarted progress=" + backEvent.getProgress());
                     }
 
                     private void onBackStartedInternal(BackEvent backEvent) {
                         if (AndroidUtilities.isTablet()) return;
                         if (!onBackPressed(false)) return;
                         if (actionBarLayout != null) {
+                            actionBarLayout.logNavigationState("callback:onBackStartedInternal:before");
                             boolean started = actionBarLayout.onBackStarted(backEvent.getTouchX(), backEvent.getTouchY());
                             if (started && !locked) {
                                 locker.lock();
                                 locked = true;
                             }
+                            actionBarLayout.logNavigationState("callback:onBackStartedInternal:after started=" + started);
                         }
                     }
 
@@ -781,6 +789,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         final float progress = backEvent.getProgress();
                         if (!predictiveBackStarted && progress > LAZY_START) {
                             predictiveBackStarted = true;
+                            logBackState("callback:onBackProgressed:start progress=" + progress);
                             onBackStartedInternal(backEvent);
                         }
 
@@ -796,6 +805,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     public void onBackCancelled() {
                         started = false;
                         invoked = false;
+                        logBackState("callback:onBackCancelled");
                         if (locked) {
                             locker.unlock();
                             locked = false;
@@ -940,6 +950,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     );
 
                     inLayout = false;
+                    logTabletLayoutState("launchLayout:onMeasure width=" + width + " height=" + height);
                 }
 
                 @Override
@@ -963,6 +974,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     layersActionBarLayout.getView().layout(x, y, x + layersActionBarLayout.getView().getMeasuredWidth(), y + layersActionBarLayout.getView().getMeasuredHeight());
                     backgroundTablet.layout(0, 0, backgroundTablet.getMeasuredWidth(), backgroundTablet.getMeasuredHeight());
                     shadowTablet.layout(0, 0, shadowTablet.getMeasuredWidth(), shadowTablet.getMeasuredHeight());
+                    logTabletLayoutState("launchLayout:onLayout changed=" + changed + " width=" + width + " height=" + height);
                 }
 
                 @Override
@@ -1079,7 +1091,14 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     private void trackFragmentOwnership(List<BaseFragment> fragmentsStack) {
         final int taskId = getTaskId();
         for (BaseFragment fragment : fragmentsStack) {
-            if (!fragmentOwnerTaskIds.containsKey(fragment)) {
+            Integer previousTaskId = fragmentOwnerTaskIds.get(fragment);
+            if (previousTaskId == null || previousTaskId != taskId) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("nav-owner track instance=" + instanceId
+                            + " task=" + taskId
+                            + " fragment=" + fragment.getClass().getSimpleName()
+                            + " previousTask=" + previousTaskId);
+                }
                 fragmentOwnerTaskIds.put(fragment, taskId);
             }
         }
@@ -1094,7 +1113,17 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         for (BaseFragment fragment : fragmentsStack) {
             Integer ownerTaskId = fragmentOwnerTaskIds.get(fragment);
             if (ownerTaskId != null && ownerTaskId == myTaskId) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("nav-owner destroy-owned instance=" + instanceId
+                            + " task=" + myTaskId
+                            + " fragment=" + fragment.getClass().getSimpleName());
+                }
                 toRemove.add(fragment);
+            } else if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("nav-owner keep instance=" + instanceId
+                        + " task=" + myTaskId
+                        + " fragment=" + fragment.getClass().getSimpleName()
+                        + " ownerTask=" + ownerTaskId);
             }
         }
         for (BaseFragment fragment : toRemove) {
@@ -1137,6 +1166,32 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             FileLog.e(t);
         }
         return false;
+    }
+
+    private void logLifecycleState(String reason) {
+        String message = "nav-life " + reason
+                + " instance=" + instanceId
+                + " currentInstance=" + (instance != null ? instance.instanceId : 0)
+                + " task=" + getTaskId()
+                + " activeCount=" + activeInstanceCount
+                + " changingConfig=" + isChangingConfigurations()
+                + " finishing=" + isFinishing()
+                + " intent=" + getIntentActionName()
+                + " main=" + mainFragmentsStack.size()
+                + " right=" + rightFragmentsStack.size()
+                + " layers=" + layerFragmentsStack.size();
+        Log.d("tmessages", message);
+        FileLog.d(message);
+    }
+
+    private String getIntentActionName() {
+        Intent intent = getIntent();
+        if (intent == null) {
+            return "null";
+        }
+        String action = intent.getAction();
+        ComponentName component = intent.getComponent();
+        return action + "/" + (component != null ? component.getClassName() : "null");
     }
 
     public void addOnUserLeaveHintListener(Runnable callback) {
@@ -6812,6 +6867,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onPause() {
         super.onPause();
         isResumed = false;
+        logBackState("onPause:before-layouts");
         pipActivityHandler.onPause();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.stopAllHeavyOperations, 4096);
         ApplicationLoader.mainInterfacePaused = true;
@@ -6836,6 +6892,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (passcodeDialog != null) {
             passcodeDialog.passcodeView.onPause();
         }
+        logBackState("onPause:after-layouts");
         for (PasscodeView overlay : overlayPasscodeViews) {
             overlay.onPause();
         }
@@ -6864,6 +6921,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onStart() {
         super.onStart();
         isStarted = true;
+        logLifecycleState("onStart");
         pipActivityHandler.onStart();
         Browser.bindCustomTabsService(this);
         ApplicationLoader.mainInterfaceStopped = false;
@@ -6877,6 +6935,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onStop() {
         super.onStop();
         isStarted = false;
+        logLifecycleState("onStop");
         pipActivityHandler.onStop();
         Browser.unbindCustomTabsService(this);
         ApplicationLoader.mainInterfaceStopped = true;
@@ -6935,6 +6994,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         final boolean allowGlobalUiTeardown = instance == this
                 && !isChangingConfigurations()
                 && !hasOtherLaunchActivityInstanceInAppTasks();
+        logLifecycleState("onDestroy:begin allowGlobalUiTeardown=" + allowGlobalUiTeardown);
 
         isActive = false;
         activeInstanceCount--;
@@ -6986,6 +7046,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && frameMetricsOverlayView != null) {
             frameMetricsOverlayView.detach();
         }
+        logLifecycleState("onDestroy:end");
     }
 
     private static void onDestroyStaticResources() {
@@ -7044,6 +7105,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onResume() {
         super.onResume();
         isResumed = true;
+        logLifecycleState("onResume");
+        logBackState("onResume:before-layouts");
         pipActivityHandler.onResume();
         if (onResumeStaticCallback != null) {
             onResumeStaticCallback.run();
@@ -7092,6 +7155,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 overlay.onResume();
             }
         }
+        logBackState("onResume:after-layouts");
         ConnectionsManager.getInstance(currentAccount).setAppPaused(false, false);
         updateCurrentConnectionState(currentAccount);
         if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {
@@ -8408,24 +8472,135 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (!onBackPressed(true)) {
             return;
         }
+        logBackState("onBackPressed:before");
         if (AndroidUtilities.isTablet()) {
             if (layersActionBarLayout != null && layersActionBarLayout.getView().getVisibility() == View.VISIBLE) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("nav-host onBackPressed:selected=layers " + dumpHostNavigationState());
+                }
+                layersActionBarLayout.logNavigationState("LaunchActivity:onBackPressed:before-layers");
                 layersActionBarLayout.onBackPressed();
+                layersActionBarLayout.logNavigationState("LaunchActivity:onBackPressed:after-layers");
             } else {
                 if (rightActionBarLayout != null && rightActionBarLayout.getView().getVisibility() == View.VISIBLE && !rightActionBarLayout.getFragmentStack().isEmpty()) {
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("nav-host onBackPressed:selected=right-finish-fragment " + dumpHostNavigationState());
+                    }
                     BaseFragment lastFragment = rightActionBarLayout.getFragmentStack().get(rightActionBarLayout.getFragmentStack().size() - 1);
                     if (lastFragment.onBackPressed(true)) {
                         lastFragment.finishFragment();
                     }
                 } else if (actionBarLayout.getFragmentStack().isEmpty()) {
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("nav-host onBackPressed:finish-empty " + dumpHostNavigationState());
+                    }
                     onFinish();
                     finish();
                 } else {
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("nav-host onBackPressed:selected=main " + dumpHostNavigationState());
+                    }
+                    actionBarLayout.logNavigationState("LaunchActivity:onBackPressed:before-main");
                     actionBarLayout.onBackPressed();
+                    actionBarLayout.logNavigationState("LaunchActivity:onBackPressed:after-main");
                 }
             }
         } else {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("nav-host onBackPressed:selected=phone-main " + dumpHostNavigationState());
+            }
+            actionBarLayout.logNavigationState("LaunchActivity:onBackPressed:before-phone-main");
             actionBarLayout.onBackPressed();
+            actionBarLayout.logNavigationState("LaunchActivity:onBackPressed:after-phone-main");
+        }
+        logBackState("onBackPressed:after");
+    }
+
+    private String dumpHostNavigationState() {
+        return "host tablet=" + AndroidUtilities.isTablet()
+                + " tabletFullSize=" + tabletFullSize
+                + " main=" + (actionBarLayout != null ? actionBarLayout.getFragmentStack().size() : -1)
+                + " mainTop=" + getTopFragmentName(actionBarLayout)
+                + " right=" + (rightActionBarLayout != null ? rightActionBarLayout.getFragmentStack().size() : -1)
+                + " rightTop=" + getTopFragmentName(rightActionBarLayout)
+                + " layers=" + (layersActionBarLayout != null ? layersActionBarLayout.getFragmentStack().size() : -1)
+                + " layersTop=" + getTopFragmentName(layersActionBarLayout)
+                + " rightVisible=" + (rightActionBarLayout != null && rightActionBarLayout.getView().getVisibility() == View.VISIBLE)
+                + " layersVisible=" + (layersActionBarLayout != null && layersActionBarLayout.getView().getVisibility() == View.VISIBLE)
+                + " isResumed=" + isResumed
+                + " isActive=" + isActive
+                + " decor=" + viewState(getWindow() != null ? getWindow().getDecorView() : null)
+                + " drawer=" + viewState(drawerLayoutContainer)
+                + " launch=" + viewState(launchLayout)
+                + " mainView=" + viewState(actionBarLayout != null ? actionBarLayout.getView() : null)
+                + " rightView=" + viewState(rightActionBarLayout != null ? rightActionBarLayout.getView() : null)
+                + " layersView=" + viewState(layersActionBarLayout != null ? layersActionBarLayout.getView() : null)
+                + " background=" + viewState(backgroundTablet)
+                + " sideShadow=" + viewState(shadowTabletSide);
+    }
+
+    private String getTopFragmentName(ActionBarLayout layout) {
+        if (layout == null || layout.getFragmentStack().isEmpty()) {
+            return "null";
+        }
+        BaseFragment fragment = layout.getFragmentStack().get(layout.getFragmentStack().size() - 1);
+        return fragment != null ? fragment.getClass().getSimpleName() : "null";
+    }
+
+    private void logBackState(String reason) {
+        String message = "nav-host " + reason + " " + dumpHostNavigationState();
+        Log.d("tmessages", message);
+        FileLog.d(message);
+        logMainTabsStateFromHost(reason);
+        if (actionBarLayout != null) {
+            actionBarLayout.logNavigationState("host:" + reason + ":main");
+        }
+        if (rightActionBarLayout != null) {
+            rightActionBarLayout.logNavigationState("host:" + reason + ":right");
+        }
+        if (layersActionBarLayout != null) {
+            layersActionBarLayout.logNavigationState("host:" + reason + ":layers");
+        }
+    }
+
+    private void logTabletLayoutState(String reason) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        String message = "nav-layout " + reason + " " + dumpHostNavigationState();
+        Log.d("tmessages", message);
+        FileLog.d(message);
+    }
+
+    private static String viewState(View view) {
+        if (view == null) {
+            return "null";
+        }
+        StringBuilder builder = new StringBuilder(view.getClass().getSimpleName());
+        builder.append("/v=").append(view.getVisibility());
+        builder.append("/a=").append(view.getAlpha());
+        builder.append("/tx=").append(view.getTranslationX());
+        builder.append("/ty=").append(view.getTranslationY());
+        builder.append("/wh=").append(view.getWidth()).append("x").append(view.getHeight());
+        builder.append("/mw=").append(view.getMeasuredWidth()).append("x").append(view.getMeasuredHeight());
+        builder.append("/laid=").append(view.isLaidOut());
+        builder.append("/att=").append(view.isAttachedToWindow());
+        builder.append("/parent=").append(view.getParent() != null ? view.getParent().getClass().getSimpleName() : "null");
+        if (view instanceof ViewGroup) {
+            builder.append("/children=").append(((ViewGroup) view).getChildCount());
+        }
+        return builder.toString();
+    }
+
+    private void logMainTabsStateFromHost(String reason) {
+        if (actionBarLayout == null || actionBarLayout.getFragmentStack().isEmpty()) {
+            return;
+        }
+        BaseFragment fragment = actionBarLayout.getFragmentStack().get(actionBarLayout.getFragmentStack().size() - 1);
+        if (fragment instanceof MainTabsActivity) {
+            String message = "nav-host-main " + ((MainTabsActivity) fragment).dumpMainTabsState(reason);
+            Log.d("tmessages", message);
+            FileLog.d(message);
         }
     }
 
