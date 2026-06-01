@@ -233,34 +233,34 @@ jobs:
 
           classify_play_error() {
             python3 - "$1" "$2" <<'PY'
-import json
-import sys
+          import json
+          import sys
 
-http_code = sys.argv[1]
-path = sys.argv[2]
+          http_code = sys.argv[1]
+          path = sys.argv[2]
 
-try:
-    with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-except Exception:
-    print("other")
-    raise SystemExit(0)
+          try:
+              with open(path, "r", encoding="utf-8") as fh:
+                  data = json.load(fh)
+          except Exception:
+              print("other")
+              raise SystemExit(0)
 
-error = data.get("error") or {}
-message = (error.get("message") or "").lower()
-status = error.get("status") or ""
-code = str(error.get("code") or "")
+          error = data.get("error") or {}
+          message = (error.get("message") or "").lower()
+          status = error.get("status") or ""
+          code = str(error.get("code") or "")
 
-if (
-    http_code == "400"
-    and code == "400"
-    and status == "INVALID_ARGUMENT"
-    and "only releases with status draft may be created on draft app" in message
-):
-    print("draft_app")
-else:
-    print("other")
-PY
+          if (
+              http_code == "400"
+              and code == "400"
+              and status == "INVALID_ARGUMENT"
+              and "only releases with status draft may be created on draft app" in message
+          ):
+              print("draft_app")
+          else:
+              print("other")
+          PY
           }
 
           SA_JSON_PATH="${RUNNER_TEMP}/play-service-account.json"
