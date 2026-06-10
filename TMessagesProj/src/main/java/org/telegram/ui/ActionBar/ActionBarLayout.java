@@ -1803,7 +1803,11 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     private void animateBackEndAnimation(boolean backAnimation) {
         logNavigationState("animateBackEndAnimation:start backAnimation=" + backAnimation);
         final BaseFragment currentFragment = !fragmentsStack.isEmpty() ? fragmentsStack.get(fragmentsStack.size() - 1) : null;
-        if (currentFragment == null) return;
+        if (currentFragment == null) {
+            logNavigationState("animateBackEndAnimation:null-fragment-reset");
+            forceResetAnimationState();
+            return;
+        }
 
         float x = containerView.getX();
         AnimatorSet animatorSet = new AnimatorSet();
@@ -3425,16 +3429,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         if (parentActivity == null) {
             return;
         }
-        if (transitionAnimationInProgress) {
-            if (currentAnimation != null) {
-                currentAnimation.cancel();
-                currentAnimation = null;
-            }
-            if (onCloseAnimationEndRunnable != null) {
-                onCloseAnimationEnd();
-            } else if (onOpenAnimationEndRunnable != null) {
-                onOpenAnimationEnd();
-            }
+        if (transitionAnimationInProgress || animationInProgress || startedTracking) {
+            logNavigationState("startActivityForResult:reset");
+            forceResetAnimationState();
             containerView.invalidate();
         }
         if (intent != null) {
