@@ -458,6 +458,24 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         frameLayout.setClipToPadding(false);
         frameLayout.setClipChildren(false);
         setContentView(frameLayout);
+        getWindow().getDecorView().addOnLayoutChangeListener((v, l, t, r, b, oldL, oldT, oldR, oldB) -> {
+            int width = r - l;
+            int height = b - t;
+            if (width <= 0 || height <= 0) {
+                return;
+            }
+            int widthDiff = Math.abs(AndroidUtilities.displaySize.x - width);
+            int heightDiff = Math.abs(AndroidUtilities.displaySize.y - height);
+            boolean widthChanged = widthDiff > 3;
+            boolean heightChanged = heightDiff > AndroidUtilities.dp(64) && (height > AndroidUtilities.displaySize.y || heightDiff < AndroidUtilities.dp(160));
+            if (widthChanged || heightChanged) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("window size mismatch: displaySize=" + AndroidUtilities.displaySize.x + "x" + AndroidUtilities.displaySize.y + " decor=" + width + "x" + height);
+                }
+                AndroidUtilities.checkDisplaySize(this, null);
+                checkLayout();
+            }
+        });
         rootAnimatedInsetsListener = new WindowAnimatedInsetsProvider(frameLayout);
         pipActivityController.addPipListener(new IPipActivityListener() {
             @Override
@@ -7384,8 +7402,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     public void onMultiWindowModeChanged(boolean isInMultiWindowMode) {
         cancelStalePredictiveBack("multiwindow");
         AndroidUtilities.isInMultiwindow = isInMultiWindowMode;
-        checkLayout();
         super.onMultiWindowModeChanged(isInMultiWindowMode);
+        AndroidUtilities.checkDisplaySize(this, null);
+        checkLayout();
     }
 
     @Override
