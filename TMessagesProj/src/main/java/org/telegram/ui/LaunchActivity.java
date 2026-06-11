@@ -473,6 +473,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     FileLog.d("window size mismatch: displaySize=" + AndroidUtilities.displaySize.x + "x" + AndroidUtilities.displaySize.y + " decor=" + width + "x" + height);
                 }
                 AndroidUtilities.checkDisplaySize(this, null);
+                AndroidUtilities.resetTabletFlag();
+                invalidateTabletMode();
                 checkLayout();
             }
         });

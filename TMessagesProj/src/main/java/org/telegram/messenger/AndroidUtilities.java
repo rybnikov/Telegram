@@ -2955,8 +2955,9 @@ public class AndroidUtilities {
 
     public static boolean isTabletForce() {
         if (displaySize.x > 0 && displaySize.y > 0 && density > 0) {
-            float smallestWidthDp = Math.min(displaySize.x, displaySize.y) / density;
-            return smallestWidthDp >= 600;
+            float widthDp = displaySize.x / density;
+            float heightDp = displaySize.y / density;
+            return widthDp >= 600 && heightDp >= 320;
         }
         if (ApplicationLoader.applicationContext == null) {
             return false;
