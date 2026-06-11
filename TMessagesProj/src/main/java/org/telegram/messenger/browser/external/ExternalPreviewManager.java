@@ -412,7 +412,7 @@ public final class ExternalPreviewManager {
         }
         TLRPC.WebPage webPage = messageMedia.webpage;
         long stableId = computeStableId(link.canonicalUrl);
-        if (resolver != null && resolver.overridesServerPreview() && webPage.id == stableId && shouldRefreshExternalVideoPreview(webPage, link)) {
+        if (resolver != null && resolver.overridesServerPreview() && webPage.id == stableId && shouldRefreshExternalVideoPreview(resolver, webPage, link)) {
             return false;
         }
         if (resolver != null && resolver.overridesServerPreview() && webPage.id == stableId && !hasRenderableExternalPreview(webPage)) {
@@ -430,11 +430,19 @@ public final class ExternalPreviewManager {
             || !TextUtils.isEmpty(webPage.embed_url);
     }
 
-    private static boolean shouldRefreshExternalVideoPreview(TLRPC.WebPage webPage, ParsedLink link) {
-        if (webPage == null || webPage.document != null || link == null || TextUtils.isEmpty(link.canonicalUrl)) {
+    private static boolean shouldRefreshExternalVideoPreview(ExternalMediaResolver resolver, TLRPC.WebPage webPage, ParsedLink link) {
+        if (webPage == null || link == null || TextUtils.isEmpty(link.canonicalUrl) || resolver == null) {
             return false;
         }
-        if (!"Instagram".equals(link.platformName)) {
+        boolean supportsDirectVideoStreaming = resolver.supportsDirectVideoStreaming();
+        boolean looksLikeVideo = "video".equals(webPage.type) || webPage.document != null;
+        if (supportsDirectVideoStreaming && looksLikeVideo && webPage.document == null) {
+            return true;
+        }
+        if (!supportsDirectVideoStreaming && webPage.document != null) {
+            return true;
+        }
+        if (!supportsDirectVideoStreaming || webPage.document != null || !"Instagram".equals(link.platformName)) {
             return false;
         }
         try {
