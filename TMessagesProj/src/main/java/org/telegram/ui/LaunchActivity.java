@@ -782,6 +782,19 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     private boolean predictiveBackStarted;
                     private boolean predictiveBackInvoked;
 
+                    {
+                        predictiveBackReset = () -> {
+                            if (locked) {
+                                locker.unlock();
+                                locked = false;
+                            }
+                            started = false;
+                            invoked = false;
+                            predictiveBackStarted = false;
+                            predictiveBackInvoked = false;
+                        };
+                    }
+
                     @Override
                     public void onBackProgressed(@NonNull BackEvent backEvent) {
                         if (started && invoked) return;
@@ -868,6 +881,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     private Object onBackAnimationCallback;
     private Object onBackInvokedCallback;
+    private Runnable predictiveBackReset;
 
     public static void showAttachMenuBot(LaunchActivity launchActivity, int currentAccount, TLRPC.TL_attachMenuBot attachMenuBot, String startApp, boolean sidemenu) {
         BaseFragment lastFragment = getLastFragment();
@@ -7348,11 +7362,38 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
     }
 
+    private void cancelStalePredictiveBack(String reason) {
+        if (predictiveBackReset != null) {
+            predictiveBackReset.run();
+        }
+        if (actionBarLayout != null) {
+            actionBarLayout.onBackCancelled();
+        }
+        if (AndroidUtilities.isTablet()) {
+            if (rightActionBarLayout != null) {
+                rightActionBarLayout.onBackCancelled();
+            }
+            if (layersActionBarLayout != null) {
+                layersActionBarLayout.onBackCancelled();
+            }
+        }
+        logBackState("cancelStalePredictiveBack:" + reason);
+    }
+
     @Override
     public void onMultiWindowModeChanged(boolean isInMultiWindowMode) {
+        cancelStalePredictiveBack("multiwindow");
         AndroidUtilities.isInMultiwindow = isInMultiWindowMode;
         checkLayout();
         super.onMultiWindowModeChanged(isInMultiWindowMode);
+    }
+
+    @Override
+    public void onTopResumedActivityChanged(boolean isTopResumed) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !isTopResumed) {
+            cancelStalePredictiveBack("lost-top-resumed");
+        }
+        super.onTopResumedActivityChanged(isTopResumed);
     }
 
     @Override

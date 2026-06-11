@@ -1786,6 +1786,10 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
 
     public void onBackInvoked() {
         logNavigationState("onBackInvoked:entry");
+        if (predictiveInput && !predictiveBackHasProgress && containerView.getTranslationX() == 0) {
+            logNavigationState("onBackInvoked:stale-predictive-reset");
+            forceResetAnimationState();
+        }
         if (!predictiveInput) {
             onBackPressed();
             return;
@@ -1805,6 +1809,11 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         final BaseFragment currentFragment = !fragmentsStack.isEmpty() ? fragmentsStack.get(fragmentsStack.size() - 1) : null;
         if (currentFragment == null) {
             logNavigationState("animateBackEndAnimation:null-fragment-reset");
+            forceResetAnimationState();
+            return;
+        }
+        if (fragmentsStack.size() < 2) {
+            logNavigationState("animateBackEndAnimation:single-fragment-reset");
             forceResetAnimationState();
             return;
         }
