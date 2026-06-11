@@ -648,6 +648,8 @@ public final class ExternalPreviewManager {
         if (previewMedia instanceof ResolvedMedia.Video) {
             ResolvedMedia.Video video = (ResolvedMedia.Video) previewMedia;
             boolean supportsDirectVideoStreaming = resolver == null || resolver.supportsDirectVideoStreaming();
+            // Always persist video metadata for the click path. Non-direct platforms
+            // (TikTok, etc.) must not expose the URL as an autoplayable document.
             TLRPC.Document videoDocument = ExternalMediaPreviewStore.putVideo(
                 webpage.id, link.platformName, link.canonicalUrl,
                 video.videoUrl, video.posterUrl, video.width, video.height,
@@ -657,8 +659,13 @@ public final class ExternalPreviewManager {
             if (TextUtils.isEmpty(posterUrl)) {
                 return null;
             }
-            webpage.type = "video";
-            webpage.document = videoDocument;
+            if (supportsDirectVideoStreaming) {
+                webpage.type = "video";
+                webpage.document = videoDocument;
+            } else {
+                webpage.type = "photo";
+                webpage.document = null;
+            }
             webpage.embed_url = posterUrl;
             webpage.embed_width = video.width;
             webpage.embed_height = video.height;
@@ -717,10 +724,29 @@ public final class ExternalPreviewManager {
         if (webPage == null || preview == null) {
             return;
         }
-        webPage.type = "video";
+        ExternalMediaResolver resolver = null;
+        if (!TextUtils.isEmpty(preview.canonicalUrl)) {
+            try {
+                resolver = ExternalLinkRouter.findResolver(Uri.parse(preview.canonicalUrl));
+            } catch (Exception ignore) {
+                resolver = null;
+            }
+        }
+        boolean supportsDirectVideoStreaming = resolver == null || resolver.supportsDirectVideoStreaming();
         if (TextUtils.isEmpty(webPage.embed_url)) {
             webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
         }
+        if (!supportsDirectVideoStreaming) {
+            webPage.type = "photo";
+            webPage.document = null;
+            ExternalMediaPreviewStore.putVideo(
+                preview.webPageId, preview.platform, preview.canonicalUrl,
+                preview.mediaUrl, preview.posterUrl, preview.width, preview.height,
+                preview.title, preview.description
+            );
+            return;
+        }
+        webPage.type = "video";
         if (webPage.document == null) {
             webPage.document = ExternalMediaPreviewStore.putVideo(
                 preview.webPageId, preview.platform, preview.canonicalUrl,
