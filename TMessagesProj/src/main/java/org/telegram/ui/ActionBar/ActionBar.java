@@ -50,6 +50,8 @@ import androidx.core.graphics.ColorUtils;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildVars;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
@@ -203,12 +205,26 @@ public class ActionBar extends FrameLayout implements Theme.Colorable {
         addView(backButtonImageView, LayoutHelper.createFrame(54, 54, Gravity.LEFT | Gravity.TOP));
 
         backButtonImageView.setOnClickListener(v -> {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back actionbar click search=" + isSearchFieldVisible + " actionMode=" + actionModeVisible + " hasListener=" + (actionBarMenuOnItemClick != null));
+            }
             if (!actionModeVisible && isSearchFieldVisible) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("arrow-back actionbar closeSearchField");
+                }
                 closeSearchField();
                 return;
             }
+            if (BuildVars.LOGS_ENABLED && actionModeVisible) {
+                FileLog.d("arrow-back actionbar actionModeVisible dispatch=" + (actionBarMenuOnItemClick != null));
+            }
             if (actionBarMenuOnItemClick != null) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("arrow-back actionbar dispatch id=-1");
+                }
                 actionBarMenuOnItemClick.onItemClick(-1);
+            } else if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back actionbar no-listener");
             }
         });
         backButtonImageView.setContentDescription(LocaleController.getString(R.string.AccDescrGoBack));

@@ -2761,9 +2761,27 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     public void closeLastFragment(boolean animated, boolean forceNoAnimation) {
         BaseFragment fragment = getLastFragment();
         if (fragment != null && fragment.closeLastFragment()) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back layout closeLastFragment guard fragment.closeLastFragment layout=" + debugName() + " fragment=" + debugFragmentName(fragment));
+            }
             return;
         }
-        if (delegate != null && !delegate.needCloseLastFragment(this) || checkTransitionAnimation() || fragmentsStack.isEmpty()) {
+        if (delegate != null && !delegate.needCloseLastFragment(this)) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back layout closeLastFragment guard delegate layout=" + debugName() + " stack=" + fragmentsStack.size());
+            }
+            return;
+        }
+        if (checkTransitionAnimation()) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back layout closeLastFragment guard transition layout=" + debugName() + " stack=" + fragmentsStack.size());
+            }
+            return;
+        }
+        if (fragmentsStack.isEmpty()) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back layout closeLastFragment guard emptyStack layout=" + debugName());
+            }
             return;
         }
         if (parentActivity.getCurrentFocus() != null) {

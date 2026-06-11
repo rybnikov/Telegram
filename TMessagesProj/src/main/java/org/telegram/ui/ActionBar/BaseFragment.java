@@ -43,6 +43,7 @@ import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BuildConfig;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.DownloadController;
 import org.telegram.messenger.FileLoader;
@@ -418,7 +419,13 @@ public abstract class BaseFragment {
     }
 
     public void finishFragment() {
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("arrow-back base finishFragment entry fragment=" + getClass().getSimpleName() + " finished=" + isFinished + " parentLayout=" + (parentLayout != null) + " parentDialog=" + (parentDialog != null) + " preview=" + inPreviewMode);
+        }
         if (parentDialog != null) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back base finishFragment parentDialogDismiss fragment=" + getClass().getSimpleName());
+            }
             parentDialog.dismiss();
             return;
         }
@@ -434,7 +441,16 @@ public abstract class BaseFragment {
     }
 
     public boolean finishFragment(boolean animated) {
-        if (isFinished || parentLayout == null) {
+        if (isFinished) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back base finishFragment early isFinished fragment=" + getClass().getSimpleName() + " animated=" + animated);
+            }
+            return false;
+        }
+        if (parentLayout == null) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("arrow-back base finishFragment early parentLayout=null fragment=" + getClass().getSimpleName() + " animated=" + animated);
+            }
             return false;
         }
         finishing = true;
