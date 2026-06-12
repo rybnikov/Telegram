@@ -193,6 +193,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         FileLog.d("resolver tt markers url=" + ExternalHtmlUtils.sanitizeForLog(sourceUrl)
             + " finalUrl=" + ExternalHtmlUtils.sanitizeForLog(previewUrl)
             + " rehydration=" + yn(contains(html, REHYDRATION_SCRIPT_ID))
+            + " oembed=" + yn("oembed".equals(branch))
             + " og:image=" + yn(!TextUtils.isEmpty(ogImage))
             + " twitter:image=" + yn(!TextUtils.isEmpty(twitterImage))
             + " poster=" + yn(!TextUtils.isEmpty(posterUrl))
