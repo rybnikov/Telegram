@@ -1670,6 +1670,11 @@ public class DatabaseMigrationHelper {
             database.executeFast("PRAGMA user_version = 174").stepThis().dispose();
             version = 174;
         }
+        if (version == 174) {
+            database.executeFast("ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 175").stepThis().dispose();
+            version = 175;
+        }
         return version;
     }
 

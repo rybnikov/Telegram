@@ -113,7 +113,7 @@ public class MessagesStorage extends BaseController {
         }
     }
 
-    public final static int LAST_DB_VERSION = 174;
+    public final static int LAST_DB_VERSION = 175;
     private boolean databaseMigrationInProgress;
     public boolean showClearDatabaseAlert;
 
@@ -730,7 +730,7 @@ public class MessagesStorage extends BaseController {
         database.executeFast("CREATE TABLE unconfirmed_auth (data BLOB);").stepThis().dispose();
 
         database.executeFast("CREATE TABLE saved_reaction_tags (topic_id INTEGER PRIMARY KEY, data BLOB);").stepThis().dispose();
-        database.executeFast("CREATE TABLE external_previews_v1(id INTEGER PRIMARY KEY, canonical_url TEXT NOT NULL UNIQUE, platform TEXT NOT NULL, webpage BLOB NOT NULL, preview_kind INTEGER NOT NULL, media_url TEXT, poster_url TEXT, width INTEGER, height INTEGER, title TEXT, description TEXT, updated_at INTEGER NOT NULL);").stepThis().dispose();
+        database.executeFast("CREATE TABLE external_previews_v1(id INTEGER PRIMARY KEY, canonical_url TEXT NOT NULL UNIQUE, platform TEXT NOT NULL, webpage BLOB NOT NULL, preview_kind INTEGER NOT NULL, media_url TEXT, poster_url TEXT, width INTEGER, height INTEGER, title TEXT, description TEXT, updated_at INTEGER NOT NULL, extra TEXT);").stepThis().dispose();
         database.executeFast("CREATE INDEX IF NOT EXISTS external_previews_v1_updated_at_idx ON external_previews_v1(updated_at);").stepThis().dispose();
 
         database.executeFast("CREATE TABLE tag_message_id(mid INTEGER, topic_id INTEGER, tag INTEGER, text TEXT);").stepThis().dispose();
@@ -11130,6 +11130,7 @@ public class MessagesStorage extends BaseController {
     public static final int EXTERNAL_PREVIEW_KIND_IMAGE = 0;
     public static final int EXTERNAL_PREVIEW_KIND_VIDEO = 1;
     public static final int EXTERNAL_PREVIEW_KIND_PREVIEW = 2;
+    public static final int EXTERNAL_PREVIEW_KIND_CAROUSEL = 3;
 
     public void putExternalPreview(ExternalPreviewRecord preview) {
         if (preview == null || TextUtils.isEmpty(preview.canonicalUrl) || preview.webPage == null) {
@@ -11142,7 +11143,7 @@ public class MessagesStorage extends BaseController {
                 NativeByteBuffer data = new NativeByteBuffer(preview.webPage.getObjectSize());
                 preview.webPage.serializeToStream(data);
 
-                state = database.executeFast("REPLACE INTO external_previews_v1 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                state = database.executeFast("REPLACE INTO external_previews_v1 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 state.bindLong(1, preview.webPageId);
                 state.bindString(2, preview.canonicalUrl);
                 state.bindString(3, preview.platform);
@@ -11155,6 +11156,7 @@ public class MessagesStorage extends BaseController {
                 bindStringOrNull(state, 10, preview.title);
                 bindStringOrNull(state, 11, preview.description);
                 state.bindLong(12, System.currentTimeMillis() / 1000L);
+                bindStringOrNull(state, 13, preview.extra);
                 state.step();
                 data.reuse();
                 state.dispose();
@@ -11186,7 +11188,7 @@ public class MessagesStorage extends BaseController {
             ExternalPreviewRecord result = null;
             try {
                 logExternalPreviewStorage("get start url=" + canonicalUrl);
-                cursor = database.queryFinalized("SELECT id, platform, webpage, preview_kind, media_url, poster_url, width, height, title, description, updated_at FROM external_previews_v1 WHERE canonical_url = ?", canonicalUrl);
+                cursor = database.queryFinalized("SELECT id, platform, webpage, preview_kind, media_url, poster_url, width, height, title, description, updated_at, extra FROM external_previews_v1 WHERE canonical_url = ?", canonicalUrl);
                 long now = System.currentTimeMillis() / 1000L;
                 if (cursor.next()) {
                     NativeByteBuffer data = cursor.byteBufferValue(2);
@@ -11205,7 +11207,8 @@ public class MessagesStorage extends BaseController {
                                 cursor.intValue(6),
                                 cursor.intValue(7),
                                 cursor.stringValue(8),
-                                cursor.stringValue(9)
+                                cursor.stringValue(9),
+                                cursor.stringValue(11)
                             );
                             long updatedAt = cursor.longValue(10);
                             if (now - updatedAt >= EXTERNAL_PREVIEW_TOUCH_INTERVAL_SECONDS) {
@@ -11610,8 +11613,9 @@ public class MessagesStorage extends BaseController {
         public final int height;
         public final String title;
         public final String description;
+        public final String extra;
 
-        public ExternalPreviewRecord(long webPageId, String canonicalUrl, String platform, TLRPC.WebPage webPage, int previewKind, String mediaUrl, String posterUrl, int width, int height, String title, String description) {
+        public ExternalPreviewRecord(long webPageId, String canonicalUrl, String platform, TLRPC.WebPage webPage, int previewKind, String mediaUrl, String posterUrl, int width, int height, String title, String description, String extra) {
             this.webPageId = webPageId;
             this.canonicalUrl = canonicalUrl;
             this.platform = platform;
@@ -11623,6 +11627,7 @@ public class MessagesStorage extends BaseController {
             this.height = height;
             this.title = title;
             this.description = description;
+            this.extra = extra;
         }
     }
 
