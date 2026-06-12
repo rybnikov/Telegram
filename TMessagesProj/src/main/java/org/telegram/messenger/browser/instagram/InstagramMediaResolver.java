@@ -100,8 +100,9 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         if (TextUtils.isEmpty(ogVideo)) {
             ogVideo = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:video:secure_url");
         }
-        logMarkers(link, html, ogImage, ogVideo);
-        JSONObject mediaObject = extractPrimaryMediaObject(html);
+        String[] mediaNodeAnchor = new String[1];
+        JSONObject mediaObject = extractPrimaryMediaObject(link, html, mediaNodeAnchor);
+        logMarkers(link, html, ogImage, ogVideo, mediaObject != null, mediaNodeAnchor[0]);
 
         ResolvedMedia.Single primaryItem = null;
         ArrayList<ResolvedMedia.Single> carouselItems = null;
@@ -177,7 +178,7 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         return null;
     }
 
-    private void logMarkers(ParsedLink link, String html, String ogImage, String ogVideo) {
+    private void logMarkers(ParsedLink link, String html, String ogImage, String ogVideo, boolean nodeFound, String anchor) {
         if (!BuildVars.LOGS_ENABLED) {
             return;
         }
@@ -188,7 +189,9 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
             + " video_versions=" + yn(contains(html, VIDEO_VERSIONS_MARKER))
             + " og:image=" + yn(!TextUtils.isEmpty(ogImage))
             + " og:video=" + yn(!TextUtils.isEmpty(ogVideo))
-            + " loginwall=" + yn(looksLikeLoginWall(html)));
+            + " loginwall=" + yn(looksLikeLoginWall(html))
+            + " node=" + (nodeFound ? "found" : "null")
+            + " anchor=" + (!TextUtils.isEmpty(anchor) ? anchor : "none"));
         logMarkerContexts(link, html);
     }
 
@@ -350,14 +353,51 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         return value ? "y" : "n";
     }
 
-    private JSONObject extractPrimaryMediaObject(String html) {
-        // Direct string search instead of regex — avoids O(n²) on 2MB HTML
-        int markerIndex = html.indexOf(WEB_INFO_MARKER);
-        if (markerIndex < 0) {
-            FileLog.d(TAG + ": marker not found");
+    private JSONObject extractPrimaryMediaObject(ParsedLink link, String html, String[] anchorOut) {
+        if (TextUtils.isEmpty(html)) {
             return null;
         }
-        return extractPrimaryMediaObjectFromHtml(html, markerIndex);
+        String shortcode = link != null ? link.id : null;
+        if (!TextUtils.isEmpty(shortcode)) {
+            String codeAnchor = "\"code\":\"" + shortcode + "\"";
+            int searchFrom = 0;
+            while (searchFrom < html.length()) {
+                int anchorIndex = html.indexOf(codeAnchor, searchFrom);
+                if (anchorIndex < 0) {
+                    break;
+                }
+                JSONObject object = extractMediaObjectOwner(html, anchorIndex, false);
+                if (object != null) {
+                    if (anchorOut != null) {
+                        anchorOut[0] = "code";
+                    }
+                    return object;
+                }
+                searchFrom = anchorIndex + codeAnchor.length();
+            }
+        }
+
+        int searchFrom = 0;
+        while (searchFrom < html.length()) {
+            int anchorIndex = html.indexOf("\"__isXIGPolarisMedia\"", searchFrom);
+            if (anchorIndex < 0) {
+                break;
+            }
+            JSONObject object = extractMediaObjectOwner(html, anchorIndex, true);
+            if (object != null) {
+                if (anchorOut != null) {
+                    anchorOut[0] = "isxig";
+                }
+                return object;
+            }
+            searchFrom = anchorIndex + "\"__isXIGPolarisMedia\"".length();
+        }
+
+        if (anchorOut != null) {
+            anchorOut[0] = "none";
+        }
+        FileLog.d(TAG + ": media node not found");
+        return null;
     }
 
     private JSONObject extractPrimaryMediaObjectFromHtml(String html, int markerIndex) {
@@ -383,6 +423,31 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
             FileLog.d(TAG + ": failed to parse media json " + e.getClass().getSimpleName());
             return null;
         }
+    }
+
+    private JSONObject extractMediaObjectOwner(String html, int anchorIndex, boolean requireCode) {
+        int objectStart = html.lastIndexOf('{', anchorIndex);
+        while (objectStart >= 0) {
+            int objectEnd = findMatching(html, objectStart, '{', '}');
+            if (objectEnd >= anchorIndex) {
+                String json = html.substring(objectStart, objectEnd + 1);
+                if (hasMediaField(json) && (!requireCode || json.contains("\"code\":\""))) {
+                    try {
+                        return new JSONObject(json);
+                    } catch (Exception e) {
+                        FileLog.d(TAG + ": failed to parse media node " + e.getClass().getSimpleName());
+                    }
+                }
+            }
+            objectStart = html.lastIndexOf('{', objectStart - 1);
+        }
+        return null;
+    }
+
+    private boolean hasMediaField(String value) {
+        return contains(value, VIDEO_VERSIONS_MARKER)
+            || contains(value, CAROUSEL_MEDIA_MARKER)
+            || contains(value, "\"image_versions2\"");
     }
 
     private ResolvedMedia.Single parseMediaItem(JSONObject mediaObject) {
