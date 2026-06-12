@@ -4,6 +4,9 @@ import android.os.Build;
 import android.text.Html;
 import android.text.TextUtils;
 
+import org.telegram.messenger.BuildVars;
+import org.telegram.messenger.FileLog;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -11,12 +14,14 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 public final class ExternalHtmlUtils {
 
     private static final String DESKTOP_UA =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    private static final Pattern URL_QUERY_PATTERN = Pattern.compile("(https?://[^\\s\"'<>?]+)\\?[^\\s\"'<>]*");
 
     private ExternalHtmlUtils() {
     }
@@ -55,11 +60,14 @@ public final class ExternalHtmlUtils {
 
             int code = connection.getResponseCode();
             if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_ACCEPTED && code != HttpURLConnection.HTTP_NOT_MODIFIED) {
+                logFetch(url, code, connection.getURL() != null ? connection.getURL().toString() : url, null);
                 throw new IOException("Unexpected HTTP " + code);
             }
 
             inputStream = connection.getInputStream();
-            return readUtf8Until(inputStream, startMarker, endMarker, maxChars);
+            String html = readUtf8Until(inputStream, startMarker, endMarker, maxChars);
+            logFetch(url, code, connection.getURL() != null ? connection.getURL().toString() : url, html);
+            return html;
         } finally {
             if (inputStream != null) {
                 try {
@@ -113,12 +121,14 @@ public final class ExternalHtmlUtils {
 
             int code = connection.getResponseCode();
             if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_ACCEPTED && code != HttpURLConnection.HTTP_NOT_MODIFIED) {
+                logFetch(url, code, connection.getURL() != null ? connection.getURL().toString() : url, null);
                 throw new IOException("Unexpected HTTP " + code);
             }
 
             String finalUrl = connection.getURL() != null ? connection.getURL().toString() : url;
             inputStream = connection.getInputStream();
             String html = readUtf8Until(inputStream, startMarker, endMarker, maxChars);
+            logFetch(url, code, finalUrl, html);
             return new FetchResult(html, finalUrl);
         } finally {
             if (inputStream != null) {
@@ -272,6 +282,44 @@ public final class ExternalHtmlUtils {
             return value;
         }
         return value.substring(0, 180);
+    }
+
+    public static void dumpResolverEvidence(String platform, String url, String html) {
+        if (!BuildVars.DEBUG_PRIVATE_VERSION || TextUtils.isEmpty(html)) {
+            return;
+        }
+        int end = Math.min(html.length(), 4096);
+        FileLog.d("resolver " + platform + " html url=" + sanitizeForLog(url) + " sample=" + redactQueryStrings(html.substring(0, end)));
+    }
+
+    public static String sanitizeForLog(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return value;
+        }
+        int queryIndex = value.indexOf('?');
+        if (queryIndex < 0) {
+            return value;
+        }
+        int fragmentIndex = value.indexOf('#', queryIndex + 1);
+        if (fragmentIndex >= 0) {
+            return value.substring(0, queryIndex) + "?..." + value.substring(fragmentIndex);
+        }
+        return value.substring(0, queryIndex) + "?...";
+    }
+
+    public static String redactQueryStrings(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return value;
+        }
+        return URL_QUERY_PATTERN.matcher(value).replaceAll("$1?...");
+    }
+
+    private static void logFetch(String url, int status, String finalUrl, String html) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        int bytes = html == null ? 0 : html.getBytes(StandardCharsets.UTF_8).length;
+        FileLog.d("resolver fetch url=" + sanitizeForLog(url) + " status=" + status + " finalUrl=" + sanitizeForLog(finalUrl) + " bytes=" + bytes);
     }
 
     public static int indexOfIgnoreCase(String value, String needle, int fromIndex) {

@@ -5,6 +5,7 @@ import android.text.TextUtils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
@@ -80,6 +81,15 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
     private ResolvedMedia extractMedia(ParsedLink link, String html) {
         String title = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:title");
         String description = ExternalHtmlUtils.findMetaContentDecoded(html, "name", "description");
+        String ogImage = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:image");
+        if (TextUtils.isEmpty(ogImage)) {
+            ogImage = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:image:secure_url");
+        }
+        String ogVideo = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:video");
+        if (TextUtils.isEmpty(ogVideo)) {
+            ogVideo = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:video:secure_url");
+        }
+        logMarkers(link, html, ogImage, ogVideo);
         JSONObject mediaObject = extractPrimaryMediaObject(html);
 
         ResolvedMedia.Single primaryItem = null;
@@ -107,6 +117,7 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
 
         if (carouselItems != null && !carouselItems.isEmpty()) {
             FileLog.d(TAG + ": carousel resolved count=" + carouselItems.size() + " " + link.canonicalUrl);
+            logResult(link, "web_info", "carousel count=" + carouselItems.size());
             return new ResolvedMedia.Carousel(carouselItems, title, description);
         }
 
@@ -129,26 +140,19 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
                         img.width, img.height);
                 }
             }
+            logResult(link, "web_info", primaryItem instanceof ResolvedMedia.Video ? "video" : "image");
             return primaryItem;
         }
 
         // Fallback to OG meta tags
         if (primaryItem == null) {
-            String imageUrl = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:image");
-            if (TextUtils.isEmpty(imageUrl)) {
-                imageUrl = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:image:secure_url");
-            }
-
-            String ogVideo = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:video");
-            if (TextUtils.isEmpty(ogVideo)) {
-                ogVideo = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:video:secure_url");
-            }
-
             if (!TextUtils.isEmpty(ogVideo)) {
                 FileLog.d(TAG + ": fallback meta video " + ExternalHtmlUtils.trimForLog(ogVideo));
-                return new ResolvedMedia.Video(ogVideo, imageUrl, title, description, 0, 0);
-            } else if (!TextUtils.isEmpty(imageUrl)) {
-                return new ResolvedMedia.Image(imageUrl, title, description, 0, 0);
+                logResult(link, "og-fallback", "video");
+                return new ResolvedMedia.Video(ogVideo, ogImage, title, description, 0, 0);
+            } else if (!TextUtils.isEmpty(ogImage)) {
+                logResult(link, "og-fallback", "image");
+                return new ResolvedMedia.Image(ogImage, title, description, 0, 0);
             }
         }
 
@@ -157,7 +161,48 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         } else {
             FileLog.d(TAG + ": fallback no media " + link.canonicalUrl);
         }
+        logResult(link, "null", isCarousel ? "carousel-marker" : "no-media");
+        ExternalHtmlUtils.dumpResolverEvidence("ig", link.canonicalUrl, html);
         return null;
+    }
+
+    private void logMarkers(ParsedLink link, String html, String ogImage, String ogVideo) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        FileLog.d("resolver ig markers url=" + ExternalHtmlUtils.sanitizeForLog(link.canonicalUrl)
+            + " webinfo=" + yn(contains(html, WEB_INFO_MARKER))
+            + " items=" + yn(contains(html, ITEMS_KEY))
+            + " carousel_media=" + yn(contains(html, "\"carousel_media\""))
+            + " video_versions=" + yn(contains(html, "\"video_versions\""))
+            + " og:image=" + yn(!TextUtils.isEmpty(ogImage))
+            + " og:video=" + yn(!TextUtils.isEmpty(ogVideo))
+            + " loginwall=" + yn(looksLikeLoginWall(html)));
+    }
+
+    private void logResult(ParsedLink link, String branch, String extra) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        FileLog.d("resolver ig result url=" + ExternalHtmlUtils.sanitizeForLog(link.canonicalUrl)
+            + " branch=" + branch
+            + (TextUtils.isEmpty(extra) ? "" : " " + extra));
+    }
+
+    private boolean contains(String value, String needle) {
+        return !TextUtils.isEmpty(value) && value.contains(needle);
+    }
+
+    private boolean looksLikeLoginWall(String html) {
+        if (TextUtils.isEmpty(html)) {
+            return false;
+        }
+        String lower = html.toLowerCase(Locale.US);
+        return lower.contains("login") && (lower.contains("instagram") || lower.contains("accounts/login"));
+    }
+
+    private String yn(boolean value) {
+        return value ? "y" : "n";
     }
 
     private JSONObject extractPrimaryMediaObject(String html) {

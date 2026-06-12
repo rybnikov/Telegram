@@ -5,6 +5,7 @@ import android.text.TextUtils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
@@ -51,10 +52,15 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         CookieManager cookieManager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
         CookieHandler previousHandler = CookieHandler.getDefault();
         CookieHandler.setDefault(cookieManager);
+        String html = null;
         try {
-            String html = ExternalHtmlUtils.fetchHtml(canonicalUrl, REHYDRATION_SCRIPT_ID, "</script>", MAX_SCRIPT_CHARS);
+            html = ExternalHtmlUtils.fetchHtml(canonicalUrl, REHYDRATION_SCRIPT_ID, "</script>", MAX_SCRIPT_CHARS);
             String scriptContent = ExternalHtmlUtils.findScriptContentById(html, REHYDRATION_SCRIPT_ID);
-            if (TextUtils.isEmpty(scriptContent)) return null;
+            if (TextUtils.isEmpty(scriptContent)) {
+                logPlaybackResult(canonicalUrl, html, false, false, "null");
+                ExternalHtmlUtils.dumpResolverEvidence("tt-playback", canonicalUrl, html);
+                return null;
+            }
 
             JSONObject root = new JSONObject(scriptContent);
             JSONObject detail = root.optJSONObject("__DEFAULT_SCOPE__");
@@ -62,10 +68,18 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
             JSONObject itemInfo = detail != null ? detail.optJSONObject("itemInfo") : null;
             JSONObject itemStruct = itemInfo != null ? itemInfo.optJSONObject("itemStruct") : null;
             JSONObject video = itemStruct != null ? itemStruct.optJSONObject("video") : null;
-            if (video == null) return null;
+            if (video == null) {
+                logPlaybackResult(canonicalUrl, html, true, false, "null");
+                ExternalHtmlUtils.dumpResolverEvidence("tt-playback", canonicalUrl, html);
+                return null;
+            }
 
             String videoUrl = pickVideoUrl(video);
-            if (TextUtils.isEmpty(videoUrl)) return null;
+            if (TextUtils.isEmpty(videoUrl)) {
+                logPlaybackResult(canonicalUrl, html, true, false, "null");
+                ExternalHtmlUtils.dumpResolverEvidence("tt-playback", canonicalUrl, html);
+                return null;
+            }
 
             String cookies = extractCookieString(cookieManager);
             if (!TextUtils.isEmpty(cookies)) {
@@ -73,9 +87,14 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
             }
             videoUrls.put(canonicalUrl, videoUrl);
             FileLog.d(TAG + ": playback resolved " + ExternalHtmlUtils.trimForLog(videoUrl));
+            logPlaybackResult(canonicalUrl, html, true, true, "rehydration");
             return videoUrl;
         } catch (Exception e) {
             FileLog.d(TAG + ": playback resolve failed " + e.getClass().getSimpleName());
+            if (html != null) {
+                logPlaybackResult(canonicalUrl, html, contains(html, REHYDRATION_SCRIPT_ID), false, "error");
+                ExternalHtmlUtils.dumpResolverEvidence("tt-playback", canonicalUrl, html);
+            }
             return null;
         } finally {
             CookieHandler.setDefault(previousHandler);
@@ -126,6 +145,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         int width = json != null ? json.optInt("thumbnail_width", 0) : 0;
         int height = json != null ? json.optInt("thumbnail_height", 0) : 0;
         String description = !TextUtils.isEmpty(author) ? author : null;
+        String branch = !TextUtils.isEmpty(posterUrl) ? "oembed" : null;
 
         if (TextUtils.isEmpty(posterUrl)) {
             if (previewHtml == null) {
@@ -137,6 +157,9 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
                 ExternalHtmlUtils.findMetaContentDecoded(previewHtml, "property", "og:image"),
                 ExternalHtmlUtils.findMetaContentDecoded(previewHtml, "name", "twitter:image")
             );
+            if (!TextUtils.isEmpty(posterUrl)) {
+                branch = "html-fallback";
+            }
             title = firstNonEmpty(title, ExternalHtmlUtils.findMetaContentDecoded(previewHtml, "property", "og:title"));
             description = firstNonEmpty(description, ExternalHtmlUtils.findMetaContentDecoded(previewHtml, "property", "og:description"));
             if (width == 0) {
@@ -149,13 +172,55 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
 
         if (TextUtils.isEmpty(posterUrl)) {
             FileLog.d(TAG + ": no preview image " + link.canonicalUrl);
+            logPreviewResult(link.canonicalUrl, previewUrl, previewHtml, null, posterUrl, false);
+            ExternalHtmlUtils.dumpResolverEvidence("tt", previewUrl, previewHtml);
             return null;
         }
 
         // Return as Video with placeholder videoUrl — real URL resolved on click
         // The canonical URL is used as videoUrl marker; resolveVideoForPlayback replaces it
         FileLog.d(TAG + ": oEmbed preview " + ExternalHtmlUtils.trimForLog(posterUrl));
+        logPreviewResult(link.canonicalUrl, previewUrl, previewHtml, branch, posterUrl, true);
         return new ResolvedMedia.Video(link.canonicalUrl, posterUrl, title, description, width, height);
+    }
+
+    private static void logPreviewResult(String sourceUrl, String previewUrl, String html, String branch, String posterUrl, boolean hasVideoUrl) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        String ogImage = html == null ? null : ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:image");
+        String twitterImage = html == null ? null : ExternalHtmlUtils.findMetaContentDecoded(html, "name", "twitter:image");
+        FileLog.d("resolver tt markers url=" + ExternalHtmlUtils.sanitizeForLog(sourceUrl)
+            + " finalUrl=" + ExternalHtmlUtils.sanitizeForLog(previewUrl)
+            + " rehydration=" + yn(contains(html, REHYDRATION_SCRIPT_ID))
+            + " og:image=" + yn(!TextUtils.isEmpty(ogImage))
+            + " twitter:image=" + yn(!TextUtils.isEmpty(twitterImage))
+            + " poster=" + yn(!TextUtils.isEmpty(posterUrl))
+            + " video=" + yn(hasVideoUrl)
+            + " branch=" + (branch != null ? branch : "null"));
+    }
+
+    private static void logPlaybackResult(String canonicalUrl, String html, boolean hasRehydration, boolean hasVideoUrl, String branch) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        String ogImage = html == null ? null : ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:image");
+        String twitterImage = html == null ? null : ExternalHtmlUtils.findMetaContentDecoded(html, "name", "twitter:image");
+        FileLog.d("resolver tt playback markers url=" + ExternalHtmlUtils.sanitizeForLog(canonicalUrl)
+            + " rehydration=" + yn(hasRehydration)
+            + " og:image=" + yn(!TextUtils.isEmpty(ogImage))
+            + " twitter:image=" + yn(!TextUtils.isEmpty(twitterImage))
+            + " poster=n"
+            + " video=" + yn(hasVideoUrl)
+            + " branch=" + branch);
+    }
+
+    private static boolean contains(String value, String needle) {
+        return !TextUtils.isEmpty(value) && value.contains(needle);
+    }
+
+    private static String yn(boolean value) {
+        return value ? "y" : "n";
     }
 
     private static JSONObject fetchOEmbed(String previewUrl) {
