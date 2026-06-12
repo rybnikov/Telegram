@@ -3613,33 +3613,33 @@ public class ChatActivity extends BaseFragment implements
             public void onItemClick(final int id) {
                 if (id == -1) {
                     if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("arrow-back chat id=-1 entry dialog=" + dialog_id + " topic=" + getTopicId() + " mode=" + chatMode + " pollAddOption=" + isInPollAddOptionMode() + " actionMode=" + actionBar.isActionModeShowed());
+                        FileLog.d("arrow-back chat id=-1 entry fragment=" + debugFragmentInstance() + " dialog=" + dialog_id + " topic=" + getTopicId() + " mode=" + chatMode + " pollAddOption=" + isInPollAddOptionMode() + " actionMode=" + actionBar.isActionModeShowed());
                     }
                     if (isInPollAddOptionMode()) {
                         if (BuildVars.LOGS_ENABLED) {
-                            FileLog.d("arrow-back chat id=-1 pollAddOptionModeClose");
+                            FileLog.d("arrow-back chat id=-1 pollAddOptionModeClose fragment=" + debugFragmentInstance());
                         }
                         pollAddOptionModeClose();
                     } else if (actionBar.isActionModeShowed()) {
                         if (BuildVars.LOGS_ENABLED) {
-                            FileLog.d("arrow-back chat id=-1 clearSelectionMode");
+                            FileLog.d("arrow-back chat id=-1 clearSelectionMode fragment=" + debugFragmentInstance());
                         }
                         clearSelectionMode();
                     } else {
                         if (chatMode == MODE_QUICK_REPLIES && (messages.isEmpty() || threadMessageId == 0)) {
                             if (BuildVars.LOGS_ENABLED) {
-                                FileLog.d("arrow-back chat id=-1 early quickRepliesRemoveAlert messages=" + messages.size() + " thread=" + threadMessageId);
+                                FileLog.d("arrow-back chat id=-1 early quickRepliesRemoveAlert fragment=" + debugFragmentInstance() + " messages=" + messages.size() + " thread=" + threadMessageId);
                             }
                             showQuickRepliesRemoveAlert();
                             return;
                         }
                         if (chatMode == MODE_EDIT_BUSINESS_LINK && chatActivityEnterView.businessLinkHasChanges()) {
                             if (BuildVars.LOGS_ENABLED) {
-                                FileLog.d("arrow-back chat id=-1 early businessLinkDiscardAlert");
+                                FileLog.d("arrow-back chat id=-1 early businessLinkDiscardAlert fragment=" + debugFragmentInstance());
                             }
                             showBusinessLinksDiscardAlert(() -> {
                                 if (BuildVars.LOGS_ENABLED) {
-                                    FileLog.d("arrow-back chat id=-1 businessLinkDiscard finishFragment");
+                                    FileLog.d("arrow-back chat id=-1 businessLinkDiscard finishFragment fragment=" + debugFragmentInstance());
                                 }
                                 finishFragment();
                             });
@@ -3647,11 +3647,11 @@ public class ChatActivity extends BaseFragment implements
                         }
                         if (!checkRecordLocked(true, true)) {
                             if (BuildVars.LOGS_ENABLED) {
-                                FileLog.d("arrow-back chat id=-1 finishFragment");
+                                FileLog.d("arrow-back chat id=-1 finishFragment fragment=" + debugFragmentInstance());
                             }
                             finishFragment();
                         } else if (BuildVars.LOGS_ENABLED) {
-                            FileLog.d("arrow-back chat id=-1 recordLocked");
+                            FileLog.d("arrow-back chat id=-1 recordLocked fragment=" + debugFragmentInstance());
                         }
                     }
                 } else if (id == view_as_topics) {

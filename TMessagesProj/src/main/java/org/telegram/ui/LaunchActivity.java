@@ -1626,6 +1626,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     if (chatFragment instanceof ChatActivity) {
                         ((ChatActivity) chatFragment).setIgnoreAttachOnPause(true);
                     }
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("arrow-back migrate " + debugFragmentInstance(chatFragment) + " -> right source=checkLayout");
+                    }
                     chatFragment.onPause();
                     chatFragment.onFragmentDestroy();
                     chatFragment.setParentLayout(null);
@@ -1649,6 +1652,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     BaseFragment chatFragment = fragmentStack.get(a);
                     if (chatFragment instanceof ChatActivity) {
                         ((ChatActivity) chatFragment).setIgnoreAttachOnPause(true);
+                    }
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("arrow-back migrate " + debugFragmentInstance(chatFragment) + " -> main source=checkLayout");
                     }
                     chatFragment.onPause();
                     chatFragment.onFragmentDestroy();
@@ -7421,6 +7427,14 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             long dialogId = 0;
             long topicId = 0;
             if (wasTablet) {
+                if (BuildVars.LOGS_ENABLED) {
+                    for (BaseFragment fragment : rightFragmentsStack) {
+                        FileLog.d("arrow-back migrate " + debugFragmentInstance(fragment) + " -> main source=invalidateTabletMode");
+                    }
+                    for (BaseFragment fragment : layerFragmentsStack) {
+                        FileLog.d("arrow-back migrate " + debugFragmentInstance(fragment) + " -> main source=invalidateTabletMode");
+                    }
+                }
                 mainFragmentsStack.addAll(rightFragmentsStack);
                 mainFragmentsStack.addAll(layerFragmentsStack);
                 rightFragmentsStack.clear();
@@ -7432,14 +7446,23 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 layerFragmentsStack.clear();
                 for (BaseFragment fragment : fragments) {
                     if (fragment instanceof MainTabsActivity || fragment instanceof DialogsActivity && ((DialogsActivity) fragment).isMainDialogList() && !((DialogsActivity) fragment).isArchive()) {
+                        if (BuildVars.LOGS_ENABLED) {
+                            FileLog.d("arrow-back migrate " + debugFragmentInstance(fragment) + " -> main source=invalidateTabletMode");
+                        }
                         mainFragmentsStack.add(fragment);
                     } else if (fragment instanceof ChatActivity && !((ChatActivity) fragment).isInScheduleMode()) {
+                        if (BuildVars.LOGS_ENABLED) {
+                            FileLog.d("arrow-back migrate " + debugFragmentInstance(fragment) + " -> right source=invalidateTabletMode");
+                        }
                         rightFragmentsStack.add(fragment);
                         if (dialogId == 0) {
                             dialogId = ((ChatActivity) fragment).getDialogId();
                             topicId = ((ChatActivity) fragment).getTopicId();
                         }
                     } else {
+                        if (BuildVars.LOGS_ENABLED) {
+                            FileLog.d("arrow-back migrate " + debugFragmentInstance(fragment) + " -> layers source=invalidateTabletMode");
+                        }
                         layerFragmentsStack.add(fragment);
                     }
                 }
@@ -8738,6 +8761,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
         BaseFragment fragment = layout.getFragmentStack().get(layout.getFragmentStack().size() - 1);
         return fragment != null ? fragment.getClass().getSimpleName() : "null";
+    }
+
+    private static String debugFragmentInstance(BaseFragment fragment) {
+        return fragment == null ? "null" : fragment.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(fragment));
     }
 
     private void logBackState(String reason) {

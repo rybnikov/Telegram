@@ -23,6 +23,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MotionEvent;
 import android.view.View;
@@ -420,11 +421,11 @@ public abstract class BaseFragment {
 
     public void finishFragment() {
         if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("arrow-back base finishFragment entry fragment=" + getClass().getSimpleName() + " finished=" + isFinished + " parentLayout=" + (parentLayout != null) + " parentDialog=" + (parentDialog != null) + " preview=" + inPreviewMode);
+            FileLog.d("arrow-back base finishFragment entry fragment=" + debugFragmentInstance() + " finished=" + isFinished + " parentLayout=" + (parentLayout != null) + " parentDialog=" + (parentDialog != null) + " preview=" + inPreviewMode);
         }
         if (parentDialog != null) {
             if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back base finishFragment parentDialogDismiss fragment=" + getClass().getSimpleName());
+                FileLog.d("arrow-back base finishFragment parentDialogDismiss fragment=" + debugFragmentInstance());
             }
             parentDialog.dismiss();
             return;
@@ -443,13 +444,13 @@ public abstract class BaseFragment {
     public boolean finishFragment(boolean animated) {
         if (isFinished) {
             if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back base finishFragment early isFinished fragment=" + getClass().getSimpleName() + " animated=" + animated);
+                FileLog.d("arrow-back base finishFragment early isFinished fragment=" + debugFragmentInstance() + " animated=" + animated);
             }
             return false;
         }
         if (parentLayout == null) {
             if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back base finishFragment early parentLayout=null fragment=" + getClass().getSimpleName() + " animated=" + animated);
+                FileLog.d("arrow-back base finishFragment early parentLayout=null fragment=" + debugFragmentInstance() + " animated=" + animated);
             }
             return false;
         }
@@ -487,6 +488,9 @@ public abstract class BaseFragment {
 
     @CallSuper
     public void onFragmentDestroy() {
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("arrow-back destroy fragment=" + debugFragmentInstance() + " stack=" + shortArrowBackStack());
+        }
         getConnectionsManager().cancelRequestsForGuid(classGuid);
         getMessagesStorage().cancelTasksForGuid(classGuid);
         isFinished = true;
@@ -620,6 +624,22 @@ public abstract class BaseFragment {
 
     public INavigationLayout getParentLayout() {
         return parentLayout;
+    }
+
+    protected String debugFragmentInstance() {
+        return getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(this));
+    }
+
+    private static String shortArrowBackStack() {
+        String[] lines = Log.getStackTraceString(new Exception()).split("\n");
+        StringBuilder builder = new StringBuilder();
+        for (int i = 1; i < lines.length && i <= 6; i++) {
+            if (builder.length() > 0) {
+                builder.append(" | ");
+            }
+            builder.append(lines[i].trim());
+        }
+        return builder.toString();
     }
 
     public FrameLayout getLayoutContainer() {

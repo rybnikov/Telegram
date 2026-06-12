@@ -941,8 +941,30 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         return useAlphaAnimations ? "alpha" : "secondary";
     }
 
+    private String debugLayoutInstance() {
+        return debugName() + "@" + Integer.toHexString(System.identityHashCode(this));
+    }
+
     private String debugFragmentName(BaseFragment fragment) {
         return fragment == null ? "null" : fragment.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(fragment));
+    }
+
+    private static String shortArrowBackStack() {
+        String[] lines = Log.getStackTraceString(new Exception()).split("\n");
+        StringBuilder builder = new StringBuilder();
+        for (int i = 1; i < lines.length && i <= 6; i++) {
+            if (builder.length() > 0) {
+                builder.append(" | ");
+            }
+            builder.append(lines[i].trim());
+        }
+        return builder.toString();
+    }
+
+    private void logZombieReadd(String path, BaseFragment fragment) {
+        if (BuildVars.LOGS_ENABLED && fragment != null && fragment.isFinished) {
+            FileLog.d("arrow-back ZOMBIE-readd fragment=" + debugFragmentName(fragment) + " path=" + path + " layout=" + debugLayoutInstance() + " stack=" + shortArrowBackStack());
+        }
     }
 
     public String dumpNavigationState(String reason) {
@@ -2185,6 +2207,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     @Override
     public boolean presentFragment(NavigationParams params) {
         BaseFragment fragment = params.fragment;
+        logZombieReadd("presentFragment", fragment);
         boolean removeLast = params.removeLast;
         boolean forceWithoutAnimation = params.noAnimation;
         boolean check = params.checkPresentFromDelegate;
@@ -2541,6 +2564,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
 
     @Override
     public boolean addFragmentToStack(BaseFragment fragment, int position) {
+        logZombieReadd("addFragmentToStack position=" + position, fragment);
         if (delegate != null && !delegate.needAddFragmentToStack(fragment, this) || !fragment.onFragmentCreate()) {
             return false;
         }
@@ -2762,25 +2786,25 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         BaseFragment fragment = getLastFragment();
         if (fragment != null && fragment.closeLastFragment()) {
             if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back layout closeLastFragment guard fragment.closeLastFragment layout=" + debugName() + " fragment=" + debugFragmentName(fragment));
+                FileLog.d("arrow-back layout closeLastFragment guard fragment.closeLastFragment layout=" + debugLayoutInstance() + " fragment=" + debugFragmentName(fragment));
             }
             return;
         }
         if (delegate != null && !delegate.needCloseLastFragment(this)) {
             if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back layout closeLastFragment guard delegate layout=" + debugName() + " stack=" + fragmentsStack.size());
+                FileLog.d("arrow-back layout closeLastFragment guard delegate layout=" + debugLayoutInstance() + " stack=" + fragmentsStack.size());
             }
             return;
         }
         if (checkTransitionAnimation()) {
             if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back layout closeLastFragment guard transition layout=" + debugName() + " stack=" + fragmentsStack.size());
+                FileLog.d("arrow-back layout closeLastFragment guard transition layout=" + debugLayoutInstance() + " stack=" + fragmentsStack.size());
             }
             return;
         }
         if (fragmentsStack.isEmpty()) {
             if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back layout closeLastFragment guard emptyStack layout=" + debugName());
+                FileLog.d("arrow-back layout closeLastFragment guard emptyStack layout=" + debugLayoutInstance());
             }
             return;
         }

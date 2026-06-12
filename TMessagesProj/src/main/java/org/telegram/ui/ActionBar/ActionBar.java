@@ -194,6 +194,10 @@ public class ActionBar extends FrameLayout implements Theme.Colorable {
         return backButtonState;
     }
 
+    private String debugActionBarInstance() {
+        return getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(this));
+    }
+
     private void createBackButtonImage() {
         if (backButtonImageView != null) {
             return;
@@ -206,25 +210,25 @@ public class ActionBar extends FrameLayout implements Theme.Colorable {
 
         backButtonImageView.setOnClickListener(v -> {
             if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back actionbar click search=" + isSearchFieldVisible + " actionMode=" + actionModeVisible + " hasListener=" + (actionBarMenuOnItemClick != null));
+                FileLog.d("arrow-back actionbar click actionBar=" + debugActionBarInstance() + " search=" + isSearchFieldVisible + " actionMode=" + actionModeVisible + " hasListener=" + (actionBarMenuOnItemClick != null));
             }
             if (!actionModeVisible && isSearchFieldVisible) {
                 if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d("arrow-back actionbar closeSearchField");
+                    FileLog.d("arrow-back actionbar closeSearchField actionBar=" + debugActionBarInstance());
                 }
                 closeSearchField();
                 return;
             }
             if (BuildVars.LOGS_ENABLED && actionModeVisible) {
-                FileLog.d("arrow-back actionbar actionModeVisible dispatch=" + (actionBarMenuOnItemClick != null));
+                FileLog.d("arrow-back actionbar actionModeVisible actionBar=" + debugActionBarInstance() + " dispatch=" + (actionBarMenuOnItemClick != null));
             }
             if (actionBarMenuOnItemClick != null) {
                 if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d("arrow-back actionbar dispatch id=-1");
+                    FileLog.d("arrow-back actionbar dispatch actionBar=" + debugActionBarInstance() + " id=-1");
                 }
                 actionBarMenuOnItemClick.onItemClick(-1);
             } else if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("arrow-back actionbar no-listener");
+                FileLog.d("arrow-back actionbar no-listener actionBar=" + debugActionBarInstance());
             }
         });
         backButtonImageView.setContentDescription(LocaleController.getString(R.string.AccDescrGoBack));
