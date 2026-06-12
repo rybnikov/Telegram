@@ -5,6 +5,7 @@ import android.text.TextUtils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
@@ -12,6 +13,9 @@ import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.ResolvedMedia;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -25,6 +29,9 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
     private static final String TAG = "InstagramResolver";
     private static final String WEB_INFO_MARKER = "\"xdt_api__v1__media__shortcode__web_info\"";
     private static final String ITEMS_KEY = "\"items\":";
+    private static final String XDT_PREFIX = "\"xdt_";
+    private static final String VIDEO_VERSIONS_MARKER = "\"video_versions\"";
+    private static final String DEBUG_DUMP_FILE_NAME = "resolver_dump_instagram.html";
     private static final int MAX_HTML_CHARS = 2 * 1024 * 1024;
     private static final Set<String> SITE_NAMES = new HashSet<>(Arrays.asList("instagram"));
 
@@ -60,6 +67,7 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
         ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADERS);
+        saveDebugHtmlDump(fetchResult.html);
         ParsedLink resolvedLink = canonicalizeFinalUrl(link, fetchResult.finalUrl);
         return extractMedia(resolvedLink, fetchResult.html);
     }
@@ -174,10 +182,76 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
             + " webinfo=" + yn(contains(html, WEB_INFO_MARKER))
             + " items=" + yn(contains(html, ITEMS_KEY))
             + " carousel_media=" + yn(contains(html, "\"carousel_media\""))
-            + " video_versions=" + yn(contains(html, "\"video_versions\""))
+            + " video_versions=" + yn(contains(html, VIDEO_VERSIONS_MARKER))
             + " og:image=" + yn(!TextUtils.isEmpty(ogImage))
             + " og:video=" + yn(!TextUtils.isEmpty(ogVideo))
             + " loginwall=" + yn(looksLikeLoginWall(html)));
+        logMarkerContexts(link, html);
+    }
+
+    private void saveDebugHtmlDump(String html) {
+        if (!BuildVars.DEBUG_PRIVATE_VERSION || TextUtils.isEmpty(html)) {
+            return;
+        }
+        FileOutputStream stream = null;
+        try {
+            byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+            File file = new File(ApplicationLoader.getFilesDirFixed(), DEBUG_DUMP_FILE_NAME);
+            stream = new FileOutputStream(file, false);
+            stream.write(bytes);
+            FileLog.d("resolver ig dump saved bytes=" + bytes.length);
+        } catch (Exception e) {
+            FileLog.d("resolver ig dump failed " + e.getClass().getSimpleName());
+        } finally {
+            if (stream != null) {
+                try {
+                    stream.close();
+                } catch (Exception ignore) {
+                }
+            }
+        }
+    }
+
+    private void logMarkerContexts(ParsedLink link, String html) {
+        if (TextUtils.isEmpty(html)) {
+            return;
+        }
+        StringBuilder xdt = new StringBuilder();
+        int searchFrom = 0;
+        int count = 0;
+        while (count < 10) {
+            int index = html.indexOf(XDT_PREFIX, searchFrom);
+            if (index < 0) {
+                break;
+            }
+            if (xdt.length() > 0) {
+                xdt.append(" | ");
+            }
+            xdt.append(count + 1).append(":").append(cleanSnippet(html, index, Math.min(html.length(), index + XDT_PREFIX.length() + 80)));
+            searchFrom = index + XDT_PREFIX.length();
+            count++;
+        }
+        FileLog.d("resolver ig markers xdt url=" + ExternalHtmlUtils.sanitizeForLog(link.canonicalUrl)
+            + " count=" + count
+            + " samples=" + (xdt.length() > 0 ? xdt.toString() : "none"));
+
+        int videoIndex = html.indexOf(VIDEO_VERSIONS_MARKER);
+        if (videoIndex >= 0) {
+            int start = Math.max(0, videoIndex - 300);
+            int end = Math.min(html.length(), videoIndex + VIDEO_VERSIONS_MARKER.length() + 300);
+            FileLog.d("resolver ig markers video_versions url=" + ExternalHtmlUtils.sanitizeForLog(link.canonicalUrl)
+                + " context=" + cleanSnippet(html, start, end));
+        } else {
+            FileLog.d("resolver ig markers video_versions url=" + ExternalHtmlUtils.sanitizeForLog(link.canonicalUrl) + " context=none");
+        }
+    }
+
+    private String cleanSnippet(String value, int start, int end) {
+        String snippet = value.substring(start, end)
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .replace('\t', ' ');
+        return ExternalHtmlUtils.redactQueryStrings(snippet);
     }
 
     private void logResult(ParsedLink link, String branch, String extra) {
