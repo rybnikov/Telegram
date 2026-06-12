@@ -33,6 +33,7 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
     private static final String XDT_PREFIX = "\"xdt_";
     private static final String VIDEO_VERSIONS_MARKER = "\"video_versions\"";
     private static final String CAROUSEL_MEDIA_MARKER = "\"carousel_media\"";
+    private static final String IMAGE_VERSIONS_MARKER = "\"image_versions2\"";
     private static final String DEBUG_DUMP_FILE_PREFIX = "resolver_dump_instagram_";
     private static final String DEBUG_DUMP_FILE_SUFFIX = ".html";
     private static final int MAX_HTML_CHARS = 2 * 1024 * 1024;
@@ -359,38 +360,27 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         }
         String shortcode = link != null ? link.id : null;
         if (!TextUtils.isEmpty(shortcode)) {
-            String codeAnchor = "\"code\":\"" + shortcode + "\"";
-            int searchFrom = 0;
-            while (searchFrom < html.length()) {
-                int anchorIndex = html.indexOf(codeAnchor, searchFrom);
-                if (anchorIndex < 0) {
-                    break;
-                }
-                JSONObject object = extractMediaObjectOwner(html, anchorIndex, false);
-                if (object != null) {
-                    if (anchorOut != null) {
-                        anchorOut[0] = "code";
-                    }
-                    return object;
-                }
-                searchFrom = anchorIndex + codeAnchor.length();
-            }
-        }
-
-        int searchFrom = 0;
-        while (searchFrom < html.length()) {
-            int anchorIndex = html.indexOf("\"__isXIGPolarisMedia\"", searchFrom);
-            if (anchorIndex < 0) {
-                break;
-            }
-            JSONObject object = extractMediaObjectOwner(html, anchorIndex, true);
+            JSONObject object = extractPrimaryMediaObjectByField(html, shortcode, VIDEO_VERSIONS_MARKER, "video_versions");
             if (object != null) {
                 if (anchorOut != null) {
-                    anchorOut[0] = "isxig";
+                    anchorOut[0] = "video_versions";
                 }
                 return object;
             }
-            searchFrom = anchorIndex + "\"__isXIGPolarisMedia\"".length();
+            object = extractPrimaryMediaObjectByField(html, shortcode, CAROUSEL_MEDIA_MARKER, "carousel_media");
+            if (object != null) {
+                if (anchorOut != null) {
+                    anchorOut[0] = "carousel_media";
+                }
+                return object;
+            }
+            object = extractPrimaryMediaObjectByField(html, shortcode, IMAGE_VERSIONS_MARKER, "image_versions2");
+            if (object != null) {
+                if (anchorOut != null) {
+                    anchorOut[0] = "image_versions2";
+                }
+                return object;
+            }
         }
 
         if (anchorOut != null) {
@@ -425,29 +415,40 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         }
     }
 
-    private JSONObject extractMediaObjectOwner(String html, int anchorIndex, boolean requireCode) {
+    private JSONObject extractPrimaryMediaObjectByField(String html, String shortcode, String marker, String fieldName) {
+        int searchFrom = 0;
+        while (searchFrom < html.length()) {
+            int anchorIndex = html.indexOf(marker, searchFrom);
+            if (anchorIndex < 0) {
+                break;
+            }
+            JSONObject object = extractMediaObjectOwner(html, anchorIndex, shortcode, fieldName);
+            if (object != null) {
+                return object;
+            }
+            searchFrom = anchorIndex + marker.length();
+        }
+        return null;
+    }
+
+    private JSONObject extractMediaObjectOwner(String html, int anchorIndex, String shortcode, String fieldName) {
         int objectStart = html.lastIndexOf('{', anchorIndex);
         while (objectStart >= 0) {
             int objectEnd = findMatching(html, objectStart, '{', '}');
             if (objectEnd >= anchorIndex) {
                 String json = html.substring(objectStart, objectEnd + 1);
-                if (hasMediaField(json) && (!requireCode || json.contains("\"code\":\""))) {
-                    try {
-                        return new JSONObject(json);
-                    } catch (Exception e) {
-                        FileLog.d(TAG + ": failed to parse media node " + e.getClass().getSimpleName());
+                try {
+                    JSONObject object = new JSONObject(json);
+                    if (TextUtils.equals(shortcode, object.optString("code")) && object.has(fieldName)) {
+                        return object;
                     }
+                } catch (Exception e) {
+                    FileLog.d(TAG + ": failed to parse media node " + e.getClass().getSimpleName());
                 }
             }
             objectStart = html.lastIndexOf('{', objectStart - 1);
         }
         return null;
-    }
-
-    private boolean hasMediaField(String value) {
-        return contains(value, VIDEO_VERSIONS_MARKER)
-            || contains(value, CAROUSEL_MEDIA_MARKER)
-            || contains(value, "\"image_versions2\"");
     }
 
     private ResolvedMedia.Single parseMediaItem(JSONObject mediaObject) {
