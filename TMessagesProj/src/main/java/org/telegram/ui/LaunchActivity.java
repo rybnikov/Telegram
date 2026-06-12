@@ -335,6 +335,21 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     private boolean passcodeSaveIntentIsRestore;
 
     private boolean tabletFullSize;
+    private int measuredWindowWidth;
+    private boolean windowWidthChangePosted;
+    private boolean windowWidthChangeInProgress;
+    private boolean pendingWindowWidthTabletReset;
+    private long tabletModeSwitchWindowStartTime;
+    private int tabletModeSwitchCount;
+    private long tabletModeFreezeUntilTime;
+    private final Runnable windowWidthChangedRunnable = () -> {
+        windowWidthChangePosted = false;
+        if (pendingWindowWidthTabletReset) {
+            pendingWindowWidthTabletReset = false;
+            AndroidUtilities.resetTabletFlag();
+        }
+        onWindowWidthChanged();
+    };
 
     private String loadingThemeFileName;
     private String loadingThemeWallpaperName;
@@ -445,6 +460,14 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
         frameLayout = new FrameLayout(this) {
             @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                int width = MeasureSpec.getSize(widthMeasureSpec);
+                int height = MeasureSpec.getSize(heightMeasureSpec);
+                updateDisplaySizeFromRootMeasure(width, height);
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+            }
+
+            @Override
             protected void dispatchDraw(@NonNull Canvas canvas) {
                 super.dispatchDraw(canvas);
                 drawRippleAbove(canvas, this);
@@ -458,26 +481,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         frameLayout.setClipToPadding(false);
         frameLayout.setClipChildren(false);
         setContentView(frameLayout);
-        getWindow().getDecorView().addOnLayoutChangeListener((v, l, t, r, b, oldL, oldT, oldR, oldB) -> {
-            int width = r - l;
-            int height = b - t;
-            if (width <= 0 || height <= 0) {
-                return;
-            }
-            int widthDiff = Math.abs(AndroidUtilities.displaySize.x - width);
-            int heightDiff = Math.abs(AndroidUtilities.displaySize.y - height);
-            boolean widthChanged = widthDiff > 3;
-            boolean heightChanged = heightDiff > AndroidUtilities.dp(64) && (height > AndroidUtilities.displaySize.y || heightDiff < AndroidUtilities.dp(160));
-            if (widthChanged || heightChanged) {
-                if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d("window size mismatch: displaySize=" + AndroidUtilities.displaySize.x + "x" + AndroidUtilities.displaySize.y + " decor=" + width + "x" + height);
-                }
-                AndroidUtilities.checkDisplaySize(this, null);
-                AndroidUtilities.resetTabletFlag();
-                invalidateTabletMode();
-                checkLayout();
-            }
-        });
         rootAnimatedInsetsListener = new WindowAnimatedInsetsProvider(frameLayout);
         pipActivityController.addPipListener(new IPipActivityListener() {
             @Override
@@ -933,6 +936,128 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         drawerLayoutContainer.setBehindKeyboardColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         if (PhotoViewer.hasInstance()) {
             PhotoViewer.getInstance().updateColors();
+        }
+    }
+
+    private void updateDisplaySizeFromRootMeasure(int width, int height) {
+        if (width <= 0 || measuredWindowWidth == width) {
+            return;
+        }
+        measuredWindowWidth = width;
+        boolean wasTablet = AndroidUtilities.isTablet();
+        AndroidUtilities.displaySize.x = width;
+        if (height > 0) {
+            AndroidUtilities.displaySize.y = height;
+        }
+        boolean nextTablet = AndroidUtilities.isTabletForce();
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("measure-driven displaySize " + width + "x" + height + " wasTablet=" + wasTablet + " nextTablet=" + nextTablet);
+        }
+        if (shouldFreezeTabletModeChange(wasTablet, nextTablet)) {
+            pendingWindowWidthTabletReset = true;
+            scheduleWindowWidthChanged(Math.max(1, tabletModeFreezeUntilTime - SystemClock.elapsedRealtime()));
+            return;
+        }
+        AndroidUtilities.resetTabletFlag();
+        scheduleWindowWidthChanged(0);
+    }
+
+    private boolean shouldFreezeTabletModeChange(boolean wasTablet, boolean nextTablet) {
+        if (wasTablet == nextTablet) {
+            return false;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now < tabletModeFreezeUntilTime) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.w("nav-invariant tablet-flapping frozen remaining=" + (tabletModeFreezeUntilTime - now) + "ms " + dumpHostNavigationState());
+            }
+            return true;
+        }
+        if (now - tabletModeSwitchWindowStartTime > 1000) {
+            tabletModeSwitchWindowStartTime = now;
+            tabletModeSwitchCount = 0;
+        }
+        tabletModeSwitchCount++;
+        if (tabletModeSwitchCount > 3) {
+            tabletModeFreezeUntilTime = now + 500;
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.w("nav-invariant tablet-flapping count=" + tabletModeSwitchCount + " freeze=500ms " + dumpHostNavigationState());
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void scheduleWindowWidthChanged(long delay) {
+        if (windowWidthChangePosted) {
+            return;
+        }
+        windowWidthChangePosted = true;
+        if (frameLayout != null) {
+            if (delay > 0) {
+                frameLayout.postDelayed(windowWidthChangedRunnable, delay);
+            } else {
+                frameLayout.post(windowWidthChangedRunnable);
+            }
+        } else {
+            AndroidUtilities.runOnUIThread(windowWidthChangedRunnable, delay);
+        }
+    }
+
+    private void onWindowWidthChanged() {
+        if (windowWidthChangeInProgress) {
+            return;
+        }
+        windowWidthChangeInProgress = true;
+        try {
+            Boolean wasTablet = AndroidUtilities.getWasTablet();
+            boolean tabletChanged = wasTablet != null && wasTablet != AndroidUtilities.isTablet();
+            boolean layoutMatches = isTabletLayoutConsistent();
+            if (!tabletChanged && layoutMatches) {
+                if (wasTablet != null) {
+                    AndroidUtilities.resetWasTabletFlag();
+                }
+                return;
+            }
+            invalidateTabletMode();
+            checkLayout();
+            checkTabletLayoutInvariant("windowWidthChanged");
+        } finally {
+            windowWidthChangeInProgress = false;
+        }
+    }
+
+    private boolean isTabletLayoutConsistent() {
+        boolean rightVisible = rightActionBarLayout != null && rightActionBarLayout.getView().getVisibility() == View.VISIBLE;
+        return rightVisible == shouldRightPaneBeVisible();
+    }
+
+    private boolean shouldRightPaneBeVisible() {
+        return AndroidUtilities.isTablet() && !tabletFullSize && rightActionBarLayout != null && (!rightActionBarLayout.getFragmentStack().isEmpty() || hasOpenChatInMainStack());
+    }
+
+    private boolean hasOpenChatInMainStack() {
+        if (actionBarLayout == null) {
+            return false;
+        }
+        List<BaseFragment> fragmentStack = actionBarLayout.getFragmentStack();
+        for (int i = 0; i < fragmentStack.size(); i++) {
+            BaseFragment fragment = fragmentStack.get(i);
+            if (fragment instanceof ChatActivity && !((ChatActivity) fragment).isInScheduleMode()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void checkTabletLayoutInvariant(String reason) {
+        boolean rightVisible = rightActionBarLayout != null && rightActionBarLayout.getView().getVisibility() == View.VISIBLE;
+        boolean expectedRightVisible = shouldRightPaneBeVisible();
+        if (rightVisible != expectedRightVisible) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.w("nav-invariant half-migrated " + reason + " expectedRightVisible=" + expectedRightVisible + " actualRightVisible=" + rightVisible + " " + dumpHostNavigationState());
+            }
+            checkLayout();
         }
     }
 
@@ -7346,17 +7471,19 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             }
         }
+        checkTabletLayoutInvariant("invalidateTabletMode");
     }
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         AndroidUtilities.checkDisplaySize(this, newConfig);
         AndroidUtilities.setPreferredMaxRefreshRate(getWindow());
-        AndroidUtilities.resetTabletFlag();
+        measuredWindowWidth = 0;
         super.onConfigurationChanged(newConfig);
         pipActivityHandler.onConfigurationChanged(newConfig);
-        invalidateTabletMode();
-        checkLayout();
+        if (frameLayout != null) {
+            frameLayout.requestLayout();
+        }
         PipRoundVideoView pipRoundVideoView = PipRoundVideoView.getInstance();
         if (pipRoundVideoView != null) {
             pipRoundVideoView.onConfigurationChanged();
@@ -7405,8 +7532,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         cancelStalePredictiveBack("multiwindow");
         AndroidUtilities.isInMultiwindow = isInMultiWindowMode;
         super.onMultiWindowModeChanged(isInMultiWindowMode);
-        AndroidUtilities.checkDisplaySize(this, null);
-        checkLayout();
+        if (frameLayout != null) {
+            frameLayout.requestLayout();
+        }
     }
 
     @Override
