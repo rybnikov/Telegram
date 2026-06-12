@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 
@@ -376,13 +377,65 @@ public final class ExternalPreviewManager {
                     );
                     ExternalMediaOpenHelper.openResolved(context, Uri.parse(canonicalUrl), streamVideo);
                 } else {
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d(TAG + ": tiktok playback fallback browser url=" + canonicalUrl);
+                    String embedUrl = buildTikTokEmbedUrl(video.videoUrl, canonicalUrl);
+                    if (!TextUtils.isEmpty(embedUrl)) {
+                        if (BuildVars.LOGS_ENABLED) {
+                            FileLog.d(TAG + ": tiktok playback embed url=" + embedUrl + " source=" + canonicalUrl);
+                        }
+                        ResolvedMedia.Video embedVideo = new ResolvedMedia.Video(
+                            embedUrl, video.posterUrl, video.title, video.description,
+                            video.width, video.height
+                        );
+                        openEmbedSheet(context, "TikTok", embedVideo, canonicalUrl);
+                    } else {
+                        if (BuildVars.LOGS_ENABLED) {
+                            FileLog.d(TAG + ": tiktok playback fallback browser url=" + canonicalUrl);
+                        }
+                        Browser.openUrl(context, Uri.parse(canonicalUrl), true, true, false, null, null, false, true, false);
                     }
-                    Browser.openUrl(context, Uri.parse(canonicalUrl), true, true, false, null, null, false, true, false);
                 }
             });
         }, "ExtPreview-playback").start();
+    }
+
+    private static String buildTikTokEmbedUrl(String finalUrl, String fallbackUrl) {
+        String videoId = extractTikTokVideoId(finalUrl);
+        if (TextUtils.isEmpty(videoId)) {
+            videoId = extractTikTokVideoId(fallbackUrl);
+        }
+        return TextUtils.isEmpty(videoId) ? null : "https://www.tiktok.com/embed/v2/" + videoId;
+    }
+
+    private static String extractTikTokVideoId(String url) {
+        if (TextUtils.isEmpty(url)) {
+            return null;
+        }
+        try {
+            List<String> segments = Uri.parse(url).getPathSegments();
+            if (segments == null) {
+                return null;
+            }
+            for (int i = 0; i < segments.size() - 1; i++) {
+                if ("video".equalsIgnoreCase(segments.get(i))) {
+                    String value = segments.get(i + 1);
+                    return isDigits(value) ? value : null;
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    private static boolean isDigits(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void openEmbedSheet(Context context, String siteName, ResolvedMedia.Video video, String sourceUrl) {

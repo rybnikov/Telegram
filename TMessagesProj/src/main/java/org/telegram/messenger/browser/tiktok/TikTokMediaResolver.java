@@ -177,11 +177,11 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
             return null;
         }
 
-        // Return as Video with placeholder videoUrl — real URL resolved on click
-        // The canonical URL is used as videoUrl marker; resolveVideoForPlayback replaces it
+        // Return final video page URL as a marker; resolveVideoForPlayback still fetches
+        // the stream from the cache key, and embed fallback extracts /video/<id> from this.
         FileLog.d(TAG + ": oEmbed preview " + ExternalHtmlUtils.trimForLog(posterUrl));
         logPreviewResult(link.canonicalUrl, previewUrl, previewHtml, branch, posterUrl, true);
-        return new ResolvedMedia.Video(link.canonicalUrl, posterUrl, title, description, width, height);
+        return new ResolvedMedia.Video(previewUrl, posterUrl, title, description, width, height);
     }
 
     private static void logPreviewResult(String sourceUrl, String previewUrl, String html, String branch, String posterUrl, boolean hasVideoUrl) {
