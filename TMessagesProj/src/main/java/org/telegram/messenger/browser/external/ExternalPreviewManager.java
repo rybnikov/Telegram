@@ -32,6 +32,8 @@ public final class ExternalPreviewManager {
     private static final int MAX_CACHE_SIZE = 64;
     private static final int MAX_CONCURRENT_RESOLVES = 3;
     private static final int MAX_PLATFORM_LINK_SCAN = 4;
+    // Increment whenever external preview extraction or persisted preview format changes.
+    public static final int EXTERNAL_PREVIEW_FORMAT_VERSION = 2;
 
     private static final Object lock = new Object();
     private static final LinkedHashMap<String, CachedPreview> cache = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 1.0f, true);

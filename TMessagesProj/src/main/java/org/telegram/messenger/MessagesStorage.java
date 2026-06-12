@@ -15,6 +15,7 @@ import static org.telegram.messenger.MessagesController.LOAD_FORWARD;
 import static org.telegram.messenger.MessagesController.LOAD_FROM_UNREAD;
 
 import android.appwidget.AppWidgetManager;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -35,6 +36,7 @@ import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
+import org.telegram.messenger.browser.external.ExternalPreviewManager;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.RequestDelegate;
@@ -381,6 +383,7 @@ public class MessagesStorage extends BaseController {
                 }
             }
             databaseCreated = true;
+            purgeExternalPreviewCacheForFormatUpgrade();
         } catch (Exception e) {
             FileLog.e(e);
             if (openTries < 3 && e.getMessage() != null && e.getMessage().contains("malformed")) {
@@ -11127,6 +11130,7 @@ public class MessagesStorage extends BaseController {
     private static final int EXTERNAL_PREVIEW_RETENTION_SECONDS = 30 * 24 * 60 * 60;
     private static final int EXTERNAL_PREVIEW_TOUCH_INTERVAL_SECONDS = 6 * 60 * 60;
     private static final int EXTERNAL_PREVIEW_MAX_ROWS = 1000;
+    private static final String EXTERNAL_PREVIEW_FORMAT_VERSION_KEY = "externalPreviewFormatVersion";
     public static final int EXTERNAL_PREVIEW_KIND_IMAGE = 0;
     public static final int EXTERNAL_PREVIEW_KIND_VIDEO = 1;
     public static final int EXTERNAL_PREVIEW_KIND_PREVIEW = 2;
@@ -11557,6 +11561,23 @@ public class MessagesStorage extends BaseController {
             if (cursor != null) {
                 cursor.dispose();
             }
+        }
+    }
+
+    private void purgeExternalPreviewCacheForFormatUpgrade() {
+        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences(currentAccount == 0 ? "mainconfig" : "mainconfig" + currentAccount, Context.MODE_PRIVATE);
+        int storedVersion = preferences.getInt(EXTERNAL_PREVIEW_FORMAT_VERSION_KEY, 0);
+        int currentVersion = ExternalPreviewManager.EXTERNAL_PREVIEW_FORMAT_VERSION;
+        if (storedVersion >= currentVersion) {
+            return;
+        }
+        int rows = clearExternalPreviewCacheLocked();
+        ExternalPreviewManager.clearDebugState();
+        preferences.edit().putInt(EXTERNAL_PREVIEW_FORMAT_VERSION_KEY, currentVersion).apply();
+        String line = "external preview format upgrade from=" + storedVersion + " to=" + currentVersion + " purged rows=" + rows;
+        Log.d("tmessages", line);
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d(line);
         }
     }
 
