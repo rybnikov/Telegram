@@ -12,6 +12,7 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.TLRPC;
 
@@ -32,6 +33,7 @@ public final class ExternalPreviewManager {
     private static final LinkedHashMap<String, CachedPreview> cache = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 1.0f, true);
     private static final HashMap<String, ArrayList<PendingMessage>> pendingMessages = new HashMap<>();
     private static final HashSet<String> persistentLookups = new HashSet<>();
+    private static final HashSet<Long> warmAttempted = new HashSet<>();
     private static final HashMap<String, ResolveRequest> queuedRequests = new HashMap<>();
     private static final HashMap<String, ResolveRequest> runningRequests = new HashMap<>();
     private static long nextSequence;
@@ -47,6 +49,7 @@ public final class ExternalPreviewManager {
             cache.clear();
             pendingMessages.clear();
             persistentLookups.clear();
+            warmAttempted.clear();
             queuedRequests.clear();
             runningRequests.clear();
             activeResolves = 0;
@@ -133,6 +136,7 @@ public final class ExternalPreviewManager {
             return;
         }
         if (shouldSkipExistingMedia(messageMedia, link, resolver)) {
+            warmStoreIfNeeded(messageObject.currentAccount, messageMedia, link, resolver, messageObject);
             log("skip existing media", link, resolver, null, messageObject);
             return;
         }
@@ -286,6 +290,10 @@ public final class ExternalPreviewManager {
     }
 
     public static boolean openCachedPreview(Context context, TLRPC.Message message) {
+        return openCachedPreview(context, message, null);
+    }
+
+    private static boolean openCachedPreview(Context context, TLRPC.Message message, ExternalMediaOpenHelper.ProgressHandle progressHandle) {
         ParsedLink link = findPlatformLink(message);
         if (link == null) {
             return false;
@@ -300,6 +308,10 @@ public final class ExternalPreviewManager {
         }
         if (cachedPreview == null || cachedPreview.media == null) {
             log("openCachedPreview(message) miss", link, resolver, null, null);
+            if (shouldOpenAppliedExternalPreviewAsync(message, link, resolver)) {
+                openAppliedExternalPreviewAsync(context, UserConfig.selectedAccount, link, resolver, progressHandle);
+                return true;
+            }
             return false;
         }
         log("openCachedPreview(message) hit", link, resolver, null, null);
@@ -421,6 +433,88 @@ public final class ExternalPreviewManager {
         return webPage.id == stableId;
     }
 
+    private static void warmStoreIfNeeded(int account, TLRPC.MessageMedia messageMedia, ParsedLink link, ExternalMediaResolver resolver, MessageObject messageObject) {
+        if (!(messageMedia instanceof TLRPC.TL_messageMediaWebPage) || link == null || resolver == null) {
+            return;
+        }
+        TLRPC.WebPage webPage = messageMedia.webpage;
+        if (!shouldWarmAppliedExternalWebPage(webPage, link, resolver)) {
+            return;
+        }
+        if (ExternalMediaPreviewStore.getVideoPreview(webPage.id) != null) {
+            return;
+        }
+        boolean shouldLookup = false;
+        synchronized (lock) {
+            if (cache.containsKey(link.canonicalUrl) || persistentLookups.contains(link.canonicalUrl) || warmAttempted.contains(webPage.id)) {
+                return;
+            }
+            warmAttempted.add(webPage.id);
+            persistentLookups.add(link.canonicalUrl);
+            shouldLookup = true;
+            log("warm persisted lookup", link, resolver, "webpageId=" + webPage.id, messageObject);
+        }
+        if (shouldLookup) {
+            lookupPersistedPreview(account, link, resolver);
+        }
+    }
+
+    private static boolean shouldOpenAppliedExternalPreviewAsync(TLRPC.Message message, ParsedLink link, ExternalMediaResolver resolver) {
+        TLRPC.MessageMedia messageMedia = MessageObject.getMedia(message);
+        if (!(messageMedia instanceof TLRPC.TL_messageMediaWebPage)) {
+            return false;
+        }
+        return shouldWarmAppliedExternalWebPage(messageMedia.webpage, link, resolver);
+    }
+
+    private static boolean shouldWarmAppliedExternalWebPage(TLRPC.WebPage webPage, ParsedLink link, ExternalMediaResolver resolver) {
+        if (!(webPage instanceof TLRPC.TL_webPage) || link == null || resolver == null) {
+            return false;
+        }
+        if (webPage.id != computeStableId(link.canonicalUrl)) {
+            return false;
+        }
+        return webPage.document != null
+            || "video".equals(webPage.type)
+            || ExternalLinkRouter.getInstantButtonText(resolver.platformName(), webPage) != null;
+    }
+
+    private static void openAppliedExternalPreviewAsync(Context context, int account, ParsedLink link, ExternalMediaResolver resolver, ExternalMediaOpenHelper.ProgressHandle progressHandle) {
+        if (progressHandle != null) {
+            progressHandle.init();
+        }
+        AccountInstance.getInstance(account).getMessagesStorage().getExternalPreview(link.canonicalUrl, storedPreview -> {
+            CachedPreview hydrated = storedPreview != null ? hydrateCachedPreview(storedPreview, resolver) : null;
+            if (hydrated != null) {
+                synchronized (lock) {
+                    cache.put(link.canonicalUrl, hydrated);
+                    trimCache();
+                }
+                log("openCachedPreview(message) persisted hit", link, resolver, null, null);
+                if (progressHandle != null) {
+                    progressHandle.end();
+                }
+                if (!openCachedMedia(context, resolver, hydrated, link.canonicalUrl)) {
+                    Browser.openUrl(context, link.getCanonicalUri(), true, true, false, null, null, false, true, false);
+                }
+                return;
+            }
+            log("openCachedPreview(message) persisted miss", link, resolver, null, null);
+            if (progressHandle != null) {
+                progressHandle.end();
+            }
+            boolean handled = ExternalMediaOpenHelper.tryOpen(
+                context,
+                link.getCanonicalUri(),
+                fallbackUri -> Browser.openUrl(context, fallbackUri, true, true, false, null, null, false, true, false),
+                progressHandle
+            );
+            if (!handled) {
+                Browser.openUrl(context, link.getCanonicalUri(), true, true, false, null, null, false, true, false);
+            }
+        });
+    }
+
     private static boolean hasRenderableExternalPreview(TLRPC.WebPage webPage) {
         if (webPage == null) {
             return false;
@@ -511,6 +605,8 @@ public final class ExternalPreviewManager {
                     NotificationCenter.getInstance(entry.getKey()).postNotificationName(NotificationCenter.didReceivedWebpages, entry.getValue());
                 }
                 log("persisted hit publishAccounts=" + messagesByAccount.size() + " pendingCount=" + pending.size(), link, resolver, null, null);
+            } else if (hydrated != null) {
+                log("persisted hit warm", link, resolver, null, null);
             } else if (storedPreview == null) {
                 log("persisted miss", link, resolver, null, null);
             }
