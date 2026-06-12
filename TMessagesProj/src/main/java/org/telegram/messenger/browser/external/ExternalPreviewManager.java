@@ -28,6 +28,7 @@ public final class ExternalPreviewManager {
     private static final String TAG = "ExternalPreview";
     private static final int MAX_CACHE_SIZE = 64;
     private static final int MAX_CONCURRENT_RESOLVES = 3;
+    private static final int MAX_PLATFORM_LINK_SCAN = 4;
 
     private static final Object lock = new Object();
     private static final LinkedHashMap<String, CachedPreview> cache = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 1.0f, true);
@@ -935,20 +936,22 @@ public final class ExternalPreviewManager {
                 if (!urls.contains(value)) {
                     urls.add(value);
                 }
-                if (urls.size() > 1) {
+                if (urls.size() >= MAX_PLATFORM_LINK_SCAN) {
                     break;
                 }
             }
         }
-        if (urls.size() != 1) {
-            if (BuildVars.LOGS_ENABLED) {
-                FileLog.d(TAG + ": findPlatformLink fail mid=" + message.id + " raw=" + rawUrls + " deduped=" + urls);
+        ParsedLink parsedLink = null;
+        int parsedIndex = -1;
+        for (int i = 0; i < urls.size() && i < MAX_PLATFORM_LINK_SCAN; i++) {
+            parsedLink = parseCandidate(urls.get(i));
+            if (parsedLink != null) {
+                parsedIndex = i;
+                break;
             }
-            return null;
         }
-        ParsedLink parsedLink = parseCandidate(urls.get(0));
         if (BuildVars.LOGS_ENABLED) {
-            FileLog.d(TAG + ": findPlatformLink mid=" + message.id + " raw=" + rawUrls + " deduped=" + urls + " parsed=" + (parsedLink != null ? parsedLink.canonicalUrl : "null"));
+            FileLog.d(TAG + ": findPlatformLink mid=" + message.id + " raw=" + rawUrls + " deduped=" + urls + " parsedIndex=" + parsedIndex + " parsed=" + (parsedLink != null ? parsedLink.canonicalUrl : "null"));
         }
         return parsedLink;
     }
