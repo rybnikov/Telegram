@@ -1633,6 +1633,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     chatFragment.onFragmentDestroy();
                     chatFragment.setParentLayout(null);
                     fragmentStack.remove(chatFragment);
+                    chatFragment.resetFragment();
                     rightActionBarLayout.addFragmentToStack(chatFragment);
                     a--;
                 }
@@ -1660,6 +1661,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     chatFragment.onFragmentDestroy();
                     chatFragment.setParentLayout(null);
                     fragmentStack.remove(chatFragment);
+                    chatFragment.resetFragment();
                     actionBarLayout.addFragmentToStack(chatFragment);
                     a--;
                 }

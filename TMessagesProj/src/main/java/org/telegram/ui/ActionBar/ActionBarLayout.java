@@ -2565,6 +2565,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
     @Override
     public boolean addFragmentToStack(BaseFragment fragment, int position) {
         logZombieReadd("addFragmentToStack position=" + position, fragment);
+        if (fragment != null && fragment.isFinished) {
+            fragment.resetFragment();
+        }
         if (delegate != null && !delegate.needAddFragmentToStack(fragment, this) || !fragment.onFragmentCreate()) {
             return false;
         }
