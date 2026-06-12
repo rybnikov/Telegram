@@ -54,6 +54,13 @@ public final class ExternalMediaPreviewStore {
         return preview != null && document != null && preview.document != null && preview.document.id == document.id;
     }
 
+    public static boolean isFabricatedExternalDocument(TLRPC.Document document) {
+        return document != null
+            && (document.id & Long.MIN_VALUE) != 0
+            && document.dc_id == 0
+            && document.size == 0;
+    }
+
     public static void clearDebugState() {
         synchronized (lock) {
             videoCache.clear();

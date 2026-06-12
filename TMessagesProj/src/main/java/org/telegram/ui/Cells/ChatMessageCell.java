@@ -7780,7 +7780,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             documentCover = photo;
                             photo = null;
                         }
-                        type = webPage.type;
+                        boolean renderExternalDocumentAsPoster = shouldRenderExternalDocumentAsPoster(webPage, document);
+                        if (renderExternalDocumentAsPoster) {
+                            document = null;
+                        }
+                        type = renderExternalDocumentAsPoster ? "photo" : webPage.type;
                         duration = webPage.duration;
                         if (isCustomExternalPreviewSite(site_name) && photo == null && document == null) {
                             ExternalMediaPreviewStore.VideoPreview preview = ExternalMediaPreviewStore.getVideoPreview(webPage.id);
@@ -17320,6 +17324,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             return null;
         }
         return ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+    }
+
+    private boolean shouldRenderExternalDocumentAsPoster(TLRPC.WebPage webPage, TLRPC.Document document) {
+        return webPage != null
+            && ExternalMediaPreviewStore.isFabricatedExternalDocument(document)
+            && ExternalMediaPreviewStore.getVideoPreview(webPage.id) == null;
     }
 
     private ImageLocation getExternalVideoLocation(ExternalMediaPreviewStore.VideoPreview preview) {
