@@ -5,18 +5,13 @@ import android.text.TextUtils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
-import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.ResolvedMedia;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -34,8 +29,6 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
     private static final String VIDEO_VERSIONS_MARKER = "\"video_versions\"";
     private static final String CAROUSEL_MEDIA_MARKER = "\"carousel_media\"";
     private static final String IMAGE_VERSIONS_MARKER = "\"image_versions2\"";
-    private static final String DEBUG_DUMP_FILE_PREFIX = "resolver_dump_instagram_";
-    private static final String DEBUG_DUMP_FILE_SUFFIX = ".html";
     private static final int MAX_HTML_CHARS = 2 * 1024 * 1024;
     private static final Set<String> SITE_NAMES = new HashSet<>(Arrays.asList("instagram"));
 
@@ -72,7 +65,6 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
         ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADERS);
         ParsedLink resolvedLink = canonicalizeFinalUrl(link, fetchResult.finalUrl);
-        saveDebugHtmlDump(resolvedLink, fetchResult.html);
         return extractMedia(resolvedLink, fetchResult.html);
     }
 
@@ -196,33 +188,6 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         logMarkerContexts(link, html);
     }
 
-    private void saveDebugHtmlDump(ParsedLink link, String html) {
-        if (!BuildVars.DEBUG_PRIVATE_VERSION || TextUtils.isEmpty(html)) {
-            return;
-        }
-        FileOutputStream stream = null;
-        try {
-            byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
-            File logsDir = AndroidUtilities.getLogsDir();
-            if (logsDir == null) {
-                return;
-            }
-            File file = new File(logsDir, DEBUG_DUMP_FILE_PREFIX + buildDumpName(link) + DEBUG_DUMP_FILE_SUFFIX);
-            stream = new FileOutputStream(file, false);
-            stream.write(bytes);
-            FileLog.d("resolver ig dump saved path=" + file.getAbsolutePath() + " bytes=" + bytes.length);
-        } catch (Exception e) {
-            FileLog.d("resolver ig dump failed " + e.getClass().getSimpleName());
-        } finally {
-            if (stream != null) {
-                try {
-                    stream.close();
-                } catch (Exception ignore) {
-                }
-            }
-        }
-    }
-
     private void logMarkerContexts(ParsedLink link, String html) {
         if (TextUtils.isEmpty(html)) {
             return;
@@ -267,58 +232,6 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         } else {
             FileLog.d("resolver ig markers carousel_media url=" + ExternalHtmlUtils.sanitizeForLog(link.canonicalUrl) + " context=none");
         }
-    }
-
-    private String buildDumpName(ParsedLink link) {
-        String value = link != null ? link.id : null;
-        if (TextUtils.isEmpty(value) && link != null) {
-            value = lastPathSegment(link.canonicalUrl);
-        }
-        value = sanitizeDumpName(value);
-        if (!TextUtils.isEmpty(value)) {
-            return value;
-        }
-        String canonicalUrl = link != null ? link.canonicalUrl : null;
-        String hash = TextUtils.isEmpty(canonicalUrl) ? null : Utilities.MD5(canonicalUrl);
-        if (!TextUtils.isEmpty(hash)) {
-            return hash;
-        }
-        return "unknown";
-    }
-
-    private String lastPathSegment(String url) {
-        if (TextUtils.isEmpty(url)) {
-            return null;
-        }
-        try {
-            Uri uri = Uri.parse(url);
-            ArrayList<String> segments = new ArrayList<>(uri.getPathSegments());
-            for (int i = segments.size() - 1; i >= 0; i--) {
-                String segment = segments.get(i);
-                if (!TextUtils.isEmpty(segment)) {
-                    return segment;
-                }
-            }
-        } catch (Exception ignore) {
-        }
-        return null;
-    }
-
-    private String sanitizeDumpName(String value) {
-        if (TextUtils.isEmpty(value)) {
-            return null;
-        }
-        StringBuilder builder = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            if (ch >= 'A' && ch <= 'Z'
-                || ch >= 'a' && ch <= 'z'
-                || ch >= '0' && ch <= '9'
-                || ch == '_' || ch == '-') {
-                builder.append(ch);
-            }
-        }
-        return builder.length() == 0 ? null : builder.toString();
     }
 
     private String cleanSnippet(String value, int start, int end) {
