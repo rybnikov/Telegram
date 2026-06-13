@@ -17314,16 +17314,28 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     private ExternalMediaPreviewStore.VideoPreview getExternalVideoPreview() {
         if (documentAttachType != DOCUMENT_ATTACH_TYPE_VIDEO || currentMessageObject == null || currentMessageObject.messageOwner == null || documentAttach == null) {
+            logExternalVideoPreviewResult("null", 0, false);
             return null;
         }
         if (!(currentMessageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage)) {
+            logExternalVideoPreviewResult("null", 0, false);
             return null;
         }
         TLRPC.WebPage webPage = ((TLRPC.TL_messageMediaWebPage) currentMessageObject.messageOwner.media).webpage;
-        if (webPage == null || !ExternalMediaPreviewStore.isExternalPreviewDocument(webPage.id, documentAttach)) {
+        boolean docMatch = webPage != null && ExternalMediaPreviewStore.isExternalPreviewDocument(webPage.id, documentAttach);
+        if (webPage == null || !docMatch) {
+            logExternalVideoPreviewResult("null", webPage != null ? webPage.id : 0, docMatch);
             return null;
         }
-        return ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+        ExternalMediaPreviewStore.VideoPreview preview = ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+        logExternalVideoPreviewResult(preview == null ? "null" : preview.posterWebFile == null ? "noPoster" : "ok", webPage.id, docMatch);
+        return preview;
+    }
+
+    private void logExternalVideoPreviewResult(String result, long webPageId, boolean docMatch) {
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("poster-trace getPreview result=" + result + " webpageId=" + webPageId + " docMatch=" + docMatch);
+        }
     }
 
     private boolean shouldRenderExternalDocumentAsPoster(TLRPC.WebPage webPage, TLRPC.Document document) {
@@ -17372,10 +17384,18 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private void setExternalVideoPreviewImage(MessageObject messageObject, ExternalMediaPreviewStore.VideoPreview preview, boolean autoplay) {
         ImageLocation posterLocation = getExternalPosterLocation(preview);
         ImageLocation thumbLocation = getExternalThumbLocation();
+        ImageLocation videoLocation = getExternalVideoLocation(preview);
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("poster-trace setImage autoplay=" + autoplay
+                + " previewNull=" + (preview == null)
+                + " posterWebFileNull=" + (preview == null || preview.posterWebFile == null)
+                + " posterLocationNull=" + (posterLocation == null)
+                + " videoLocationNull=" + (videoLocation == null)
+                + " photoObj=" + (currentPhotoObject == null ? "null" : "set"));
+        }
         String posterFilter = getExternalPosterFilter();
         String thumbFilter = currentPhotoFilterThumb != null ? currentPhotoFilterThumb : posterFilter;
         if (autoplay) {
-            ImageLocation videoLocation = getExternalVideoLocation(preview);
             if (videoLocation != null) {
                 photoImage.setImage(videoLocation, ImageLoader.AUTOPLAY_FILTER, posterLocation, posterFilter, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, preview.videoWebFile != null ? preview.videoWebFile.size : 0, null, messageObject, 1);
                 return;

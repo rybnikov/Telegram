@@ -935,14 +935,20 @@ public final class ExternalPreviewManager {
                 webpage.title, webpage.description
             );
             String posterUrl = !TextUtils.isEmpty(video.posterUrl) ? video.posterUrl : supportsDirectVideoStreaming ? video.videoUrl : null;
+            String webPageType = supportsDirectVideoStreaming ? "video" : "photo";
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("poster-trace buildWebPage posterUrl=" + describeUrlHost(posterUrl)
+                    + " type=" + webPageType
+                    + " directStream=" + supportsDirectVideoStreaming);
+            }
             if (TextUtils.isEmpty(posterUrl)) {
                 return null;
             }
             if (supportsDirectVideoStreaming) {
-                webpage.type = "video";
+                webpage.type = webPageType;
                 webpage.document = videoDocument;
             } else {
-                webpage.type = "photo";
+                webpage.type = webPageType;
                 webpage.document = null;
             }
             webpage.embed_url = posterUrl;
@@ -1168,6 +1174,20 @@ public final class ExternalPreviewManager {
             return canonicalUrl;
         }
         return path == null ? host : host + path;
+    }
+
+    private static String describeUrlHost(String url) {
+        if (TextUtils.isEmpty(url)) {
+            return "empty";
+        }
+        try {
+            String host = Uri.parse(url).getHost();
+            if (!TextUtils.isEmpty(host)) {
+                return host;
+            }
+        } catch (Exception ignore) {
+        }
+        return "unknown";
     }
 
     private static final class PendingMessage {
