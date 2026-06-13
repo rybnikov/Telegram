@@ -1,10 +1,7 @@
 package org.telegram.messenger.browser.external;
 
-import android.net.Uri;
 import android.text.TextUtils;
 
-import org.telegram.messenger.BuildVars;
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.WebFile;
 import org.telegram.tgnet.TLRPC;
 
@@ -23,9 +20,6 @@ public final class ExternalMediaPreviewStore {
 
     public static TLRPC.Document putVideo(long webPageId, String sourceName, String sourceUrl, String videoUrl, String posterUrl, int width, int height, String title, String description) {
         if (webPageId == 0 || TextUtils.isEmpty(videoUrl)) {
-            if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("poster-trace putVideo id=" + webPageId + " posterUrl=" + describeUrlHost(posterUrl) + " posterWebFile=null videoWebFile=null");
-            }
             return null;
         }
         VideoPreview preview = new VideoPreview(
@@ -42,12 +36,6 @@ public final class ExternalMediaPreviewStore {
             buildWebFile(videoUrl, "video/mp4", width, height, true),
             buildWebFile(posterUrl, guessImageMimeType(posterUrl), width, height, false)
         );
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("poster-trace putVideo id=" + webPageId
-                + " posterUrl=" + describeUrlHost(posterUrl)
-                + " posterWebFile=" + (preview.posterWebFile == null ? "null" : "ok")
-                + " videoWebFile=" + (preview.videoWebFile == null ? "null" : "ok"));
-        }
         synchronized (lock) {
             videoCache.put(webPageId, preview);
             trimCache();
@@ -140,20 +128,6 @@ public final class ExternalMediaPreviewStore {
 
     private static String guessImageMimeType(String url) {
         return ExternalMediaOpenHelper.guessImageMimeType(url);
-    }
-
-    private static String describeUrlHost(String url) {
-        if (TextUtils.isEmpty(url)) {
-            return "empty";
-        }
-        try {
-            String host = Uri.parse(url).getHost();
-            if (!TextUtils.isEmpty(host)) {
-                return host;
-            }
-        } catch (Exception ignore) {
-        }
-        return "unknown";
     }
 
     private static long stableLong(String value) {
