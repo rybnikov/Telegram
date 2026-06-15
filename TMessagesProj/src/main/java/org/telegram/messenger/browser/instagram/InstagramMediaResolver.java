@@ -8,6 +8,7 @@ import org.json.JSONObject;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.ResolvedMedia;
@@ -52,18 +53,17 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         return true;
     }
 
-    private static final Map<String, String> INSTAGRAM_HEADERS = new HashMap<>();
+    private static final Map<String, String> INSTAGRAM_HEADER_OVERRIDES = new HashMap<>();
     static {
-        INSTAGRAM_HEADERS.put("Sec-CH-Prefers-Color-Scheme", "light");
-        INSTAGRAM_HEADERS.put("Sec-CH-UA", "\"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"");
-        INSTAGRAM_HEADERS.put("Sec-CH-UA-Mobile", "?0");
-        INSTAGRAM_HEADERS.put("Sec-CH-UA-Platform", "\"macOS\"");
-        INSTAGRAM_HEADERS.put("Priority", "u=0, i");
+        INSTAGRAM_HEADER_OVERRIDES.put("Sec-CH-Prefers-Color-Scheme", "light");
+        INSTAGRAM_HEADER_OVERRIDES.put("Sec-CH-UA", "\"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"");
+        INSTAGRAM_HEADER_OVERRIDES.put("Sec-CH-UA-Mobile", "?0");
+        INSTAGRAM_HEADER_OVERRIDES.put("Priority", "u=0, i");
     }
 
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
-        ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADERS);
+        ExternalHtmlUtils.FetchResult fetchResult = ExternalHttpClient.fetchHtmlWithFinalUrl(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADER_OVERRIDES);
         ParsedLink resolvedLink = canonicalizeFinalUrl(link, fetchResult.finalUrl);
         return extractMedia(resolvedLink, fetchResult.html);
     }

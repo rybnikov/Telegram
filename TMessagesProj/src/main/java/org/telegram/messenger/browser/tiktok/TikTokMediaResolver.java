@@ -8,6 +8,7 @@ import org.json.JSONObject;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.ResolvedMedia;
@@ -54,7 +55,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         CookieHandler.setDefault(cookieManager);
         String html = null;
         try {
-            html = ExternalHtmlUtils.fetchHtml(canonicalUrl, REHYDRATION_SCRIPT_ID, "</script>", MAX_SCRIPT_CHARS);
+            html = ExternalHttpClient.fetchHtml(canonicalUrl, REHYDRATION_SCRIPT_ID, "</script>", MAX_SCRIPT_CHARS);
             String scriptContent = ExternalHtmlUtils.findScriptContentById(html, REHYDRATION_SCRIPT_ID);
             if (TextUtils.isEmpty(scriptContent)) {
                 logPlaybackResult(canonicalUrl, html, false, false, "null");
@@ -132,7 +133,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         String previewHtml = null;
 
         if (isShortTikTokUrl(link.canonicalUrl)) {
-            ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
+            ExternalHtmlUtils.FetchResult fetchResult = ExternalHttpClient.fetchHtmlWithFinalUrl(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
             previewHtml = fetchResult.html;
             previewUrl = canonicalizePreviewUrl(fetchResult.finalUrl, link.canonicalUrl);
         }
@@ -149,7 +150,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
 
         if (TextUtils.isEmpty(posterUrl)) {
             if (previewHtml == null) {
-                ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(previewUrl, null, "</head>", MAX_HEAD_CHARS);
+                ExternalHtmlUtils.FetchResult fetchResult = ExternalHttpClient.fetchHtmlWithFinalUrl(previewUrl, null, "</head>", MAX_HEAD_CHARS);
                 previewHtml = fetchResult.html;
                 previewUrl = canonicalizePreviewUrl(fetchResult.finalUrl, previewUrl);
             }
@@ -240,7 +241,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
     private static JSONObject fetchOEmbed(String previewUrl) {
         try {
             String oembedUrl = "https://www.tiktok.com/oembed?url=" + Uri.encode(previewUrl);
-            String response = ExternalHtmlUtils.fetchHtml(oembedUrl, null, null, MAX_OEMBED_CHARS);
+            String response = ExternalHttpClient.fetchHtml(oembedUrl, null, null, MAX_OEMBED_CHARS);
             if (TextUtils.isEmpty(response)) {
                 return null;
             }

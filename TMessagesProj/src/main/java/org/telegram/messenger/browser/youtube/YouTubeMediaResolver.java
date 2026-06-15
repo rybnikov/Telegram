@@ -5,7 +5,7 @@ import android.text.TextUtils;
 
 import org.json.JSONObject;
 import org.telegram.messenger.FileLog;
-import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.ResolvedMedia;
@@ -41,7 +41,7 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver {
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
         String oembedUrl = "https://www.youtube.com/oembed?url=" + Uri.encode(link.canonicalUrl) + "&format=json";
-        String response = ExternalHtmlUtils.fetchHtml(oembedUrl, null, null, MAX_RESPONSE_CHARS);
+        String response = ExternalHttpClient.fetchHtml(oembedUrl, null, null, MAX_RESPONSE_CHARS);
         if (TextUtils.isEmpty(response)) {
             FileLog.d(TAG + ": empty oEmbed response for " + link.canonicalUrl);
             return null;
