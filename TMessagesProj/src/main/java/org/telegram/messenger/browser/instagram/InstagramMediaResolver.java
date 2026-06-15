@@ -82,7 +82,7 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         return link;
     }
 
-    private ResolvedMedia extractMedia(ParsedLink link, String html) {
+    ResolvedMedia extractMedia(ParsedLink link, String html) {
         String title = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:title");
         String description = ExternalHtmlUtils.findMetaContentDecoded(html, "name", "description");
         String ogImage = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:image");
@@ -267,7 +267,7 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         return value ? "y" : "n";
     }
 
-    private JSONObject extractPrimaryMediaObject(ParsedLink link, String html, String[] anchorOut) {
+    JSONObject extractPrimaryMediaObject(ParsedLink link, String html, String[] anchorOut) {
         if (TextUtils.isEmpty(html)) {
             return null;
         }

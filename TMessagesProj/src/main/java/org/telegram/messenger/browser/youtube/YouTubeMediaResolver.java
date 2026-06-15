@@ -47,6 +47,10 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver {
             return null;
         }
 
+        return buildPreviewFromOEmbed(link, response);
+    }
+
+    static ResolvedMedia buildPreviewFromOEmbed(ParsedLink link, String response) throws Exception {
         JSONObject json = new JSONObject(response);
 
         String title = json.optString("title", null);

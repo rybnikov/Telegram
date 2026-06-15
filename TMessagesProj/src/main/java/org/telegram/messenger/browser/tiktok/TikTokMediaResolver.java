@@ -138,13 +138,13 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         }
 
         JSONObject json = fetchOEmbed(previewUrl);
+        ResolvedMedia oEmbedPreview = buildPreviewFromOEmbed(previewUrl, json);
 
-        String title = json != null ? json.optString("title", null) : null;
-        String author = json != null ? json.optString("author_name", null) : null;
-        String posterUrl = json != null ? json.optString("thumbnail_url", null) : null;
-        int width = json != null ? json.optInt("thumbnail_width", 0) : 0;
-        int height = json != null ? json.optInt("thumbnail_height", 0) : 0;
-        String description = !TextUtils.isEmpty(author) ? author : null;
+        String title = oEmbedPreview != null ? oEmbedPreview.title : null;
+        String description = oEmbedPreview != null ? oEmbedPreview.description : null;
+        String posterUrl = oEmbedPreview instanceof ResolvedMedia.Video ? ((ResolvedMedia.Video) oEmbedPreview).posterUrl : null;
+        int width = oEmbedPreview instanceof ResolvedMedia.Video ? ((ResolvedMedia.Video) oEmbedPreview).width : 0;
+        int height = oEmbedPreview instanceof ResolvedMedia.Video ? ((ResolvedMedia.Video) oEmbedPreview).height : 0;
         String branch = !TextUtils.isEmpty(posterUrl) ? "oembed" : null;
 
         if (TextUtils.isEmpty(posterUrl)) {
@@ -181,6 +181,19 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         // the stream from the cache key, and embed fallback extracts /video/<id> from this.
         FileLog.d(TAG + ": oEmbed preview " + ExternalHtmlUtils.trimForLog(posterUrl));
         logPreviewResult(link.canonicalUrl, previewUrl, previewHtml, branch, posterUrl, true);
+        return new ResolvedMedia.Video(previewUrl, posterUrl, title, description, width, height);
+    }
+
+    static ResolvedMedia buildPreviewFromOEmbed(String previewUrl, JSONObject json) {
+        if (json == null) {
+            return null;
+        }
+        String title = json.optString("title", null);
+        String author = json.optString("author_name", null);
+        String posterUrl = json.optString("thumbnail_url", null);
+        int width = json.optInt("thumbnail_width", 0);
+        int height = json.optInt("thumbnail_height", 0);
+        String description = !TextUtils.isEmpty(author) ? author : null;
         return new ResolvedMedia.Video(previewUrl, posterUrl, title, description, width, height);
     }
 
