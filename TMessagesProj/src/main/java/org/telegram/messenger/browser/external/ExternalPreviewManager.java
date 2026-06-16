@@ -4,8 +4,6 @@ import android.content.Context;
 import android.net.Uri;
 import android.text.TextUtils;
 import android.util.Log;
-import org.json.JSONArray;
-import org.json.JSONObject;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
@@ -542,7 +540,7 @@ public final class ExternalPreviewManager {
             progressHandle.init();
         }
         AccountInstance.getInstance(account).getMessagesStorage().getExternalPreview(link.canonicalUrl, storedPreview -> {
-            CachedPreview hydrated = storedPreview != null ? hydrateCachedPreview(storedPreview, resolver) : null;
+            CachedPreview hydrated = storedPreview != null ? hydrateCachedPreview(storedPreview) : null;
             if (hydrated != null) {
                 synchronized (lock) {
                     cache.put(link.canonicalUrl, hydrated);
@@ -635,7 +633,7 @@ public final class ExternalPreviewManager {
                     return;
                 }
                 if (storedPreview != null) {
-                    hydrated = hydrateCachedPreview(storedPreview, resolver);
+                    hydrated = hydrateCachedPreview(storedPreview);
                     if (hydrated != null) {
                         cache.put(link.canonicalUrl, hydrated);
                         trimCache();
@@ -678,199 +676,16 @@ public final class ExternalPreviewManager {
         if (cachedPreview == null || cachedPreview.webPage == null) {
             return;
         }
-        log("persist write account=" + account + " webpageId=" + cachedPreview.webPage.id + " kind=" + describePreviewKind(cachedPreview.media), request.link, request.resolver, null, null);
-        AccountInstance.getInstance(account).getMessagesStorage().putExternalPreview(createExternalPreviewRecord(request, cachedPreview));
+        log("persist write account=" + account + " webpageId=" + cachedPreview.webPage.id + " kind=" + PreviewMapper.describePreviewKind(cachedPreview.media), request.link, request.resolver, null, null);
+        AccountInstance.getInstance(account).getMessagesStorage().putExternalPreview(PreviewMapper.createExternalPreviewRecord(request.link, cachedPreview.webPage, cachedPreview.media));
     }
 
-    private static MessagesStorage.ExternalPreviewRecord createExternalPreviewRecord(ResolveRequest request, CachedPreview cachedPreview) {
-        String mediaUrl = null;
-        String posterUrl = null;
-        String extra = null;
-        int width = 0;
-        int height = 0;
-        int previewKind = MessagesStorage.EXTERNAL_PREVIEW_KIND_PREVIEW;
-        if (cachedPreview.media instanceof ResolvedMedia.Carousel) {
-            ResolvedMedia.Carousel carousel = (ResolvedMedia.Carousel) cachedPreview.media;
-            ResolvedMedia.Single first = pickPreviewMedia(carousel);
-            if (first != null) {
-                previewKind = MessagesStorage.EXTERNAL_PREVIEW_KIND_CAROUSEL;
-                if (first instanceof ResolvedMedia.Video) {
-                    ResolvedMedia.Video video = (ResolvedMedia.Video) first;
-                    mediaUrl = video.videoUrl;
-                    posterUrl = video.posterUrl;
-                    width = video.width;
-                    height = video.height;
-                } else if (first instanceof ResolvedMedia.Image) {
-                    ResolvedMedia.Image image = (ResolvedMedia.Image) first;
-                    mediaUrl = image.imageUrl;
-                    width = image.width;
-                    height = image.height;
-                } else if (first instanceof ResolvedMedia.Preview) {
-                    ResolvedMedia.Preview preview = (ResolvedMedia.Preview) first;
-                    mediaUrl = preview.sourceUrl;
-                    posterUrl = preview.posterUrl;
-                    width = preview.width;
-                    height = preview.height;
-                }
-                extra = serializeCarouselItems(carousel.items);
-            }
-        } else if (cachedPreview.media instanceof ResolvedMedia.Video) {
-            ResolvedMedia.Video video = (ResolvedMedia.Video) cachedPreview.media;
-            previewKind = MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO;
-            mediaUrl = video.videoUrl;
-            posterUrl = video.posterUrl;
-            width = video.width;
-            height = video.height;
-        } else if (cachedPreview.media instanceof ResolvedMedia.Image) {
-            ResolvedMedia.Image image = (ResolvedMedia.Image) cachedPreview.media;
-            previewKind = MessagesStorage.EXTERNAL_PREVIEW_KIND_IMAGE;
-            mediaUrl = image.imageUrl;
-            width = image.width;
-            height = image.height;
-        } else if (cachedPreview.media instanceof ResolvedMedia.Preview) {
-            ResolvedMedia.Preview preview = (ResolvedMedia.Preview) cachedPreview.media;
-            previewKind = MessagesStorage.EXTERNAL_PREVIEW_KIND_PREVIEW;
-            mediaUrl = preview.sourceUrl;
-            posterUrl = preview.posterUrl;
-            width = preview.width;
-            height = preview.height;
-        }
-        return new MessagesStorage.ExternalPreviewRecord(
-            cachedPreview.webPage.id,
-            request.link.canonicalUrl,
-            request.link.platformName,
-            cachedPreview.webPage,
-            previewKind,
-            mediaUrl,
-            posterUrl,
-            width,
-            height,
-            cachedPreview.media != null ? cachedPreview.media.title : cachedPreview.webPage.title,
-            cachedPreview.media != null ? cachedPreview.media.description : cachedPreview.webPage.description,
-            extra
-        );
-    }
-
-    private static CachedPreview hydrateCachedPreview(MessagesStorage.ExternalPreviewRecord preview, ExternalMediaResolver resolver) {
-        if (preview == null) {
+    private static CachedPreview hydrateCachedPreview(MessagesStorage.ExternalPreviewRecord preview) {
+        PreviewMapper.HydratedPreview hydrated = PreviewMapper.hydrateCachedPreview(preview);
+        if (hydrated == null) {
             return null;
         }
-        TLRPC.WebPage webPage = ensureRenderableStoredWebPage(preview);
-        if (webPage == null) {
-            return null;
-        }
-        ResolvedMedia media;
-        if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO) {
-            ResolvedMedia.Video video = new ResolvedMedia.Video(preview.mediaUrl, preview.posterUrl, preview.title, preview.description, preview.width, preview.height);
-            media = video;
-            ExternalMediaPreviewStore.putVideo(preview.webPageId, preview.platform, preview.canonicalUrl, preview.mediaUrl, preview.posterUrl, preview.width, preview.height, preview.title, preview.description);
-        } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_CAROUSEL) {
-            media = hydrateCarouselPreview(preview);
-            ResolvedMedia.Single first = pickPreviewMedia(media);
-            if (first instanceof ResolvedMedia.Video) {
-                ResolvedMedia.Video video = (ResolvedMedia.Video) first;
-                ExternalMediaPreviewStore.putVideo(preview.webPageId, preview.platform, preview.canonicalUrl, video.videoUrl, video.posterUrl, video.width, video.height, preview.title, preview.description);
-            }
-        } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_IMAGE) {
-            media = new ResolvedMedia.Image(preview.mediaUrl, preview.title, preview.description, preview.width, preview.height);
-        } else {
-            media = new ResolvedMedia.Preview(preview.mediaUrl, preview.posterUrl, preview.title, preview.description, preview.width, preview.height);
-        }
-        return new CachedPreview(webPage, media);
-    }
-
-    private static String serializeCarouselItems(ArrayList<ResolvedMedia.Single> items) {
-        if (items == null || items.isEmpty()) {
-            return null;
-        }
-        try {
-            JSONArray array = new JSONArray();
-            for (int i = 0; i < items.size(); i++) {
-                ResolvedMedia.Single item = items.get(i);
-                JSONObject object = new JSONObject();
-                if (item instanceof ResolvedMedia.Video) {
-                    ResolvedMedia.Video video = (ResolvedMedia.Video) item;
-                    if (TextUtils.isEmpty(video.videoUrl)) {
-                        continue;
-                    }
-                    object.put("t", "v");
-                    object.put("u", video.videoUrl);
-                    object.put("p", video.posterUrl);
-                    object.put("w", video.width);
-                    object.put("h", video.height);
-                } else if (item instanceof ResolvedMedia.Image) {
-                    ResolvedMedia.Image image = (ResolvedMedia.Image) item;
-                    if (TextUtils.isEmpty(image.imageUrl)) {
-                        continue;
-                    }
-                    object.put("t", "i");
-                    object.put("u", image.imageUrl);
-                    object.put("w", image.width);
-                    object.put("h", image.height);
-                } else {
-                    continue;
-                }
-                array.put(object);
-            }
-            return array.length() > 0 ? array.toString() : null;
-        } catch (Exception e) {
-            if (BuildVars.LOGS_ENABLED) {
-                FileLog.d(TAG + ": carousel serialize failed " + e.getClass().getSimpleName());
-            }
-            return null;
-        }
-    }
-
-    private static ResolvedMedia hydrateCarouselPreview(MessagesStorage.ExternalPreviewRecord preview) {
-        ArrayList<ResolvedMedia.Single> items = new ArrayList<>();
-        if (!TextUtils.isEmpty(preview.extra)) {
-            try {
-                JSONArray array = new JSONArray(preview.extra);
-                for (int i = 0; i < array.length(); i++) {
-                    JSONObject object = array.optJSONObject(i);
-                    if (object == null) {
-                        continue;
-                    }
-                    String type = object.optString("t");
-                    String url = object.optString("u");
-                    if (TextUtils.isEmpty(url)) {
-                        continue;
-                    }
-                    int width = object.optInt("w", 0);
-                    int height = object.optInt("h", 0);
-                    if ("v".equals(type)) {
-                        items.add(new ResolvedMedia.Video(url, object.optString("p"), null, null, width, height));
-                    } else if ("i".equals(type)) {
-                        items.add(new ResolvedMedia.Image(url, null, null, width, height));
-                    }
-                }
-            } catch (Exception e) {
-                if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d(TAG + ": carousel hydrate failed " + e.getClass().getSimpleName());
-                }
-            }
-        }
-        if (!items.isEmpty()) {
-            return new ResolvedMedia.Carousel(items, preview.title, preview.description);
-        }
-        if (!TextUtils.isEmpty(preview.mediaUrl)) {
-            if (!TextUtils.isEmpty(preview.posterUrl)) {
-                return new ResolvedMedia.Preview(preview.mediaUrl, preview.posterUrl, preview.title, preview.description, preview.width, preview.height);
-            }
-            return new ResolvedMedia.Image(preview.mediaUrl, preview.title, preview.description, preview.width, preview.height);
-        }
-        return new ResolvedMedia.Preview(preview.canonicalUrl, preview.posterUrl, preview.title, preview.description, preview.width, preview.height);
-    }
-
-    private static String describePreviewKind(ResolvedMedia media) {
-        if (media instanceof ResolvedMedia.Video) {
-            return "video";
-        } else if (media instanceof ResolvedMedia.Image) {
-            return "image";
-        } else if (media instanceof ResolvedMedia.Preview) {
-            return "preview";
-        }
-        return media == null ? "none" : media.getClass().getSimpleName();
+        return new CachedPreview(hydrated.webPage, hydrated.media);
     }
 
     private static void applyPreviewToMessage(TLRPC.Message message, TLRPC.WebPage webpage) {
