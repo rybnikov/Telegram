@@ -11,7 +11,6 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
-import org.telegram.messenger.Utilities;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.TLRPC;
@@ -323,12 +322,12 @@ public final class ExternalPreviewManager {
     }
 
     private static boolean openCachedMedia(Context context, ExternalMediaResolver resolver, CachedPreview cachedPreview, String canonicalUrl) {
-        if (cachedPreview.media instanceof ResolvedMedia.Preview) {
+        if (PreviewMapper.asPreview(cachedPreview.media) != null) {
             Browser.openUrl(context, Uri.parse(cachedPreview.webPage.url), true, true, false, null, null, false, true, false);
             return true;
         }
-        if (cachedPreview.media instanceof ResolvedMedia.Video) {
-            ResolvedMedia.Video video = (ResolvedMedia.Video) cachedPreview.media;
+        ResolvedMedia.Video video = PreviewMapper.asVideo(cachedPreview.media);
+        if (video != null) {
             if (!resolver.supportsDirectVideoStreaming()) {
                 if ("TikTok".equals(resolver.platformName())) {
                     resolveAndStreamTikTok(context, canonicalUrl, video);
@@ -479,11 +478,11 @@ public final class ExternalPreviewManager {
             return false;
         }
         TLRPC.WebPage webPage = messageMedia.webpage;
-        long stableId = computeStableId(link.canonicalUrl);
+        long stableId = PreviewMapper.computeStableId(link.canonicalUrl);
         if (resolver != null && resolver.overridesServerPreview() && webPage.id == stableId && shouldRefreshExternalVideoPreview(resolver, webPage, link)) {
             return false;
         }
-        if (resolver != null && resolver.overridesServerPreview() && webPage.id == stableId && !hasRenderableExternalPreview(webPage)) {
+        if (resolver != null && resolver.overridesServerPreview() && webPage.id == stableId && !PreviewMapper.hasRenderableExternalPreview(webPage)) {
             return false;
         }
         return webPage.id == stableId;
@@ -527,7 +526,7 @@ public final class ExternalPreviewManager {
         if (!(webPage instanceof TLRPC.TL_webPage) || link == null || resolver == null) {
             return false;
         }
-        if (webPage.id != computeStableId(link.canonicalUrl)) {
+        if (webPage.id != PreviewMapper.computeStableId(link.canonicalUrl)) {
             return false;
         }
         return webPage.document != null
@@ -569,15 +568,6 @@ public final class ExternalPreviewManager {
                 Browser.openUrl(context, link.getCanonicalUri(), true, true, false, null, null, false, true, false);
             }
         });
-    }
-
-    private static boolean hasRenderableExternalPreview(TLRPC.WebPage webPage) {
-        if (webPage == null) {
-            return false;
-        }
-        return webPage.photo != null
-            || webPage.document != null
-            || !TextUtils.isEmpty(webPage.embed_url);
     }
 
     private static boolean shouldRefreshExternalVideoPreview(ExternalMediaResolver resolver, TLRPC.WebPage webPage, ParsedLink link) {
@@ -725,167 +715,6 @@ public final class ExternalPreviewManager {
         return message;
     }
 
-    private static TLRPC.WebPage buildWebPage(ParsedLink link, ExternalMediaResolver resolver, ResolvedMedia media) {
-        ResolvedMedia.Single previewMedia = pickPreviewMedia(media);
-        if (previewMedia == null) {
-            return null;
-        }
-
-        TLRPC.TL_webPage webpage = new TLRPC.TL_webPage();
-        webpage.id = computeStableId(link.canonicalUrl);
-        webpage.url = link.canonicalUrl;
-        webpage.display_url = buildDisplayUrl(link.canonicalUrl);
-        webpage.site_name = link.platformName;
-        webpage.title = !TextUtils.isEmpty(media.title) ? media.title : link.platformName;
-        webpage.description = media.description;
-
-        if (previewMedia instanceof ResolvedMedia.Video) {
-            ResolvedMedia.Video video = (ResolvedMedia.Video) previewMedia;
-            boolean supportsDirectVideoStreaming = resolver == null || resolver.supportsDirectVideoStreaming();
-            // Always persist video metadata for the click path. Non-direct platforms
-            // (TikTok, etc.) must not expose the URL as an autoplayable document.
-            TLRPC.Document videoDocument = ExternalMediaPreviewStore.putVideo(
-                webpage.id, link.platformName, link.canonicalUrl,
-                video.videoUrl, video.posterUrl, video.width, video.height,
-                webpage.title, webpage.description
-            );
-            String posterUrl = !TextUtils.isEmpty(video.posterUrl) ? video.posterUrl : supportsDirectVideoStreaming ? video.videoUrl : null;
-            if (TextUtils.isEmpty(posterUrl)) {
-                return null;
-            }
-            if (supportsDirectVideoStreaming) {
-                webpage.type = "video";
-                webpage.document = videoDocument;
-            } else {
-                webpage.type = "photo";
-                webpage.document = null;
-            }
-            webpage.embed_url = posterUrl;
-            webpage.embed_width = video.width;
-            webpage.embed_height = video.height;
-        } else if (previewMedia instanceof ResolvedMedia.Image) {
-            ResolvedMedia.Image image = (ResolvedMedia.Image) previewMedia;
-            webpage.type = "photo";
-            webpage.embed_url = image.imageUrl;
-            webpage.embed_width = image.width;
-            webpage.embed_height = image.height;
-        } else if (previewMedia instanceof ResolvedMedia.Preview) {
-            ResolvedMedia.Preview preview = (ResolvedMedia.Preview) previewMedia;
-            webpage.type = "photo";
-            webpage.embed_url = preview.posterUrl;
-            webpage.embed_width = preview.width;
-            webpage.embed_height = preview.height;
-        } else {
-            return null;
-        }
-        normalizeWebPageFlags(webpage);
-        return webpage;
-    }
-
-    private static TLRPC.WebPage ensureRenderableStoredWebPage(MessagesStorage.ExternalPreviewRecord preview) {
-        if (preview.webPage instanceof TLRPC.TL_webPage && hasRenderableExternalPreview(preview.webPage)) {
-            if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO) {
-                ensureStoredVideoDocument((TLRPC.TL_webPage) preview.webPage, preview);
-            }
-            normalizeWebPageFlags((TLRPC.TL_webPage) preview.webPage);
-            return preview.webPage;
-        }
-        TLRPC.TL_webPage webPage = new TLRPC.TL_webPage();
-        webPage.id = preview.webPageId;
-        webPage.url = preview.canonicalUrl;
-        webPage.display_url = buildDisplayUrl(preview.canonicalUrl);
-        webPage.site_name = preview.platform;
-        webPage.title = preview.title;
-        webPage.description = preview.description;
-        if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO) {
-            webPage.type = "video";
-            webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
-            ensureStoredVideoDocument(webPage, preview);
-        } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_IMAGE) {
-            webPage.type = "photo";
-            webPage.embed_url = preview.mediaUrl;
-        } else {
-            webPage.type = "photo";
-            webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
-        }
-        webPage.embed_width = preview.width;
-        webPage.embed_height = preview.height;
-        normalizeWebPageFlags(webPage);
-        return webPage;
-    }
-
-    private static void ensureStoredVideoDocument(TLRPC.TL_webPage webPage, MessagesStorage.ExternalPreviewRecord preview) {
-        if (webPage == null || preview == null) {
-            return;
-        }
-        ExternalMediaResolver resolver = null;
-        if (!TextUtils.isEmpty(preview.canonicalUrl)) {
-            try {
-                resolver = ExternalLinkRouter.findResolver(Uri.parse(preview.canonicalUrl));
-            } catch (Exception ignore) {
-                resolver = null;
-            }
-        }
-        boolean supportsDirectVideoStreaming = resolver == null || resolver.supportsDirectVideoStreaming();
-        if (TextUtils.isEmpty(webPage.embed_url)) {
-            webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
-        }
-        if (!supportsDirectVideoStreaming) {
-            webPage.type = "photo";
-            webPage.document = null;
-            ExternalMediaPreviewStore.putVideo(
-                preview.webPageId, preview.platform, preview.canonicalUrl,
-                preview.mediaUrl, preview.posterUrl, preview.width, preview.height,
-                preview.title, preview.description
-            );
-            return;
-        }
-        webPage.type = "video";
-        if (webPage.document == null) {
-            webPage.document = ExternalMediaPreviewStore.putVideo(
-                preview.webPageId, preview.platform, preview.canonicalUrl,
-                preview.mediaUrl, preview.posterUrl, preview.width, preview.height,
-                preview.title, preview.description
-            );
-        }
-    }
-
-    private static void normalizeWebPageFlags(TLRPC.TL_webPage webPage) {
-        if (webPage == null) {
-            return;
-        }
-        int flags = webPage.flags;
-        flags = !TextUtils.isEmpty(webPage.type) ? (flags | 1) : (flags & ~1);
-        flags = !TextUtils.isEmpty(webPage.site_name) ? (flags | 2) : (flags & ~2);
-        flags = !TextUtils.isEmpty(webPage.title) ? (flags | 4) : (flags & ~4);
-        flags = !TextUtils.isEmpty(webPage.description) ? (flags | 8) : (flags & ~8);
-        flags = webPage.photo != null ? (flags | 16) : (flags & ~16);
-        flags = !TextUtils.isEmpty(webPage.embed_url) ? (flags | 32) : (flags & ~32);
-        flags = (webPage.embed_width != 0 || webPage.embed_height != 0) ? (flags | 64) : (flags & ~64);
-        flags = webPage.duration != 0 ? (flags | 128) : (flags & ~128);
-        flags = !TextUtils.isEmpty(webPage.author) ? (flags | 256) : (flags & ~256);
-        flags = webPage.document != null ? (flags | 512) : (flags & ~512);
-        flags = webPage.cached_page != null ? (flags | 1024) : (flags & ~1024);
-        flags = webPage.attributes != null && !webPage.attributes.isEmpty() ? (flags | 4096) : (flags & ~4096);
-        webPage.flags = flags;
-        if ((flags & 32) != 0 && TextUtils.isEmpty(webPage.embed_type)) {
-            webPage.embed_type = "image";
-        }
-    }
-
-    private static ResolvedMedia.Single pickPreviewMedia(ResolvedMedia media) {
-        if (media instanceof ResolvedMedia.Carousel) {
-            ArrayList<ResolvedMedia.Single> items = ((ResolvedMedia.Carousel) media).items;
-            if (items.isEmpty()) {
-                return null;
-            }
-            return items.get(0);
-        } else if (media instanceof ResolvedMedia.Single) {
-            return (ResolvedMedia.Single) media;
-        }
-        return null;
-    }
-
     static ParsedLink findPlatformLink(TLRPC.Message message) {
         if (message == null || TextUtils.isEmpty(message.message)) {
             return null;
@@ -959,30 +788,6 @@ public final class ExternalPreviewManager {
             return null;
         }
         return resolver.parseLink(uri);
-    }
-
-    static long computeStableId(String value) {
-        String md5 = Utilities.MD5(value);
-        if (TextUtils.isEmpty(md5) || md5.length() < 16) {
-            return Math.abs((long) value.hashCode());
-        }
-        try {
-            long hi = Long.parseLong(md5.substring(0, 8), 16);
-            long lo = Long.parseLong(md5.substring(8, 16), 16);
-            return (hi << 32) | lo;
-        } catch (Exception ignore) {
-            return Math.abs((long) value.hashCode());
-        }
-    }
-
-    private static String buildDisplayUrl(String canonicalUrl) {
-        Uri uri = Uri.parse(canonicalUrl);
-        String host = uri.getHost();
-        String path = uri.getPath();
-        if (host == null) {
-            return canonicalUrl;
-        }
-        return path == null ? host : host + path;
     }
 
     private static final class PendingMessage {

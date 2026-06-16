@@ -439,7 +439,7 @@ public final class PreviewMapper {
         }
     }
 
-    private static boolean hasRenderableExternalPreview(TLRPC.WebPage webPage) {
+    static boolean hasRenderableExternalPreview(TLRPC.WebPage webPage) {
         if (webPage == null) {
             return false;
         }
@@ -471,7 +471,7 @@ public final class PreviewMapper {
         return document;
     }
 
-    private static String guessImageMimeType(String url) {
+    static String guessImageMimeType(String url) {
         String extension = ImageLoader.getHttpUrlExtension(url, "jpg");
         if ("png".equalsIgnoreCase(extension)) {
             return "image/png";

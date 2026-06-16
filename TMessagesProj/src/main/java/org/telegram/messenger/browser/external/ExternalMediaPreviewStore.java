@@ -127,11 +127,11 @@ public final class ExternalMediaPreviewStore {
     }
 
     private static String guessImageMimeType(String url) {
-        return ExternalMediaOpenHelper.guessImageMimeType(url);
+        return PreviewMapper.guessImageMimeType(url);
     }
 
     private static long stableLong(String value) {
-        return ExternalPreviewManager.computeStableId(value);
+        return PreviewMapper.computeStableId(value);
     }
 
     public static final class VideoPreview {

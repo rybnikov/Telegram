@@ -8,7 +8,6 @@ import android.text.TextUtils;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.Browser;
-import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
@@ -64,8 +63,8 @@ public final class ExternalMediaOpenHelper {
             AndroidUtilities.runOnUIThread(() -> {
                 boolean opened = false;
                 if (finalMedia != null) {
-                    if (finalMedia instanceof ResolvedMedia.Video && !resolver.supportsDirectVideoStreaming()) {
-                        ResolvedMedia.Video vid = (ResolvedMedia.Video) finalMedia;
+                    ResolvedMedia.Video vid = PreviewMapper.asVideo(finalMedia);
+                    if (vid != null && !resolver.supportsDirectVideoStreaming()) {
                         if ("TikTok".equals(link.platformName)) {
                             ExternalPreviewManager.resolveAndStreamTikTok(context, link.canonicalUrl, vid);
                         } else {
@@ -139,7 +138,7 @@ public final class ExternalMediaOpenHelper {
         }
 
         ArrayList<Object> entries = new ArrayList<>(1);
-        TLRPC.BotInlineResult result = createVideoInlineResult(preview);
+        TLRPC.BotInlineResult result = PreviewMapper.createVideoInlineResult(preview);
         if (result == null) {
             return false;
         }
@@ -171,7 +170,7 @@ public final class ExternalMediaOpenHelper {
             photoViewer.setParentActivity(activity);
         }
 
-        ArrayList<Object> entries = createInlineResults(link, media);
+        ArrayList<Object> entries = PreviewMapper.createInlineResults(link, media);
         if (entries.isEmpty()) {
             return false;
         }
@@ -191,99 +190,6 @@ public final class ExternalMediaOpenHelper {
         return opened;
     }
 
-    private static ArrayList<Object> createInlineResults(ParsedLink link, ResolvedMedia media) {
-        ArrayList<Object> results;
-        if (media instanceof ResolvedMedia.Carousel) {
-            ArrayList<ResolvedMedia.Single> items = ((ResolvedMedia.Carousel) media).items;
-            results = new ArrayList<>(items.size());
-            for (int i = 0; i < items.size(); i++) {
-                TLRPC.BotInlineResult result = createSingleInlineResult(link, items.get(i), i, media.title, media.description);
-                if (result != null) {
-                    results.add(result);
-                }
-            }
-        } else if (media instanceof ResolvedMedia.Single) {
-            results = new ArrayList<>(1);
-            TLRPC.BotInlineResult result = createSingleInlineResult(link, (ResolvedMedia.Single) media, 0, media.title, media.description);
-            if (result != null) {
-                results.add(result);
-            }
-        } else {
-            results = new ArrayList<>(0);
-        }
-        return results;
-    }
-
-    private static TLRPC.BotInlineResult createSingleInlineResult(ParsedLink link, ResolvedMedia.Single media, int index, String title, String description) {
-        TLRPC.TL_botInlineResult result = new TLRPC.TL_botInlineResult();
-        String md5 = Utilities.MD5(link.canonicalUrl + "#" + index);
-        result.id = md5 != null ? md5 : String.valueOf(index);
-        result.query_id = EXTERNAL_STREAM_INLINE_QUERY_ID;
-        result.send_message = new TLRPC.TL_botInlineMessageMediaAuto();
-        result.send_message.message = link.canonicalUrl;
-        result.title = !TextUtils.isEmpty(title) ? title : link.platformName;
-        result.description = description;
-
-        int flags = 2;
-        if (!TextUtils.isEmpty(result.description)) {
-            flags |= 4;
-        }
-
-        if (media instanceof ResolvedMedia.Video) {
-            ResolvedMedia.Video video = (ResolvedMedia.Video) media;
-            result.type = "video";
-            result.content = createWebDocument(video.videoUrl, "video/mp4", video.width, video.height, true);
-            result.url = link.canonicalUrl;
-            if (!TextUtils.isEmpty(video.posterUrl)) {
-                result.thumb = createWebDocument(video.posterUrl, guessImageMimeType(video.posterUrl), 0, 0, false);
-                flags |= 16;
-            }
-            flags |= 8 | 32;
-        } else if (media instanceof ResolvedMedia.Image) {
-            ResolvedMedia.Image image = (ResolvedMedia.Image) media;
-            result.type = "photo";
-            result.content = createWebDocument(image.imageUrl, guessImageMimeType(image.imageUrl), image.width, image.height, false);
-            result.thumb = result.content;
-            result.url = link.canonicalUrl;
-            flags |= 8 | 16 | 32;
-        } else if (media instanceof ResolvedMedia.Preview) {
-            ResolvedMedia.Preview preview = (ResolvedMedia.Preview) media;
-            result.type = "photo";
-            result.content = createWebDocument(preview.posterUrl, guessImageMimeType(preview.posterUrl), preview.width, preview.height, false);
-            result.thumb = result.content;
-            result.url = link.canonicalUrl;
-            flags |= 8 | 16 | 32;
-        } else {
-            return null;
-        }
-
-        result.flags = flags;
-        return result;
-    }
-
-    private static TLRPC.BotInlineResult createVideoInlineResult(ExternalMediaPreviewStore.VideoPreview preview) {
-        TLRPC.TL_botInlineResult result = new TLRPC.TL_botInlineResult();
-        String md5 = Utilities.MD5(preview.videoUrl);
-        result.id = md5 != null ? md5 : "ext_video";
-        result.query_id = EXTERNAL_STREAM_INLINE_QUERY_ID;
-        result.type = "video";
-        result.send_message = new TLRPC.TL_botInlineMessageMediaAuto();
-        result.send_message.message = preview.sourceUrl;
-        result.title = !TextUtils.isEmpty(preview.title) ? preview.title : preview.sourceName;
-        result.description = preview.description;
-        result.url = preview.sourceUrl;
-        result.content = createWebDocument(preview.videoUrl, "video/mp4", preview.width, preview.height, true);
-        if (!TextUtils.isEmpty(preview.posterUrl)) {
-            result.thumb = createWebDocument(preview.posterUrl, guessImageMimeType(preview.posterUrl), preview.width, preview.height, false);
-            result.flags |= 16;
-        }
-        result.flags |= 2 | 8 | 32;
-        if (!TextUtils.isEmpty(result.description)) {
-            result.flags |= 4;
-        }
-        return result;
-    }
-
     private static String buildCaption(ResolvedMedia media) {
         return buildCaption(media.title, media.description);
     }
@@ -297,39 +203,6 @@ public final class ExternalMediaOpenHelper {
             return title;
         }
         return null;
-    }
-
-    static TLRPC.WebDocument createWebDocument(String url, String mimeType, int width, int height, boolean isVideo) {
-        TLRPC.TL_webDocument document = new TLRPC.TL_webDocument();
-        document.url = url;
-        document.access_hash = 0;
-        document.size = 0;
-        document.mime_type = mimeType;
-        document.attributes = new ArrayList<>();
-        if (isVideo) {
-            TLRPC.TL_documentAttributeVideo attribute = new TLRPC.TL_documentAttributeVideo();
-            attribute.supports_streaming = true;
-            attribute.flags |= 2;
-            attribute.w = Math.max(width, 1);
-            attribute.h = Math.max(height, 1);
-            document.attributes.add(attribute);
-        } else if (width > 0 && height > 0) {
-            TLRPC.TL_documentAttributeImageSize attribute = new TLRPC.TL_documentAttributeImageSize();
-            attribute.w = width;
-            attribute.h = height;
-            document.attributes.add(attribute);
-        }
-        return document;
-    }
-
-    static String guessImageMimeType(String url) {
-        String extension = ImageLoader.getHttpUrlExtension(url, "jpg");
-        if ("png".equalsIgnoreCase(extension)) {
-            return "image/png";
-        } else if ("webp".equalsIgnoreCase(extension)) {
-            return "image/webp";
-        }
-        return "image/jpeg";
     }
 
     public interface Fallback {
