@@ -11,6 +11,8 @@ import org.telegram.messenger.browser.external.ExternalHtmlUtils;
 import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
+import org.telegram.messenger.browser.external.Playback;
+import org.telegram.messenger.browser.external.PlaybackResolver;
 import org.telegram.messenger.browser.external.ResolvedMedia;
 
 import java.util.ArrayList;
@@ -21,7 +23,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-public final class InstagramMediaResolver implements ExternalMediaResolver {
+public final class InstagramMediaResolver implements ExternalMediaResolver, PlaybackResolver {
 
     private static final String TAG = "InstagramResolver";
     private static final String WEB_INFO_MARKER = "\"xdt_api__v1__media__shortcode__web_info\"";
@@ -66,6 +68,21 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         ExternalHtmlUtils.FetchResult fetchResult = ExternalHttpClient.fetchHtmlWithFinalUrl(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADER_OVERRIDES);
         ParsedLink resolvedLink = canonicalizeFinalUrl(link, fetchResult.finalUrl);
         return extractMedia(resolvedLink, fetchResult.html);
+    }
+
+    @Override
+    public Playback resolvePlayback(ParsedLink link) throws Exception {
+        return resolvePlayback(resolve(link));
+    }
+
+    Playback resolvePlayback(ResolvedMedia media) {
+        if (media instanceof ResolvedMedia.Video) {
+            ResolvedMedia.Video video = (ResolvedMedia.Video) media;
+            if (!TextUtils.isEmpty(video.videoUrl)) {
+                return new Playback.DirectStream(video.videoUrl);
+            }
+        }
+        return Playback.External.INSTANCE;
     }
 
     private ParsedLink canonicalizeFinalUrl(ParsedLink link, String finalUrl) {

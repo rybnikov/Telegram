@@ -8,13 +8,15 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
+import org.telegram.messenger.browser.external.Playback;
+import org.telegram.messenger.browser.external.PlaybackResolver;
 import org.telegram.messenger.browser.external.ResolvedMedia;
 
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
-public final class YouTubeMediaResolver implements ExternalMediaResolver {
+public final class YouTubeMediaResolver implements ExternalMediaResolver, PlaybackResolver {
 
     private static final String TAG = "YouTubeResolver";
     private static final int MAX_RESPONSE_CHARS = 16 * 1024;
@@ -48,6 +50,21 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver {
         }
 
         return buildPreviewFromOEmbed(link, response);
+    }
+
+    @Override
+    public Playback resolvePlayback(ParsedLink link) throws Exception {
+        return resolvePlayback(resolve(link));
+    }
+
+    Playback resolvePlayback(ResolvedMedia media) {
+        if (media instanceof ResolvedMedia.Video) {
+            ResolvedMedia.Video video = (ResolvedMedia.Video) media;
+            if (!TextUtils.isEmpty(video.videoUrl)) {
+                return new Playback.Embed(video.videoUrl);
+            }
+        }
+        return Playback.External.INSTANCE;
     }
 
     static ResolvedMedia buildPreviewFromOEmbed(ParsedLink link, String response) throws Exception {
