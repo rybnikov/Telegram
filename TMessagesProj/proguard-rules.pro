@@ -107,6 +107,20 @@
 
 -keep class io.nano.tex.** {*;}
 
+# External preview playback is introduced before the click dispatcher migrates to it.
+-keep class org.telegram.messenger.browser.external.Playback { *; }
+-keep class org.telegram.messenger.browser.external.Playback$* { *; }
+-keep interface org.telegram.messenger.browser.external.PlaybackResolver { *; }
+-keepclassmembers class org.telegram.messenger.browser.instagram.InstagramMediaResolver {
+  org.telegram.messenger.browser.external.Playback resolvePlayback(org.telegram.messenger.browser.external.ResolvedMedia);
+}
+-keepclassmembers class org.telegram.messenger.browser.tiktok.TikTokMediaResolver {
+  org.telegram.messenger.browser.external.Playback resolvePlayback(java.lang.String, java.lang.String, java.lang.String);
+}
+-keepclassmembers class org.telegram.messenger.browser.youtube.YouTubeMediaResolver {
+  org.telegram.messenger.browser.external.Playback resolvePlayback(org.telegram.messenger.browser.external.ResolvedMedia);
+}
+
 # JLatexMath: macro/atom classes are loaded reflectively by Class.forName
 -keep class org.scilab.forge.jlatexmath.** { *; }
 -keep class ru.noties.jlatexmath.** { *; }
