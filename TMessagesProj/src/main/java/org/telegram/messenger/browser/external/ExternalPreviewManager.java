@@ -212,7 +212,7 @@ public final class ExternalPreviewManager {
             try {
                 ResolvedMedia media = request.resolver.resolve(request.link);
                 if (media != null) {
-                    TLRPC.WebPage webpage = buildWebPage(request.link, request.resolver, media);
+                    TLRPC.WebPage webpage = PreviewMapper.buildWebPage(request.link, request.resolver, media);
                     if (webpage != null) {
                         cached = new CachedPreview(webpage, media);
                     }
