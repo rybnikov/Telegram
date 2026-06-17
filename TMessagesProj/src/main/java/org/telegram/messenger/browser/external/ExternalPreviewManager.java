@@ -92,7 +92,7 @@ public final class ExternalPreviewManager {
         if (link == null) {
             return false;
         }
-        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(link.getCanonicalUri());
+        ExternalMediaResolver resolver = ResolverRegistry.findResolver(link.getCanonicalUri());
         TLRPC.MessageMedia messageMedia = MessageObject.getMedia(messageObject.messageOwner);
         if ((!resolver.overridesServerPreview() && hasServerWebPage(messageMedia)) || shouldSkipExistingMedia(messageMedia, link, resolver)) {
             return false;
@@ -127,7 +127,7 @@ public final class ExternalPreviewManager {
             log("skip no link", null, null, null, messageObject);
             return;
         }
-        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(link.getCanonicalUri());
+        ExternalMediaResolver resolver = ResolverRegistry.findResolver(link.getCanonicalUri());
         if (resolver == null) {
             log("skip no resolver", link, null, null, messageObject);
             return;
@@ -271,7 +271,7 @@ public final class ExternalPreviewManager {
     }
 
     public static boolean openCachedPreview(Context context, Uri uri) {
-        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(uri);
+        ExternalMediaResolver resolver = ResolverRegistry.findResolver(uri);
         if (resolver == null || !resolver.overridesServerPreview()) {
             return false;
         }
@@ -300,7 +300,7 @@ public final class ExternalPreviewManager {
         if (link == null) {
             return false;
         }
-        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(link.getCanonicalUri());
+        ExternalMediaResolver resolver = ResolverRegistry.findResolver(link.getCanonicalUri());
         if (resolver == null || !resolver.overridesServerPreview()) {
             return false;
         }
@@ -352,7 +352,7 @@ public final class ExternalPreviewManager {
         if (preview == null) {
             return false;
         }
-        ExternalMediaResolver resolver = !TextUtils.isEmpty(preview.sourceUrl) ? ExternalLinkRouter.findResolver(Uri.parse(preview.sourceUrl)) : null;
+        ExternalMediaResolver resolver = !TextUtils.isEmpty(preview.sourceUrl) ? ResolverRegistry.findResolver(Uri.parse(preview.sourceUrl)) : null;
         if (resolver != null && !resolver.overridesServerPreview()) {
             return false;
         }
@@ -685,7 +685,7 @@ public final class ExternalPreviewManager {
             normalized = "https://" + normalized;
         }
         Uri uri = Uri.parse(normalized);
-        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(uri);
+        ExternalMediaResolver resolver = ResolverRegistry.findResolver(uri);
         if (resolver == null) {
             return null;
         }

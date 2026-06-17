@@ -410,7 +410,7 @@ public final class PreviewMapper {
         ExternalMediaResolver resolver = null;
         if (!TextUtils.isEmpty(preview.canonicalUrl)) {
             try {
-                resolver = ExternalLinkRouter.findResolver(Uri.parse(preview.canonicalUrl));
+                resolver = ResolverRegistry.findResolver(Uri.parse(preview.canonicalUrl));
             } catch (Exception ignore) {
                 resolver = null;
             }

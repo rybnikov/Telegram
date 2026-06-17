@@ -4,40 +4,15 @@ import android.content.Context;
 import android.net.Uri;
 
 import org.telegram.messenger.MessageObject;
-import org.telegram.messenger.browser.instagram.InstagramMediaResolver;
-import org.telegram.messenger.browser.maps.MapsMediaResolver;
-import org.telegram.messenger.browser.pinterest.PinterestMediaResolver;
-import org.telegram.messenger.browser.tiktok.TikTokMediaResolver;
-import org.telegram.messenger.browser.twitter.TwitterMediaResolver;
-import org.telegram.messenger.browser.youtube.YouTubeMediaResolver;
 import org.telegram.tgnet.TLRPC;
 
-import java.util.Locale;
-
 public final class ExternalLinkRouter {
-
-    private static final ExternalMediaResolver[] RESOLVERS = new ExternalMediaResolver[]{
-        new InstagramMediaResolver(),
-        new MapsMediaResolver(),
-        new PinterestMediaResolver(),
-        new TikTokMediaResolver(),
-        new TwitterMediaResolver(),
-        new YouTubeMediaResolver()
-    };
 
     private ExternalLinkRouter() {
     }
 
     public static ExternalMediaResolver findResolver(Uri uri) {
-        if (uri == null) {
-            return null;
-        }
-        for (ExternalMediaResolver resolver : RESOLVERS) {
-            if (resolver.parseLink(uri) != null) {
-                return resolver;
-            }
-        }
-        return null;
+        return ResolverRegistry.findResolver(uri);
     }
 
     public static String getInstantButtonText(CharSequence siteName, org.telegram.tgnet.TLRPC.WebPage webpage) {
@@ -65,16 +40,7 @@ public final class ExternalLinkRouter {
     }
 
     public static boolean isExternalPreviewSite(String siteName) {
-        if (siteName == null) {
-            return false;
-        }
-        String lower = siteName.toLowerCase(Locale.US);
-        for (ExternalMediaResolver resolver : RESOLVERS) {
-            if (resolver.overridesServerPreview() && resolver.siteNames().contains(lower)) {
-                return true;
-            }
-        }
-        return false;
+        return ResolverRegistry.isExternalPreviewSite(siteName);
     }
 
     public static void requestPreviewIfNeeded(MessageObject messageObject) {

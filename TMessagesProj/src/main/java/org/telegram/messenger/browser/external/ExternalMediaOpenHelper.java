@@ -31,7 +31,7 @@ public final class ExternalMediaOpenHelper {
     }
 
     public static boolean tryOpen(Context context, Uri uri, Fallback fallback, ProgressHandle progressHandle) {
-        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(uri);
+        ExternalMediaResolver resolver = ResolverRegistry.findResolver(uri);
         if (resolver == null || !resolver.overridesServerPreview()) {
             return false;
         }
@@ -106,7 +106,7 @@ public final class ExternalMediaOpenHelper {
     }
 
     public static boolean openResolved(Context context, Uri uri, ResolvedMedia media) {
-        ExternalMediaResolver resolver = ExternalLinkRouter.findResolver(uri);
+        ExternalMediaResolver resolver = ResolverRegistry.findResolver(uri);
         if (resolver == null || media == null) {
             return false;
         }
