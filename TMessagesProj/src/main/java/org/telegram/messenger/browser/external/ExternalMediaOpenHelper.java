@@ -7,7 +7,6 @@ import android.text.TextUtils;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
-import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
@@ -51,31 +50,30 @@ public final class ExternalMediaOpenHelper {
 
         Utilities.globalQueue.postRunnable(() -> {
             ResolvedMedia resolvedMedia = null;
+            Playback resolvedPlayback = null;
             Throwable error = null;
             try {
                 resolvedMedia = resolver.resolve(link);
+                ResolvedMedia.Video video = PreviewMapper.asVideo(resolvedMedia);
+                if (video != null && resolver instanceof PlaybackResolver) {
+                    resolvedPlayback = PreviewClickDispatcher.resolvePlayback((PlaybackResolver) resolver, link, video);
+                }
             } catch (Throwable e) {
                 error = e;
+                if (resolvedMedia != null && PreviewMapper.asVideo(resolvedMedia) != null) {
+                    resolvedPlayback = Playback.External.INSTANCE;
+                }
             }
 
             final ResolvedMedia finalMedia = resolvedMedia;
+            final Playback finalPlayback = resolvedPlayback;
             final Throwable finalError = error;
             AndroidUtilities.runOnUIThread(() -> {
                 boolean opened = false;
                 if (finalMedia != null) {
                     ResolvedMedia.Video vid = PreviewMapper.asVideo(finalMedia);
-                    if (vid != null && !resolver.supportsDirectVideoStreaming()) {
-                        if ("TikTok".equals(link.platformName)) {
-                            ExternalPreviewManager.resolveAndStreamTikTok(context, link.canonicalUrl, vid);
-                        } else {
-                            org.telegram.ui.ActionBar.BaseFragment frag = org.telegram.ui.LaunchActivity.getSafeLastFragment();
-                            if (frag != null) {
-                                org.telegram.ui.Components.EmbedBottomSheet.show(frag, null, null, link.platformName, vid.title, link.canonicalUrl, vid.videoUrl, vid.width, vid.height, false);
-                            } else {
-                                Browser.openUrl(context, Uri.parse(vid.videoUrl), true, true, false, null, null, false, true, false);
-                            }
-                        }
-                        opened = true;
+                    if (vid != null && finalPlayback != null) {
+                        opened = PreviewClickDispatcher.openVideo(context, link, vid, finalPlayback, null);
                     } else {
                         opened = openResolvedMedia(context, link, finalMedia);
                     }

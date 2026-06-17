@@ -57,6 +57,11 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver, Playba
         return resolvePlayback(resolve(link));
     }
 
+    @Override
+    public Playback resolvePlayback(ParsedLink link, ResolvedMedia.Video video) {
+        return resolvePlayback(video);
+    }
+
     Playback resolvePlayback(ResolvedMedia media) {
         if (media instanceof ResolvedMedia.Video) {
             ResolvedMedia.Video video = (ResolvedMedia.Video) media;

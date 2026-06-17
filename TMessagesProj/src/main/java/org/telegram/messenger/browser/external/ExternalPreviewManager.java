@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 
@@ -289,7 +288,7 @@ public final class ExternalPreviewManager {
             return false;
         }
         log("openCachedPreview hit", link, resolver, null, null);
-        return openCachedMedia(context, resolver, cachedPreview, link.canonicalUrl);
+        return openCachedMedia(context, resolver, cachedPreview, link);
     }
 
     public static boolean openCachedPreview(Context context, TLRPC.Message message) {
@@ -318,34 +317,30 @@ public final class ExternalPreviewManager {
             return false;
         }
         log("openCachedPreview(message) hit", link, resolver, null, null);
-        return openCachedMedia(context, resolver, cachedPreview, link.canonicalUrl);
+        return openCachedMedia(context, resolver, cachedPreview, link);
     }
 
-    private static boolean openCachedMedia(Context context, ExternalMediaResolver resolver, CachedPreview cachedPreview, String canonicalUrl) {
+    private static boolean openCachedMedia(Context context, ExternalMediaResolver resolver, CachedPreview cachedPreview, ParsedLink link) {
         if (PreviewMapper.asPreview(cachedPreview.media) != null) {
             Browser.openUrl(context, Uri.parse(cachedPreview.webPage.url), true, true, false, null, null, false, true, false);
             return true;
         }
         ResolvedMedia.Video video = PreviewMapper.asVideo(cachedPreview.media);
         if (video != null) {
-            if (!resolver.supportsDirectVideoStreaming()) {
-                if ("TikTok".equals(resolver.platformName())) {
-                    resolveAndStreamTikTok(context, canonicalUrl, video);
-                } else {
-                    openEmbedSheet(context, resolver.platformName(), video, canonicalUrl);
-                }
+            ExternalMediaPreviewStore.VideoPreview preview = ExternalMediaPreviewStore.getVideoPreview(cachedPreview.webPage.id);
+            if (resolver instanceof PlaybackResolver) {
+                PreviewClickDispatcher.resolveAndOpenVideoAsync(context, link, (PlaybackResolver) resolver, video, preview);
                 return true;
             }
-            ExternalMediaPreviewStore.VideoPreview preview = ExternalMediaPreviewStore.getVideoPreview(cachedPreview.webPage.id);
             if (preview != null) {
-                return ExternalMediaOpenHelper.openVideoPreview(context, preview);
+                return PreviewClickDispatcher.openVideo(context, link, video, new Playback.DirectStream(preview.videoUrl), preview);
             }
         }
         // Preview-only resolvers (no button, e.g. Maps) — don't intercept click
         if (ExternalLinkRouter.getInstantButtonText(resolver.platformName(), cachedPreview.webPage) == null) {
             return false;
         }
-        return ExternalMediaOpenHelper.openResolved(context, Uri.parse(canonicalUrl), cachedPreview.media);
+        return ExternalMediaOpenHelper.openResolved(context, link.getCanonicalUri(), cachedPreview.media);
     }
 
     public static boolean tryOpenMessagePreview(Context context, MessageObject messageObject) {
@@ -358,105 +353,19 @@ public final class ExternalPreviewManager {
             return false;
         }
         ExternalMediaResolver resolver = !TextUtils.isEmpty(preview.sourceUrl) ? ExternalLinkRouter.findResolver(Uri.parse(preview.sourceUrl)) : null;
-        if (resolver != null && !resolver.supportsDirectVideoStreaming()) {
+        if (resolver != null && !resolver.overridesServerPreview()) {
             return false;
         }
-        return ExternalMediaOpenHelper.openVideoPreview(context, preview);
-    }
-
-    static void resolveAndStreamTikTok(Context context, String canonicalUrl, ResolvedMedia.Video video) {
-        new Thread(() -> {
-            String videoUrl = org.telegram.messenger.browser.tiktok.TikTokMediaResolver.resolveVideoForPlayback(canonicalUrl);
-            AndroidUtilities.runOnUIThread(() -> {
-                if (videoUrl != null) {
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d(TAG + ": tiktok playback success url=" + canonicalUrl + " stream=" + ExternalHtmlUtils.trimForLog(videoUrl));
-                    }
-                    ResolvedMedia.Video streamVideo = new ResolvedMedia.Video(
-                        videoUrl, video.posterUrl, video.title, video.description,
-                        video.width, video.height
-                    );
-                    ExternalMediaOpenHelper.openResolved(context, Uri.parse(canonicalUrl), streamVideo);
-                } else {
-                    String embedUrl = buildTikTokEmbedUrl(video.videoUrl, canonicalUrl);
-                    if (!TextUtils.isEmpty(embedUrl)) {
-                        if (BuildVars.LOGS_ENABLED) {
-                            FileLog.d(TAG + ": tiktok playback embed url=" + embedUrl + " source=" + canonicalUrl);
-                        }
-                        ResolvedMedia.Video embedVideo = new ResolvedMedia.Video(
-                            embedUrl, video.posterUrl, video.title, video.description,
-                            video.width, video.height
-                        );
-                        openEmbedSheet(context, "TikTok", embedVideo, canonicalUrl);
-                    } else {
-                        if (BuildVars.LOGS_ENABLED) {
-                            FileLog.d(TAG + ": tiktok playback fallback browser url=" + canonicalUrl);
-                        }
-                        Browser.openUrl(context, Uri.parse(canonicalUrl), true, true, false, null, null, false, true, false);
-                    }
-                }
-            });
-        }, "ExtPreview-playback").start();
-    }
-
-    private static String buildTikTokEmbedUrl(String finalUrl, String fallbackUrl) {
-        String videoId = extractTikTokVideoId(finalUrl);
-        if (TextUtils.isEmpty(videoId)) {
-            videoId = extractTikTokVideoId(fallbackUrl);
+        ParsedLink link = resolver != null ? resolver.parseLink(Uri.parse(preview.sourceUrl)) : null;
+        if (link == null) {
+            link = new ParsedLink(preview.sourceUrl, preview.sourceUrl, null, preview.sourceName);
         }
-        return TextUtils.isEmpty(videoId) ? null : "https://www.tiktok.com/embed/v2/" + videoId;
-    }
-
-    private static String extractTikTokVideoId(String url) {
-        if (TextUtils.isEmpty(url)) {
-            return null;
+        ResolvedMedia.Video video = new ResolvedMedia.Video(preview.videoUrl, preview.posterUrl, preview.title, preview.description, preview.width, preview.height);
+        if (resolver instanceof PlaybackResolver) {
+            PreviewClickDispatcher.resolveAndOpenVideoAsync(context, link, (PlaybackResolver) resolver, video, preview);
+            return true;
         }
-        try {
-            List<String> segments = Uri.parse(url).getPathSegments();
-            if (segments == null) {
-                return null;
-            }
-            for (int i = 0; i < segments.size() - 1; i++) {
-                if ("video".equalsIgnoreCase(segments.get(i))) {
-                    String value = segments.get(i + 1);
-                    return isDigits(value) ? value : null;
-                }
-            }
-        } catch (Exception ignore) {
-        }
-        return null;
-    }
-
-    private static boolean isDigits(String value) {
-        if (TextUtils.isEmpty(value)) {
-            return false;
-        }
-        for (int i = 0; i < value.length(); i++) {
-            if (!Character.isDigit(value.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static void openEmbedSheet(Context context, String siteName, ResolvedMedia.Video video, String sourceUrl) {
-        org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
-        if (fragment == null) {
-            Browser.openUrl(context, Uri.parse(video.videoUrl), true, true, false, null, null, false, true, false);
-            return;
-        }
-        org.telegram.ui.Components.EmbedBottomSheet.show(
-            fragment,
-            null,
-            null,
-            siteName,
-            video.title,
-            sourceUrl,
-            video.videoUrl,
-            video.width,
-            video.height,
-            false
-        );
+        return PreviewClickDispatcher.openVideo(context, link, video, new Playback.DirectStream(preview.videoUrl), preview);
     }
 
     private static boolean hasServerWebPage(TLRPC.MessageMedia messageMedia) {
@@ -549,7 +458,7 @@ public final class ExternalPreviewManager {
                 if (progressHandle != null) {
                     progressHandle.end();
                 }
-                if (!openCachedMedia(context, resolver, hydrated, link.canonicalUrl)) {
+                if (!openCachedMedia(context, resolver, hydrated, link)) {
                     Browser.openUrl(context, link.getCanonicalUri(), true, true, false, null, null, false, true, false);
                 }
                 return;
@@ -582,16 +491,9 @@ public final class ExternalPreviewManager {
         if (!supportsDirectVideoStreaming && webPage.document != null) {
             return true;
         }
-        if (!supportsDirectVideoStreaming || webPage.document != null || !"Instagram".equals(link.platformName)) {
-            return false;
-        }
-        try {
-            Uri uri = Uri.parse(link.canonicalUrl);
-            ArrayList<String> segments = new ArrayList<>(uri.getPathSegments());
-            return !segments.isEmpty() && ("reel".equalsIgnoreCase(segments.get(0)) || "reels".equalsIgnoreCase(segments.get(0)));
-        } catch (Exception ignore) {
-            return false;
-        }
+        return supportsDirectVideoStreaming
+            && webPage.document == null
+            && resolver.shouldRefreshResolvedVideoPreview(webPage, link);
     }
 
     private static void trimCache() {

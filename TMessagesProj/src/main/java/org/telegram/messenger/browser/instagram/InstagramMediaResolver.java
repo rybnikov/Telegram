@@ -14,6 +14,7 @@ import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.Playback;
 import org.telegram.messenger.browser.external.PlaybackResolver;
 import org.telegram.messenger.browser.external.ResolvedMedia;
+import org.telegram.tgnet.TLRPC;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -55,6 +56,19 @@ public final class InstagramMediaResolver implements ExternalMediaResolver, Play
         return true;
     }
 
+    @Override
+    public boolean shouldRefreshResolvedVideoPreview(TLRPC.WebPage webPage, ParsedLink link) {
+        if (link == null) {
+            return false;
+        }
+        try {
+            ArrayList<String> segments = new ArrayList<>(Uri.parse(link.canonicalUrl).getPathSegments());
+            return !segments.isEmpty() && ("reel".equalsIgnoreCase(segments.get(0)) || "reels".equalsIgnoreCase(segments.get(0)));
+        } catch (Exception ignore) {
+            return false;
+        }
+    }
+
     private static final Map<String, String> INSTAGRAM_HEADER_OVERRIDES = new HashMap<>();
     static {
         INSTAGRAM_HEADER_OVERRIDES.put("Sec-CH-Prefers-Color-Scheme", "light");
@@ -73,6 +87,11 @@ public final class InstagramMediaResolver implements ExternalMediaResolver, Play
     @Override
     public Playback resolvePlayback(ParsedLink link) throws Exception {
         return resolvePlayback(resolve(link));
+    }
+
+    @Override
+    public Playback resolvePlayback(ParsedLink link, ResolvedMedia.Video video) {
+        return resolvePlayback(video);
     }
 
     Playback resolvePlayback(ResolvedMedia media) {
