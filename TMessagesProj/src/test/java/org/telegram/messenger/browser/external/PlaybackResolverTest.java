@@ -63,6 +63,28 @@ public final class PlaybackResolverTest {
     }
 
     @Test
+    public void instagramResolvedVideoPlaybackDoesNotResolveLinkAgain() throws Exception {
+        Method method = InstagramMediaResolver.class.getDeclaredMethod("resolvePlayback", ParsedLink.class, ResolvedMedia.Video.class);
+        assertEquals(InstagramMediaResolver.class, method.getDeclaringClass());
+
+        InstagramMediaResolver resolver = new InstagramMediaResolver();
+        ParsedLink link = new ParsedLink("not-a-network-url", "not-a-network-url", "offline", resolver.platformName());
+        ResolvedMedia.Video video = new ResolvedMedia.Video(
+            "https://cdn.example/offline.mp4",
+            "https://cdn.example/offline.jpg",
+            "Offline",
+            "Already resolved",
+            640,
+            360
+        );
+
+        Playback playback = resolver.resolvePlayback(link, video);
+
+        assertTrue(playback instanceof Playback.DirectStream);
+        assertEquals(video.videoUrl, ((Playback.DirectStream) playback).url);
+    }
+
+    @Test
     public void tiktokPlaybackMatchesStreamEmbedBrowserFallbackOrder() throws Exception {
         TikTokMediaResolver resolver = new TikTokMediaResolver();
         assertTrue(resolver instanceof PlaybackResolver);

@@ -58,8 +58,11 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver, Playba
     }
 
     @Override
-    public Playback resolvePlayback(ParsedLink link, ResolvedMedia.Video video) {
-        return resolvePlayback(video);
+    public Playback resolvePlayback(ParsedLink link, ResolvedMedia.Video video) throws Exception {
+        if (video != null && !TextUtils.isEmpty(video.videoUrl)) {
+            return resolvePlayback(video);
+        }
+        return resolvePlayback(link);
     }
 
     Playback resolvePlayback(ResolvedMedia media) {
