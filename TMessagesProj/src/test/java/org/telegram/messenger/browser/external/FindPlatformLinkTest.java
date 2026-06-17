@@ -38,7 +38,7 @@ public final class FindPlatformLinkTest {
         message.entities.add(textUrl("https://www.instagram.com/reel/DZNeXBhxq6H/"));
         message.entities.add(textUrl("https://vm.tiktok.com/ZGd9LDKge/"));
 
-        ParsedLink link = ExternalPreviewManager.findPlatformLink(message);
+        ParsedLink link = PreviewRepository.findPlatformLink(message);
 
         assertNotNull(link);
         assertEquals("Instagram", link.platformName);
@@ -53,7 +53,7 @@ public final class FindPlatformLinkTest {
         message.entities.add(textUrl("https://www.tiktok.com/@rodionlyan/video/7649461509629791509"));
         message.entities.add(textUrl("https://www.instagram.com/reel/DZNeXBhxq6H/"));
 
-        ParsedLink link = ExternalPreviewManager.findPlatformLink(message);
+        ParsedLink link = PreviewRepository.findPlatformLink(message);
 
         assertNotNull(link);
         assertEquals("TikTok", link.platformName);
