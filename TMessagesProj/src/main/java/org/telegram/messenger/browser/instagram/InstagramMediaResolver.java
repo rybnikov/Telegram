@@ -312,17 +312,17 @@ public final class InstagramMediaResolver implements ExternalMediaResolver, Play
         }
         String shortcode = link != null ? link.id : null;
         if (!TextUtils.isEmpty(shortcode)) {
-            JSONObject object = extractPrimaryMediaObjectByField(html, shortcode, VIDEO_VERSIONS_MARKER, "video_versions");
-            if (object != null) {
-                if (anchorOut != null) {
-                    anchorOut[0] = "video_versions";
-                }
-                return object;
-            }
-            object = extractPrimaryMediaObjectByField(html, shortcode, CAROUSEL_MEDIA_MARKER, "carousel_media");
+            JSONObject object = extractPrimaryMediaObjectByField(html, shortcode, CAROUSEL_MEDIA_MARKER, "carousel_media");
             if (object != null) {
                 if (anchorOut != null) {
                     anchorOut[0] = "carousel_media";
+                }
+                return object;
+            }
+            object = extractPrimaryMediaObjectByField(html, shortcode, VIDEO_VERSIONS_MARKER, "video_versions");
+            if (object != null) {
+                if (anchorOut != null) {
+                    anchorOut[0] = "video_versions";
                 }
                 return object;
             }

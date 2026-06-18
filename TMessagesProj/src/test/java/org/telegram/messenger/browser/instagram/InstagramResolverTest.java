@@ -95,8 +95,31 @@ public final class InstagramResolverTest {
 
         assertNotNull(mediaNode);
         assertEquals("video_versions", anchor[0]);
-        // KNOWN BUG: mixed carousel resolved as single video, fix in later phase.
+        // KNOWN BUG: fixture has no direct carousel_media node for this shortcode.
         assertTrue(media instanceof ResolvedMedia.Video);
+    }
+
+    @Test
+    public void shortcodeMediaNodePrefersCarouselOverSingleVideo() throws Exception {
+        ParsedLink link = parse("https://www.instagram.com/p/MIXED123/");
+        String html =
+            "{\"code\":\"MIXED123\",\"video_versions\":[{\"url\":\"https://cdn.example/single.mp4\",\"width\":640,\"height\":360}],\"image_versions2\":{\"candidates\":[{\"url\":\"https://cdn.example/single.jpg\",\"width\":640,\"height\":360}]}}" +
+            "{\"code\":\"MIXED123\",\"carousel_media\":[" +
+            "{\"image_versions2\":{\"candidates\":[{\"url\":\"https://cdn.example/first.jpg\",\"width\":1080,\"height\":1350}]} }," +
+            "{\"video_versions\":[{\"url\":\"https://cdn.example/second.mp4\",\"width\":1080,\"height\":1920}],\"image_versions2\":{\"candidates\":[{\"url\":\"https://cdn.example/second.jpg\",\"width\":1080,\"height\":1920}]}}" +
+            "],\"image_versions2\":{\"candidates\":[{\"url\":\"https://cdn.example/poster.jpg\",\"width\":1080,\"height\":1350}]}}";
+        String[] anchor = new String[1];
+
+        JSONObject mediaNode = resolver.extractPrimaryMediaObject(link, html, anchor);
+        ResolvedMedia media = resolver.extractMedia(link, html);
+
+        assertNotNull(mediaNode);
+        assertEquals("carousel_media", anchor[0]);
+        assertTrue(media instanceof ResolvedMedia.Carousel);
+        ResolvedMedia.Carousel carousel = (ResolvedMedia.Carousel) media;
+        assertEquals(2, carousel.items.size());
+        assertTrue(carousel.items.get(0) instanceof ResolvedMedia.Image);
+        assertTrue(carousel.items.get(1) instanceof ResolvedMedia.Video);
     }
 
     private void assertReelVideo(String shortcode, String fixture) throws Exception {
