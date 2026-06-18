@@ -29,7 +29,7 @@ public final class PreviewRepository {
     private static final int MAX_CONCURRENT_RESOLVES = 3;
     private static final int MAX_PLATFORM_LINK_SCAN = 4;
     // Increment whenever external preview extraction or persisted preview format changes.
-    public static final int EXTERNAL_PREVIEW_FORMAT_VERSION = 2;
+    public static final int EXTERNAL_PREVIEW_FORMAT_VERSION = 3;
 
     private static final Object lock = new Object();
     private static final LinkedHashMap<String, CachedPreview> cache = new LinkedHashMap<>(MAX_CACHE_SIZE + 1, 1.0f, true);
@@ -483,17 +483,10 @@ public final class PreviewRepository {
         if (webPage == null || link == null || TextUtils.isEmpty(link.canonicalUrl) || resolver == null) {
             return false;
         }
-        boolean supportsDirectVideoStreaming = resolver.supportsDirectVideoStreaming();
-        boolean looksLikeVideo = "video".equals(webPage.type) || webPage.document != null;
-        if (supportsDirectVideoStreaming && looksLikeVideo && webPage.document == null) {
+        if ("video".equals(webPage.type) || webPage.document != null) {
             return true;
         }
-        if (!supportsDirectVideoStreaming && webPage.document != null) {
-            return true;
-        }
-        return supportsDirectVideoStreaming
-            && webPage.document == null
-            && resolver.shouldRefreshResolvedVideoPreview(webPage, link);
+        return TextUtils.isEmpty(webPage.embed_url);
     }
 
     private static void trimCache() {

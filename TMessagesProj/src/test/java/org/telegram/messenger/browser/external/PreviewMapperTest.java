@@ -98,6 +98,7 @@ public final class PreviewMapperTest {
         TLRPC.WebPage webPage = PreviewMapper.buildWebPage(link, null, media);
         assertNotNull(webPage);
         assertEquals("photo", webPage.type);
+        assertNull(ExternalMediaPreviewStore.getVideoPreview(webPage.id));
 
         MessagesStorage.ExternalPreviewRecord record = PreviewMapper.createExternalPreviewRecord(link, webPage, media);
         assertEquals(MessagesStorage.EXTERNAL_PREVIEW_KIND_CAROUSEL, record.previewKind);
@@ -105,6 +106,7 @@ public final class PreviewMapperTest {
 
         PreviewMapper.HydratedPreview hydrated = PreviewMapper.hydrateCachedPreview(record);
         assertNotNull(hydrated);
+        assertNull(ExternalMediaPreviewStore.getVideoPreview(hydrated.webPage.id));
         assertTrue(hydrated.media instanceof ResolvedMedia.Carousel);
         ResolvedMedia.Carousel hydratedCarousel = (ResolvedMedia.Carousel) hydrated.media;
         assertEquals(2, hydratedCarousel.items.size());

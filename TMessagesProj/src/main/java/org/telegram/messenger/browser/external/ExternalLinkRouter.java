@@ -25,7 +25,7 @@ public final class ExternalLinkRouter {
         }
         String type = webpage != null ? webpage.type : null;
         if ("instagram".equalsIgnoreCase(name)) {
-            if ("video".equals(type)) {
+            if ("video".equals(type) || webpage != null && ExternalMediaPreviewStore.getVideoPreview(webpage.id) != null) {
                 return "INSTAGRAM REEL";
             }
             return "INSTAGRAM POST";
