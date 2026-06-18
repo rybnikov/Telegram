@@ -7780,18 +7780,17 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             documentCover = photo;
                             photo = null;
                         }
-                        boolean renderExternalDocumentAsPoster = shouldRenderExternalDocumentAsPoster(webPage, document);
-                        if (renderExternalDocumentAsPoster) {
+                        ExternalMediaPreviewStore.VideoPreview linkVideoPreview = ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+                        if (linkVideoPreview != null) {
                             document = null;
                         }
-                        type = renderExternalDocumentAsPoster ? "photo" : webPage.type;
+                        type = webPage.type;
                         duration = webPage.duration;
                         if (isCustomExternalPreviewSite(site_name) && photo == null && document == null) {
-                            ExternalMediaPreviewStore.VideoPreview preview = ExternalMediaPreviewStore.getVideoPreview(webPage.id);
-                            if (preview != null && !TextUtils.isEmpty(preview.posterUrl)) {
-                                directImageUrl = preview.posterUrl;
-                                directImageWidth = preview.width;
-                                directImageHeight = preview.height;
+                            if (linkVideoPreview != null && !TextUtils.isEmpty(linkVideoPreview.posterUrl)) {
+                                directImageUrl = linkVideoPreview.posterUrl;
+                                directImageWidth = linkVideoPreview.width;
+                                directImageHeight = linkVideoPreview.height;
                             } else if (!TextUtils.isEmpty(webPage.embed_url)) {
                                 directImageUrl = webPage.embed_url;
                                 directImageWidth = webPage.embed_width;
@@ -17313,23 +17312,14 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private ExternalMediaPreviewStore.VideoPreview getExternalVideoPreview() {
-        if (documentAttachType != DOCUMENT_ATTACH_TYPE_VIDEO || currentMessageObject == null || currentMessageObject.messageOwner == null || documentAttach == null) {
+        if (currentMessageObject == null || currentMessageObject.messageOwner == null) {
             return null;
         }
         if (!(currentMessageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage)) {
             return null;
         }
         TLRPC.WebPage webPage = ((TLRPC.TL_messageMediaWebPage) currentMessageObject.messageOwner.media).webpage;
-        if (webPage == null || !ExternalMediaPreviewStore.isExternalPreviewDocument(webPage.id, documentAttach)) {
-            return null;
-        }
-        return ExternalMediaPreviewStore.getVideoPreview(webPage.id);
-    }
-
-    private boolean shouldRenderExternalDocumentAsPoster(TLRPC.WebPage webPage, TLRPC.Document document) {
-        return webPage != null
-            && ExternalMediaPreviewStore.isFabricatedExternalDocument(document)
-            && ExternalMediaPreviewStore.getVideoPreview(webPage.id) == null;
+        return webPage == null ? null : ExternalMediaPreviewStore.getVideoPreview(webPage.id);
     }
 
     private ImageLocation getExternalVideoLocation(ExternalMediaPreviewStore.VideoPreview preview) {
@@ -17455,6 +17445,19 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         } else if (currentPhotoObject != null) {
             fileName = FileLoader.getAttachFileName(currentPhotoObject);
             fileExists = currentMessageObject.mediaExists();
+        }
+
+        if (externalVideoPreview != null && currentMessageObject.type == MessageObject.TYPE_TEXT && drawPhotoImage && drawImageButton) {
+            DownloadController.getInstance(currentAccount).removeLoadingFileObserver(this);
+            canStreamVideo = false;
+            hasMiniProgress = 0;
+            drawVideoImageButton = false;
+            drawVideoSize = false;
+            buttonState = 3;
+            radialProgress.setIcon(getIconForCurrentState(), ifSame, animated);
+            videoRadialProgress.setIcon(MediaActionDrawable.ICON_NONE, ifSame, false);
+            invalidate();
+            return;
         }
 
         boolean autoDownload;

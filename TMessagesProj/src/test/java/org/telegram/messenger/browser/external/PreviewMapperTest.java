@@ -2,6 +2,7 @@ package org.telegram.messenger.browser.external;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Application;
@@ -54,8 +55,12 @@ public final class PreviewMapperTest {
 
         TLRPC.WebPage webPage = PreviewMapper.buildWebPage(link, null, media);
         assertNotNull(webPage);
-        assertEquals("video", webPage.type);
-        assertNotNull(webPage.document);
+        assertEquals("photo", webPage.type);
+        assertEquals(media.posterUrl, webPage.embed_url);
+        assertNull(webPage.document);
+        ExternalMediaPreviewStore.VideoPreview storedPreview = ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+        assertNotNull(storedPreview);
+        assertEquals(media.videoUrl, storedPreview.videoUrl);
 
         MessagesStorage.ExternalPreviewRecord record = PreviewMapper.createExternalPreviewRecord(link, webPage, media);
         assertEquals(MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO, record.previewKind);
@@ -65,6 +70,10 @@ public final class PreviewMapperTest {
         PreviewMapper.HydratedPreview hydrated = PreviewMapper.hydrateCachedPreview(record);
         assertNotNull(hydrated);
         assertEquals(webPage.id, hydrated.webPage.id);
+        assertEquals("photo", hydrated.webPage.type);
+        assertEquals(media.posterUrl, hydrated.webPage.embed_url);
+        assertNull(hydrated.webPage.document);
+        assertNotNull(ExternalMediaPreviewStore.getVideoPreview(hydrated.webPage.id));
         assertTrue(hydrated.media instanceof ResolvedMedia.Video);
         ResolvedMedia.Video hydratedVideo = (ResolvedMedia.Video) hydrated.media;
         assertEquals(media.videoUrl, hydratedVideo.videoUrl);

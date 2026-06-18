@@ -35,32 +35,35 @@ public final class PreviewMapper {
         webpage.title = !TextUtils.isEmpty(media.title) ? media.title : link.platformName;
         webpage.description = media.description;
 
-        ResolvedMedia.Video video = asVideo(previewMedia);
+        ResolvedMedia.Video video = asVideo(media);
+        ResolvedMedia.Video previewVideo = video != null ? video : asVideo(previewMedia);
         ResolvedMedia.Image image = asImage(previewMedia);
         ResolvedMedia.Preview preview = asPreview(previewMedia);
         if (video != null) {
-            boolean supportsDirectVideoStreaming = resolver == null || resolver.supportsDirectVideoStreaming();
-            // Always persist video metadata for the click path. Non-direct platforms
-            // (TikTok, etc.) must not expose the URL as an autoplayable document.
-            TLRPC.Document videoDocument = ExternalMediaPreviewStore.putVideo(
+            ExternalMediaPreviewStore.putVideo(
                 webpage.id, link.platformName, link.canonicalUrl,
                 video.videoUrl, video.posterUrl, video.width, video.height,
                 webpage.title, webpage.description
             );
-            String posterUrl = !TextUtils.isEmpty(video.posterUrl) ? video.posterUrl : supportsDirectVideoStreaming ? video.videoUrl : null;
+            String posterUrl = !TextUtils.isEmpty(video.posterUrl) ? video.posterUrl : video.videoUrl;
             if (TextUtils.isEmpty(posterUrl)) {
                 return null;
             }
-            if (supportsDirectVideoStreaming) {
-                webpage.type = "video";
-                webpage.document = videoDocument;
-            } else {
-                webpage.type = "photo";
-                webpage.document = null;
-            }
+            webpage.type = "photo";
+            webpage.document = null;
             webpage.embed_url = posterUrl;
             webpage.embed_width = video.width;
             webpage.embed_height = video.height;
+        } else if (previewVideo != null) {
+            String posterUrl = !TextUtils.isEmpty(previewVideo.posterUrl) ? previewVideo.posterUrl : previewVideo.videoUrl;
+            if (TextUtils.isEmpty(posterUrl)) {
+                return null;
+            }
+            webpage.type = "photo";
+            webpage.document = null;
+            webpage.embed_url = posterUrl;
+            webpage.embed_width = previewVideo.width;
+            webpage.embed_height = previewVideo.height;
         } else if (image != null) {
             webpage.type = "photo";
             webpage.embed_url = image.imageUrl;
@@ -162,10 +165,6 @@ public final class PreviewMapper {
             ExternalMediaPreviewStore.putVideo(preview.webPageId, preview.platform, preview.canonicalUrl, preview.mediaUrl, preview.posterUrl, preview.width, preview.height, preview.title, preview.description);
         } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_CAROUSEL) {
             media = hydrateCarouselPreview(preview);
-            ResolvedMedia.Video firstVideo = asVideo(pickPreviewMedia(media));
-            if (firstVideo != null) {
-                ExternalMediaPreviewStore.putVideo(preview.webPageId, preview.platform, preview.canonicalUrl, firstVideo.videoUrl, firstVideo.posterUrl, firstVideo.width, firstVideo.height, preview.title, preview.description);
-            }
         } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_IMAGE) {
             media = new ResolvedMedia.Image(preview.mediaUrl, preview.title, preview.description, preview.width, preview.height);
         } else {
@@ -374,7 +373,7 @@ public final class PreviewMapper {
     private static TLRPC.WebPage ensureRenderableStoredWebPage(MessagesStorage.ExternalPreviewRecord preview) {
         if (preview.webPage instanceof TLRPC.TL_webPage && hasRenderableExternalPreview(preview.webPage)) {
             if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO) {
-                ensureStoredVideoDocument((TLRPC.TL_webPage) preview.webPage, preview);
+                ensureStoredVideoPreview((TLRPC.TL_webPage) preview.webPage, preview);
             }
             normalizeWebPageFlags((TLRPC.TL_webPage) preview.webPage);
             return preview.webPage;
@@ -387,9 +386,10 @@ public final class PreviewMapper {
         webPage.title = preview.title;
         webPage.description = preview.description;
         if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO) {
-            webPage.type = "video";
+            webPage.type = "photo";
+            webPage.document = null;
             webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
-            ensureStoredVideoDocument(webPage, preview);
+            ensureStoredVideoPreview(webPage, preview);
         } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_IMAGE) {
             webPage.type = "photo";
             webPage.embed_url = preview.mediaUrl;
@@ -403,40 +403,20 @@ public final class PreviewMapper {
         return webPage;
     }
 
-    private static void ensureStoredVideoDocument(TLRPC.TL_webPage webPage, MessagesStorage.ExternalPreviewRecord preview) {
+    private static void ensureStoredVideoPreview(TLRPC.TL_webPage webPage, MessagesStorage.ExternalPreviewRecord preview) {
         if (webPage == null || preview == null) {
             return;
         }
-        ExternalMediaResolver resolver = null;
-        if (!TextUtils.isEmpty(preview.canonicalUrl)) {
-            try {
-                resolver = ResolverRegistry.findResolver(Uri.parse(preview.canonicalUrl));
-            } catch (Exception ignore) {
-                resolver = null;
-            }
-        }
-        boolean supportsDirectVideoStreaming = resolver == null || resolver.supportsDirectVideoStreaming();
         if (TextUtils.isEmpty(webPage.embed_url)) {
             webPage.embed_url = !TextUtils.isEmpty(preview.posterUrl) ? preview.posterUrl : preview.mediaUrl;
         }
-        if (!supportsDirectVideoStreaming) {
-            webPage.type = "photo";
-            webPage.document = null;
-            ExternalMediaPreviewStore.putVideo(
-                preview.webPageId, preview.platform, preview.canonicalUrl,
-                preview.mediaUrl, preview.posterUrl, preview.width, preview.height,
-                preview.title, preview.description
-            );
-            return;
-        }
-        webPage.type = "video";
-        if (webPage.document == null) {
-            webPage.document = ExternalMediaPreviewStore.putVideo(
-                preview.webPageId, preview.platform, preview.canonicalUrl,
-                preview.mediaUrl, preview.posterUrl, preview.width, preview.height,
-                preview.title, preview.description
-            );
-        }
+        webPage.type = "photo";
+        webPage.document = null;
+        ExternalMediaPreviewStore.putVideo(
+            preview.webPageId, preview.platform, preview.canonicalUrl,
+            preview.mediaUrl, preview.posterUrl, preview.width, preview.height,
+            preview.title, preview.description
+        );
     }
 
     static boolean hasRenderableExternalPreview(TLRPC.WebPage webPage) {
