@@ -15,7 +15,6 @@ import static org.telegram.messenger.MessagesController.LOAD_FORWARD;
 import static org.telegram.messenger.MessagesController.LOAD_FROM_UNREAD;
 
 import android.appwidget.AppWidgetManager;
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -36,7 +35,7 @@ import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
-import org.telegram.messenger.browser.external.ExternalPreviewManager;
+import org.telegram.messenger.browser.external.ExternalPreviewStorage;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.RequestDelegate;
@@ -383,7 +382,9 @@ public class MessagesStorage extends BaseController {
                 }
             }
             databaseCreated = true;
-            purgeExternalPreviewCacheForFormatUpgrade();
+            // FOLDOGRAM-EXT-PREVIEW: keep fork preview cache format purge visible during upstream merges.
+            ExternalPreviewStorage.purgeForFormatUpgrade(this, currentAccount);
+            // END FOLDOGRAM-EXT-PREVIEW
         } catch (Exception e) {
             FileLog.e(e);
             if (openTries < 3 && e.getMessage() != null && e.getMessage().contains("malformed")) {
@@ -530,7 +531,9 @@ public class MessagesStorage extends BaseController {
             "emoji_groups",
             "poll_votes_mentions",
             "poll_votes_mentions_topics",
-            "external_previews_v1"
+            // FOLDOGRAM-EXT-PREVIEW: external preview cache table.
+            ExternalPreviewStorage.TABLE_NAME
+            // END FOLDOGRAM-EXT-PREVIEW
     };
 
     public static void createTables(SQLiteDatabase database) throws SQLiteException {
@@ -733,8 +736,9 @@ public class MessagesStorage extends BaseController {
         database.executeFast("CREATE TABLE unconfirmed_auth (data BLOB);").stepThis().dispose();
 
         database.executeFast("CREATE TABLE saved_reaction_tags (topic_id INTEGER PRIMARY KEY, data BLOB);").stepThis().dispose();
-        database.executeFast("CREATE TABLE external_previews_v1(id INTEGER PRIMARY KEY, canonical_url TEXT NOT NULL UNIQUE, platform TEXT NOT NULL, webpage BLOB NOT NULL, preview_kind INTEGER NOT NULL, media_url TEXT, poster_url TEXT, width INTEGER, height INTEGER, title TEXT, description TEXT, updated_at INTEGER NOT NULL, extra TEXT);").stepThis().dispose();
-        database.executeFast("CREATE INDEX IF NOT EXISTS external_previews_v1_updated_at_idx ON external_previews_v1(updated_at);").stepThis().dispose();
+        // FOLDOGRAM-EXT-PREVIEW: external preview cache schema.
+        ExternalPreviewStorage.createTables(database);
+        // END FOLDOGRAM-EXT-PREVIEW
 
         database.executeFast("CREATE TABLE tag_message_id(mid INTEGER, topic_id INTEGER, tag INTEGER, text TEXT);").stepThis().dispose();
         database.executeFast("CREATE INDEX IF NOT EXISTS tag_idx_tag_message_id ON tag_message_id(tag);").stepThis().dispose();
@@ -11127,135 +11131,28 @@ public class MessagesStorage extends BaseController {
         });
     }
 
-    private static final int EXTERNAL_PREVIEW_RETENTION_SECONDS = 30 * 24 * 60 * 60;
-    private static final int EXTERNAL_PREVIEW_TOUCH_INTERVAL_SECONDS = 6 * 60 * 60;
-    private static final int EXTERNAL_PREVIEW_MAX_ROWS = 1000;
-    private static final String EXTERNAL_PREVIEW_FORMAT_VERSION_KEY = "externalPreviewFormatVersion";
     public static final int EXTERNAL_PREVIEW_KIND_IMAGE = 0;
     public static final int EXTERNAL_PREVIEW_KIND_VIDEO = 1;
     public static final int EXTERNAL_PREVIEW_KIND_PREVIEW = 2;
     public static final int EXTERNAL_PREVIEW_KIND_CAROUSEL = 3;
 
     public void putExternalPreview(ExternalPreviewRecord preview) {
-        if (preview == null || TextUtils.isEmpty(preview.canonicalUrl) || preview.webPage == null) {
-            return;
-        }
-        storageQueue.postRunnable(() -> {
-            SQLitePreparedStatement state = null;
-            try {
-                logExternalPreviewStorage("put start id=" + preview.webPageId + " kind=" + preview.previewKind + " url=" + preview.canonicalUrl);
-                NativeByteBuffer data = new NativeByteBuffer(preview.webPage.getObjectSize());
-                preview.webPage.serializeToStream(data);
-
-                state = database.executeFast("REPLACE INTO external_previews_v1 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                state.bindLong(1, preview.webPageId);
-                state.bindString(2, preview.canonicalUrl);
-                state.bindString(3, preview.platform);
-                state.bindByteBuffer(4, data);
-                state.bindInteger(5, preview.previewKind);
-                bindStringOrNull(state, 6, preview.mediaUrl);
-                bindStringOrNull(state, 7, preview.posterUrl);
-                state.bindInteger(8, preview.width);
-                state.bindInteger(9, preview.height);
-                bindStringOrNull(state, 10, preview.title);
-                bindStringOrNull(state, 11, preview.description);
-                state.bindLong(12, System.currentTimeMillis() / 1000L);
-                bindStringOrNull(state, 13, preview.extra);
-                state.step();
-                data.reuse();
-                state.dispose();
-                state = null;
-
-                logExternalPreviewStorage("put success id=" + preview.webPageId + " kind=" + preview.previewKind + " url=" + preview.canonicalUrl);
-                pruneExternalPreviewsLocked();
-            } catch (Exception e) {
-                logExternalPreviewStorage("put failed url=" + preview.canonicalUrl + " error=" + e.getClass().getSimpleName() + ":" + e.getMessage());
-                checkSQLException(e);
-            } finally {
-                if (state != null) {
-                    state.dispose();
-                }
-            }
-        });
+        // FOLDOGRAM-EXT-PREVIEW: external preview cache write.
+        ExternalPreviewStorage.put(this, preview);
+        // END FOLDOGRAM-EXT-PREVIEW
     }
 
     public void getExternalPreview(String canonicalUrl, Utilities.Callback<ExternalPreviewRecord> onComplete) {
-        if (TextUtils.isEmpty(canonicalUrl)) {
-            if (onComplete != null) {
-                AndroidUtilities.runOnUIThread(() -> onComplete.run(null));
-            }
-            return;
-        }
-        storageQueue.postRunnable(() -> {
-            SQLiteCursor cursor = null;
-            SQLitePreparedStatement touchState = null;
-            ExternalPreviewRecord result = null;
-            try {
-                logExternalPreviewStorage("get start url=" + canonicalUrl);
-                cursor = database.queryFinalized("SELECT id, platform, webpage, preview_kind, media_url, poster_url, width, height, title, description, updated_at, extra FROM external_previews_v1 WHERE canonical_url = ?", canonicalUrl);
-                long now = System.currentTimeMillis() / 1000L;
-                if (cursor.next()) {
-                    NativeByteBuffer data = cursor.byteBufferValue(2);
-                    if (data != null) {
-                        TLRPC.WebPage webPage = TLRPC.WebPage.TLdeserialize(data, data.readInt32(false), false);
-                        data.reuse();
-                        if (webPage != null) {
-                            result = new ExternalPreviewRecord(
-                                cursor.longValue(0),
-                                canonicalUrl,
-                                cursor.stringValue(1),
-                                webPage,
-                                cursor.intValue(3),
-                                cursor.stringValue(4),
-                                cursor.stringValue(5),
-                                cursor.intValue(6),
-                                cursor.intValue(7),
-                                cursor.stringValue(8),
-                                cursor.stringValue(9),
-                                cursor.stringValue(11)
-                            );
-                            long updatedAt = cursor.longValue(10);
-                            if (now - updatedAt >= EXTERNAL_PREVIEW_TOUCH_INTERVAL_SECONDS) {
-                                touchState = database.executeFast("UPDATE external_previews_v1 SET updated_at = ? WHERE id = ?");
-                                touchState.bindLong(1, now);
-                                touchState.bindLong(2, result.webPageId);
-                                touchState.step();
-                                touchState.dispose();
-                                touchState = null;
-                            }
-                        }
-                    }
-                }
-                if (cursor != null) {
-                    cursor.dispose();
-                    cursor = null;
-                }
-                if (result != null) {
-                    logExternalPreviewStorage("get hit id=" + result.webPageId + " kind=" + result.previewKind + " url=" + canonicalUrl);
-                } else {
-                    logExternalPreviewStorage("get miss url=" + canonicalUrl);
-                }
-            } catch (Exception e) {
-                logExternalPreviewStorage("get failed url=" + canonicalUrl + " error=" + e.getClass().getSimpleName() + ":" + e.getMessage());
-                checkSQLException(e);
-            } finally {
-                if (cursor != null) {
-                    cursor.dispose();
-                }
-                if (touchState != null) {
-                    touchState.dispose();
-                }
-            }
-            ExternalPreviewRecord callbackResult = result;
-            if (onComplete != null) {
-                AndroidUtilities.runOnUIThread(() -> onComplete.run(callbackResult));
-            }
-        });
+        // FOLDOGRAM-EXT-PREVIEW: external preview cache read.
+        ExternalPreviewStorage.get(this, canonicalUrl, onComplete);
+        // END FOLDOGRAM-EXT-PREVIEW
     }
 
     public void clearBrokenLocalPreviewPendingState(Utilities.Callback<ExternalPreviewResetResult> onComplete) {
         storageQueue.postRunnable(() -> {
-            int clearedExternalPreviews = clearExternalPreviewCacheLocked();
+            // FOLDOGRAM-EXT-PREVIEW: external preview reset is combined with legacy local preview cleanup.
+            int clearedExternalPreviews = ExternalPreviewStorage.clearCacheLocked(this);
+            // END FOLDOGRAM-EXT-PREVIEW
             int clearedLegacyRows = cleanupLegacyLocalPreviewStateLocked();
             if (onComplete != null) {
                 AndroidUtilities.runOnUIThread(() -> onComplete.run(new ExternalPreviewResetResult(clearedExternalPreviews, clearedLegacyRows)));
@@ -11541,74 +11438,6 @@ public class MessagesStorage extends BaseController {
             }
         }
         return false;
-    }
-
-    private int clearExternalPreviewCacheLocked() {
-        SQLiteCursor cursor = null;
-        try {
-            cursor = database.queryFinalized("SELECT COUNT(*) FROM external_previews_v1");
-            int count = cursor.next() ? cursor.intValue(0) : 0;
-            cursor.dispose();
-            cursor = null;
-            if (count > 0) {
-                database.executeFast("DELETE FROM external_previews_v1").stepThis().dispose();
-            }
-            return count;
-        } catch (Exception e) {
-            checkSQLException(e);
-            return 0;
-        } finally {
-            if (cursor != null) {
-                cursor.dispose();
-            }
-        }
-    }
-
-    private void purgeExternalPreviewCacheForFormatUpgrade() {
-        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences(currentAccount == 0 ? "mainconfig" : "mainconfig" + currentAccount, Context.MODE_PRIVATE);
-        int storedVersion = preferences.getInt(EXTERNAL_PREVIEW_FORMAT_VERSION_KEY, 0);
-        int currentVersion = ExternalPreviewManager.EXTERNAL_PREVIEW_FORMAT_VERSION;
-        if (storedVersion >= currentVersion) {
-            return;
-        }
-        int rows = clearExternalPreviewCacheLocked();
-        ExternalPreviewManager.clearDebugState();
-        preferences.edit().putInt(EXTERNAL_PREVIEW_FORMAT_VERSION_KEY, currentVersion).apply();
-        String line = "external preview format upgrade from=" + storedVersion + " to=" + currentVersion + " purged rows=" + rows;
-        Log.d("tmessages", line);
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d(line);
-        }
-    }
-
-    private void pruneExternalPreviewsLocked() {
-        long now = System.currentTimeMillis() / 1000L;
-        long cutoff = now - EXTERNAL_PREVIEW_RETENTION_SECONDS;
-        try {
-            database.executeFast("DELETE FROM external_previews_v1 WHERE updated_at < " + cutoff).stepThis().dispose();
-            database.executeFast("DELETE FROM external_previews_v1 WHERE id IN (SELECT id FROM external_previews_v1 ORDER BY updated_at DESC LIMIT -1 OFFSET " + EXTERNAL_PREVIEW_MAX_ROWS + ")").stepThis().dispose();
-        } catch (Exception e) {
-            checkSQLException(e);
-        }
-    }
-
-    private void bindStringOrNull(SQLitePreparedStatement state, int index, String value) throws Exception {
-        if (value != null) {
-            state.bindString(index, value);
-        } else {
-            state.bindNull(index);
-        }
-    }
-
-    private void logExternalPreviewStorage(String message) {
-        if (!BuildVars.DEBUG_PRIVATE_VERSION && !BuildVars.LOGS_ENABLED) {
-            return;
-        }
-        String line = "ExternalPreviewStorage: " + message;
-        Log.d("tmessages", line);
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d(line);
-        }
     }
 
     private static class PendingStateGroup {
