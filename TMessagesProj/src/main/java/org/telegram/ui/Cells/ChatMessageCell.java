@@ -139,6 +139,7 @@ import org.telegram.messenger.WebFile;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.browser.external.ExternalLinkRouter;
 import org.telegram.messenger.browser.external.ExternalMediaPreviewStore;
+import org.telegram.messenger.browser.external.ExternalPreviewCellBinder;
 import org.telegram.messenger.browser.external.ExternalPreviewManager;
 import org.telegram.messenger.utils.CountdownTimer;
 import org.telegram.messenger.utils.DrawableUtils;
@@ -17312,83 +17313,35 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private ExternalMediaPreviewStore.VideoPreview getExternalVideoPreview() {
-        if (currentMessageObject == null || currentMessageObject.messageOwner == null) {
-            return null;
-        }
-        if (!(currentMessageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage)) {
-            return null;
-        }
-        TLRPC.WebPage webPage = ((TLRPC.TL_messageMediaWebPage) currentMessageObject.messageOwner.media).webpage;
-        return webPage == null ? null : ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+        return ExternalPreviewCellBinder.getVideoPreview(currentMessageObject);
     }
 
     private ImageLocation getExternalVideoLocation(ExternalMediaPreviewStore.VideoPreview preview) {
-        return preview == null ? null : ImageLocation.getForWebFile(preview.videoWebFile);
+        return ExternalPreviewCellBinder.getVideoLocation(preview);
     }
 
     private ImageLocation getExternalPosterLocation(ExternalMediaPreviewStore.VideoPreview preview) {
-        if (preview != null && !TextUtils.isEmpty(preview.posterUrl)) {
-            return ImageLocation.getForPath(preview.posterUrl);
-        }
-        if (preview != null && preview.posterWebFile != null) {
-            return ImageLocation.getForWebFile(preview.posterWebFile);
-        }
-        if (currentPhotoObject != null) {
-            return ImageLocation.getForObject(currentPhotoObject, photoParentObject);
-        }
-        if (currentPhotoObjectThumb != null) {
-            return ImageLocation.getForObject(currentPhotoObjectThumb, photoParentObject);
-        }
-        return null;
+        return ExternalPreviewCellBinder.getPosterLocation(preview, currentPhotoObject, currentPhotoObjectThumb, photoParentObject);
     }
 
     private ImageLocation getExternalThumbLocation() {
-        return currentPhotoObjectThumb == null ? null : ImageLocation.getForObject(currentPhotoObjectThumb, photoParentObject);
+        return ExternalPreviewCellBinder.getThumbLocation(currentPhotoObjectThumb, photoParentObject);
     }
 
     private boolean isCustomExternalPreviewSite(CharSequence siteName) {
-        return siteName != null && ExternalLinkRouter.isExternalPreviewSite(siteName.toString());
+        return ExternalPreviewCellBinder.isExternalPreviewSite(siteName);
     }
 
     private String getExternalPosterFilter() {
-        if (currentPhotoObject instanceof TLRPC.TL_photoStrippedSize || currentPhotoObject != null && "s".equals(currentPhotoObject.type)) {
-            return currentPhotoFilterThumb;
-        }
-        return currentPhotoFilter != null ? currentPhotoFilter : currentPhotoFilterThumb;
+        return ExternalPreviewCellBinder.getPosterFilter(currentPhotoObject, currentPhotoFilter, currentPhotoFilterThumb);
     }
 
     private boolean externalVideoExists(ExternalMediaPreviewStore.VideoPreview preview) {
-        ImageLocation videoLocation = getExternalVideoLocation(preview);
-        return videoLocation != null && FileLoader.getInstance(currentAccount).getLocalFile(videoLocation) != null;
+        return ExternalPreviewCellBinder.videoExists(currentAccount, preview);
     }
 
     private void setExternalVideoPreviewImage(MessageObject messageObject, ExternalMediaPreviewStore.VideoPreview preview, boolean autoplay) {
-        ImageLocation posterLocation = getExternalPosterLocation(preview);
-        ImageLocation thumbLocation = getExternalThumbLocation();
-        ImageLocation videoLocation = getExternalVideoLocation(preview);
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("poster-trace setImage autoplay=" + autoplay
-                + " previewNull=" + (preview == null)
-                + " posterWebFileNull=" + (preview == null || preview.posterWebFile == null)
-                + " posterLocationNull=" + (posterLocation == null)
-                + " videoLocationNull=" + (videoLocation == null)
-                + " photoObj=" + (currentPhotoObject == null ? "null" : "set"));
-        }
-        String posterFilter = getExternalPosterFilter();
-        String thumbFilter = currentPhotoFilterThumb != null ? currentPhotoFilterThumb : posterFilter;
-        if (autoplay) {
-            if (videoLocation != null) {
-                photoImage.setImage(videoLocation, ImageLoader.AUTOPLAY_FILTER, posterLocation, posterFilter, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, preview.videoWebFile != null ? preview.videoWebFile.size : 0, null, messageObject, 1);
-                return;
-            }
-        }
-        if (posterLocation != null) {
-            photoImage.setImage(posterLocation, posterFilter, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, 0, null, messageObject, 1);
-        } else if (thumbLocation != null || currentPhotoObjectThumbStripped != null) {
-            photoImage.setImage(null, null, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, 0, null, messageObject, 0);
-        } else {
-            photoImage.setImageBitmap((Drawable) null);
-        }
+        ExternalPreviewCellBinder.setVideoPreviewImage(currentAccount, photoImage, messageObject, preview, autoplay, currentPhotoObject, currentPhotoObjectThumb, photoParentObject, currentPhotoObjectThumbStripped, currentPhotoFilter, currentPhotoFilterThumb);
     }
 
     public void updateButtonState(boolean ifSame, boolean animated, boolean fromSet) {
