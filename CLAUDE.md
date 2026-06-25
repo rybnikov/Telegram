@@ -114,6 +114,19 @@
 - The cache-warm workflow only builds `:TMessagesProj_App:bundleAfatRelease` and saves `.cxx` cache state; it does not upload to Play.
 - Cache warm is optional, but useful before urgent follow-up releases when native rebuild time matters.
 
+## Upstream merge procedure
+
+- Do not apply source snapshots over `foldogram` or feature branches. Snapshot-style updates previously erased fork hooks silently.
+- Keep upstream integration on a separate branch with real git history, then merge that branch into `foldogram` and resolve conflicts explicitly.
+- Before accepting an upstream merge, run the merge canary:
+  - `JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest --tests '*MergeRegressionCanaryTest'`
+- Also run the source delta audit before accepting the merge:
+  - `scripts/merge-delta-audit.sh <old-upstream-base> <new-upstream-base> <merged-fork-tip>`
+- Review every line printed by the delta audit. Lines may be legitimate upstream adoption, but missing `FOLDOGRAM-EXT-PREVIEW`, navigation reset, Android Auto, or release/security hooks must be restored before release.
+- After the canary and audit, run the normal compile and unit suite:
+  - `JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac`
+  - `JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest`
+
 ## Sensitive files — do not commit
 
 - any `google-services.json` with real Foldogram config — see "Google services and signing" above.
