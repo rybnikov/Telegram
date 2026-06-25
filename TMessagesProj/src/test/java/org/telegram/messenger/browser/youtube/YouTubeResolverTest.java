@@ -48,18 +48,30 @@ public final class YouTubeResolverTest {
     }
 
     @Test
-    public void shortsOEmbedDocumentsCurrentAspectBasedClassifier() throws Exception {
+    public void shortsUrlUsesPortraitPosterForBothOEmbedAspects() throws Exception {
         ResolvedMedia.Video landscapeShort = parseVideo("https://www.youtube.com/shorts/tPEE9ZwTmy0", "yt_shorts_oembed.json");
         ResolvedMedia.Video portraitShort = parseVideo("https://www.youtube.com/shorts/eCOUbueAEd8", "yt_shorts_oembed2.json");
 
-        // KNOWN FLAKY: Shorts oEmbed aspect ratio is unstable; current classifier treats 200x113 as regular video.
-        assertTrue(landscapeShort.posterUrl.endsWith("/maxresdefault.jpg"));
-        assertEquals(1280, landscapeShort.width);
+        assertTrue(YouTubeMediaResolver.isShortsLink(resolver.parseLink(Uri.parse("https://www.youtube.com/shorts/tPEE9ZwTmy0"))));
+        assertTrue(landscapeShort.posterUrl.endsWith("/oar2.jpg"));
+        assertEquals(405, landscapeShort.width);
         assertEquals(720, landscapeShort.height);
 
+        assertTrue(YouTubeMediaResolver.isShortsLink(resolver.parseLink(Uri.parse("https://www.youtube.com/shorts/eCOUbueAEd8"))));
         assertTrue(portraitShort.posterUrl.endsWith("/oar2.jpg"));
         assertEquals(405, portraitShort.width);
         assertEquals(720, portraitShort.height);
+    }
+
+    @Test
+    public void watchUrlIsNotShortsEvenWithVideoOEmbed() throws Exception {
+        ParsedLink link = resolver.parseLink(Uri.parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        ResolvedMedia.Video video = parseVideo("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "yt_video_oembed.json");
+
+        assertFalse(YouTubeMediaResolver.isShortsLink(link));
+        assertTrue(video.posterUrl.endsWith("/maxresdefault.jpg"));
+        assertEquals(1280, video.width);
+        assertEquals(720, video.height);
     }
 
     private ResolvedMedia.Video parseVideo(String url, String fixture) throws Exception {

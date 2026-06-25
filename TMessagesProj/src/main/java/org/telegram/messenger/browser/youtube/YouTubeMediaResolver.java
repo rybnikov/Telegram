@@ -82,10 +82,9 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver, Playba
         String author = json.optString("author_name", null);
         String description = !TextUtils.isEmpty(author) ? author : null;
 
-        // oEmbed width/height tells us aspect ratio (Shorts: height > width)
         int oembedWidth = json.optInt("width", 200);
         int oembedHeight = json.optInt("height", 113);
-        boolean isShorts = oembedHeight > oembedWidth;
+        boolean isShorts = isShortsLink(link) || oembedHeight > oembedWidth;
 
         String safeId = Uri.encode(link.id);
 
@@ -108,5 +107,16 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver, Playba
 
         FileLog.d(TAG + ": resolved " + (isShorts ? "shorts " : "") + link.canonicalUrl);
         return new ResolvedMedia.Video(embedUrl, posterUrl, title, description, posterWidth, posterHeight);
+    }
+
+    static boolean isShortsLink(ParsedLink link) {
+        if (link == null || TextUtils.isEmpty(link.canonicalUrl)) {
+            return false;
+        }
+        Uri uri = link.getCanonicalUri();
+        if (uri == null) {
+            return false;
+        }
+        return uri.getPathSegments().contains("shorts");
     }
 }
