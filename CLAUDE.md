@@ -51,26 +51,35 @@
 
 ## CI/CD release flow
 
-- GitHub Actions workflows live in:
-  - `.github/workflows/internal-release.yml`
-  - `.github/workflows/release-cache-warm.yml`
-- Real internal release is driven by pushing a git tag that matches `vX.Y.Z`.
+- GitHub Actions workflow lives in `.github/workflows/internal-release.yml` (the
+  old `release-cache-warm.yml` no longer exists).
+- Real internal release is driven by a **manual `workflow_dispatch`** run, NOT by
+  pushing a tag. You do NOT create the tag yourself — the workflow creates and
+  pushes `vX.Y.Z` itself at the end, after a successful build/upload.
 - `internal-release.yml`:
-  - triggers on `push` tags `v*`
-  - runs only when `github.actor == 'rybnikov'`
+  - trigger: `workflow_dispatch` with inputs `release_tag` (e.g. `v12.7.5`) and
+    `promote_release` (bool, default true)
+  - guard: runs only when `github.actor == 'rybnikov'` AND `github.ref ==
+    refs/heads/foldogram` (so the foldogram branch must already be pushed with the
+    code you want released)
   - hard-checks the exact format `vMAJOR.MINOR.PATCH`
+  - **fails early if the tag already exists on origin** (it creates the tag, so it
+    must not pre-exist) — do not push the tag manually
   - computes:
     - `RELEASE_VERSION_NAME=MAJOR.MINOR.PATCH`
     - `RELEASE_VERSION_CODE=MAJOR * 1000000 + MINOR * 1000 + PATCH`
-  - rejects tags that are not higher than:
-    - `APP_VERSION_NAME` / `APP_VERSION_CODE` from `gradle.properties`
+  - rejects versions not higher than:
+    - `APP_VERSION_NAME` / `APP_VERSION_CODE` from `gradle.properties` (baseline)
     - the highest previous `v*` tag in git
-  - builds with:
-    - `./gradlew :TMessagesProj_App:bundleAfatRelease`
+  - resolves Play metadata via `./gradlew -q :TMessagesProj_App:printAfatReleaseMetadata`
+    (provides `PLAY_RELEASE_VERSION_CODE`)
+  - builds with `./gradlew :TMessagesProj_App:bundleAfatRelease`
   - publishes package `com.rbnkv.foldogram`, not `com.rbnkv.foldogram.beta`
-  - uploads the `.aab` to Google Play `internal` track
-  - then promotes the draft release to `completed`
-  - publishes GitHub release metadata and attaches checksum artifact
+  - uploads the `.aab` to Google Play `internal` track as `draft`
+  - if `promote_release`, tries to promote draft → `completed` (tolerates the
+    draft-app rejection: leaves it draft and continues)
+  - creates+pushes the `vX.Y.Z` tag, then publishes a GitHub release with the
+    checksum artifact
 
 ## CI/CD secrets and environment
 
@@ -93,26 +102,22 @@
 
 ## CI/CD operator notes
 
-- To cut an internal release:
-  - ensure the target commit is on the correct branch/state
-  - create and push a tag like `v12.5.7`
-  - release will only run if the tag push is done by `rybnikov`
-  - GitHub Actions will do the rest if secrets/environment are valid
-- For follow-up bugfix releases:
-  - land the fix as a normal commit
-  - push the next higher tag
-  - do not reuse or move an existing release tag
-  - do not rely on editing `gradle.properties` for each release; CI derives release version from the tag and only requires it to be higher than the baseline in `gradle.properties`
-- This repo supports fast repeated internal releases in one session; the normal loop is:
-  - fix bug
-  - commit
-  - push next `vX.Y.Z` tag
-  - let `internal-release.yml` rebuild and publish
-- To warm native caches before a release:
-  - run `Android Release Cache Warm`
-  - provide `release_tag` like `v12.5.7`
-- The cache-warm workflow only builds `:TMessagesProj_App:bundleAfatRelease` and saves `.cxx` cache state; it does not upload to Play.
-- Cache warm is optional, but useful before urgent follow-up releases when native rebuild time matters.
+- To cut an internal release (current, tag-is-created-by-CI flow):
+  1. land the code on `foldogram` (merge feature branch, run tests + merge canary)
+  2. push the branch: `git push fork foldogram` (the fork remote = rybnikov/Telegram;
+     the workflow runs there and requires `github.ref == refs/heads/foldogram`)
+  3. trigger the release run (does NOT pre-create a tag):
+     `gh workflow run "Android Internal Release" --ref foldogram -f release_tag=vX.Y.Z -f promote_release=true`
+     (or run it from the GitHub Actions UI → "Android Internal Release" → Run workflow)
+  4. CI builds, uploads to Play internal (draft), then creates+pushes the `vX.Y.Z`
+     tag and publishes the GitHub release. Do NOT push the tag yourself.
+- Version comes from the tag, not from editing `gradle.properties`. The tag must be
+  higher than both the `gradle.properties` baseline and the highest existing `v*` tag.
+  Example: after `v12.7.4`, the next patch release tag is `v12.7.5`.
+- For follow-up bugfix releases: land the fix on `foldogram`, push the branch, run the
+  workflow with the next higher `release_tag`. Never reuse/move an existing release tag.
+- The `release-cache-warm.yml` workflow referenced in older notes was removed; there is
+  no separate cache-warm step anymore (native ccache is handled inside the release run).
 
 ## Upstream merge procedure
 
