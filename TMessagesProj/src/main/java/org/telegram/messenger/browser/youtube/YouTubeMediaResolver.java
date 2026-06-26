@@ -5,16 +5,18 @@ import android.text.TextUtils;
 
 import org.json.JSONObject;
 import org.telegram.messenger.FileLog;
-import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
+import org.telegram.messenger.browser.external.Playback;
+import org.telegram.messenger.browser.external.PlaybackResolver;
 import org.telegram.messenger.browser.external.ResolvedMedia;
 
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
-public final class YouTubeMediaResolver implements ExternalMediaResolver {
+public final class YouTubeMediaResolver implements ExternalMediaResolver, PlaybackResolver {
 
     private static final String TAG = "YouTubeResolver";
     private static final int MAX_RESPONSE_CHARS = 16 * 1024;
@@ -41,22 +43,48 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver {
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
         String oembedUrl = "https://www.youtube.com/oembed?url=" + Uri.encode(link.canonicalUrl) + "&format=json";
-        String response = ExternalHtmlUtils.fetchHtml(oembedUrl, null, null, MAX_RESPONSE_CHARS);
+        String response = ExternalHttpClient.fetchHtml(oembedUrl, null, null, MAX_RESPONSE_CHARS);
         if (TextUtils.isEmpty(response)) {
             FileLog.d(TAG + ": empty oEmbed response for " + link.canonicalUrl);
             return null;
         }
 
+        return buildPreviewFromOEmbed(link, response);
+    }
+
+    @Override
+    public Playback resolvePlayback(ParsedLink link) throws Exception {
+        return resolvePlayback(resolve(link));
+    }
+
+    @Override
+    public Playback resolvePlayback(ParsedLink link, ResolvedMedia.Video video) throws Exception {
+        if (video != null && !TextUtils.isEmpty(video.videoUrl)) {
+            return resolvePlayback(video);
+        }
+        return resolvePlayback(link);
+    }
+
+    Playback resolvePlayback(ResolvedMedia media) {
+        if (media instanceof ResolvedMedia.Video) {
+            ResolvedMedia.Video video = (ResolvedMedia.Video) media;
+            if (!TextUtils.isEmpty(video.videoUrl)) {
+                return new Playback.Embed(video.videoUrl);
+            }
+        }
+        return Playback.External.INSTANCE;
+    }
+
+    static ResolvedMedia buildPreviewFromOEmbed(ParsedLink link, String response) throws Exception {
         JSONObject json = new JSONObject(response);
 
         String title = json.optString("title", null);
         String author = json.optString("author_name", null);
         String description = !TextUtils.isEmpty(author) ? author : null;
 
-        // oEmbed width/height tells us aspect ratio (Shorts: height > width)
         int oembedWidth = json.optInt("width", 200);
         int oembedHeight = json.optInt("height", 113);
-        boolean isShorts = oembedHeight > oembedWidth;
+        boolean isShorts = isShortsLink(link) || oembedHeight > oembedWidth;
 
         String safeId = Uri.encode(link.id);
 
@@ -79,5 +107,16 @@ public final class YouTubeMediaResolver implements ExternalMediaResolver {
 
         FileLog.d(TAG + ": resolved " + (isShorts ? "shorts " : "") + link.canonicalUrl);
         return new ResolvedMedia.Video(embedUrl, posterUrl, title, description, posterWidth, posterHeight);
+    }
+
+    static boolean isShortsLink(ParsedLink link) {
+        if (link == null || TextUtils.isEmpty(link.canonicalUrl)) {
+            return false;
+        }
+        Uri uri = link.getCanonicalUri();
+        if (uri == null) {
+            return false;
+        }
+        return uri.getPathSegments().contains("shorts");
     }
 }

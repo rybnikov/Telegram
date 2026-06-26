@@ -5,6 +5,7 @@ import android.text.TextUtils;
 
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.ResolvedMedia;
@@ -21,9 +22,9 @@ public final class MapsMediaResolver implements ExternalMediaResolver {
     private static final int MAX_HEAD_CHARS = 96 * 1024;
     private static final Set<String> SITE_NAMES = new HashSet<>(Arrays.asList("google maps"));
 
-    private static final Map<String, String> BOT_HEADERS = new HashMap<>();
+    private static final Map<String, String> BOT_HEADER_OVERRIDES = new HashMap<>();
     static {
-        BOT_HEADERS.put("User-Agent", "TelegramBot (like TwitterBot)");
+        BOT_HEADER_OVERRIDES.put("User-Agent", "TelegramBot (like TwitterBot)");
     }
 
     @Override
@@ -48,8 +49,8 @@ public final class MapsMediaResolver implements ExternalMediaResolver {
 
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
-        ExternalHtmlUtils.FetchResult result = ExternalHtmlUtils.fetchHtmlWithFinalUrl(
-            link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS, BOT_HEADERS
+        ExternalHtmlUtils.FetchResult result = ExternalHttpClient.fetchHtmlWithFinalUrl(
+            link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS, BOT_HEADER_OVERRIDES
         );
         String html = result.html;
 

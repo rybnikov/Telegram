@@ -8,9 +8,13 @@ import org.json.JSONObject;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
+import org.telegram.messenger.browser.external.Playback;
+import org.telegram.messenger.browser.external.PlaybackResolver;
 import org.telegram.messenger.browser.external.ResolvedMedia;
+import org.telegram.tgnet.TLRPC;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -20,7 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-public final class InstagramMediaResolver implements ExternalMediaResolver {
+public final class InstagramMediaResolver implements ExternalMediaResolver, PlaybackResolver {
 
     private static final String TAG = "InstagramResolver";
     private static final String WEB_INFO_MARKER = "\"xdt_api__v1__media__shortcode__web_info\"";
@@ -52,20 +56,55 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         return true;
     }
 
-    private static final Map<String, String> INSTAGRAM_HEADERS = new HashMap<>();
+    @Override
+    public boolean shouldRefreshResolvedVideoPreview(TLRPC.WebPage webPage, ParsedLink link) {
+        if (link == null) {
+            return false;
+        }
+        try {
+            ArrayList<String> segments = new ArrayList<>(Uri.parse(link.canonicalUrl).getPathSegments());
+            return !segments.isEmpty() && ("reel".equalsIgnoreCase(segments.get(0)) || "reels".equalsIgnoreCase(segments.get(0)));
+        } catch (Exception ignore) {
+            return false;
+        }
+    }
+
+    private static final Map<String, String> INSTAGRAM_HEADER_OVERRIDES = new HashMap<>();
     static {
-        INSTAGRAM_HEADERS.put("Sec-CH-Prefers-Color-Scheme", "light");
-        INSTAGRAM_HEADERS.put("Sec-CH-UA", "\"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"");
-        INSTAGRAM_HEADERS.put("Sec-CH-UA-Mobile", "?0");
-        INSTAGRAM_HEADERS.put("Sec-CH-UA-Platform", "\"macOS\"");
-        INSTAGRAM_HEADERS.put("Priority", "u=0, i");
+        INSTAGRAM_HEADER_OVERRIDES.put("Sec-CH-Prefers-Color-Scheme", "light");
+        INSTAGRAM_HEADER_OVERRIDES.put("Sec-CH-UA", "\"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"");
+        INSTAGRAM_HEADER_OVERRIDES.put("Sec-CH-UA-Mobile", "?0");
+        INSTAGRAM_HEADER_OVERRIDES.put("Priority", "u=0, i");
     }
 
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
-        ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADERS);
+        ExternalHtmlUtils.FetchResult fetchResult = ExternalHttpClient.fetchHtmlWithFinalUrl(link.canonicalUrl, null, null, MAX_HTML_CHARS, INSTAGRAM_HEADER_OVERRIDES);
         ParsedLink resolvedLink = canonicalizeFinalUrl(link, fetchResult.finalUrl);
         return extractMedia(resolvedLink, fetchResult.html);
+    }
+
+    @Override
+    public Playback resolvePlayback(ParsedLink link) throws Exception {
+        return resolvePlayback(resolve(link));
+    }
+
+    @Override
+    public Playback resolvePlayback(ParsedLink link, ResolvedMedia.Video video) throws Exception {
+        if (video != null && !TextUtils.isEmpty(video.videoUrl)) {
+            return resolvePlayback(video);
+        }
+        return resolvePlayback(link);
+    }
+
+    Playback resolvePlayback(ResolvedMedia media) {
+        if (media instanceof ResolvedMedia.Video) {
+            ResolvedMedia.Video video = (ResolvedMedia.Video) media;
+            if (!TextUtils.isEmpty(video.videoUrl)) {
+                return new Playback.DirectStream(video.videoUrl);
+            }
+        }
+        return Playback.External.INSTANCE;
     }
 
     private ParsedLink canonicalizeFinalUrl(ParsedLink link, String finalUrl) {
@@ -82,7 +121,7 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         return link;
     }
 
-    private ResolvedMedia extractMedia(ParsedLink link, String html) {
+    ResolvedMedia extractMedia(ParsedLink link, String html) {
         String title = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:title");
         String description = ExternalHtmlUtils.findMetaContentDecoded(html, "name", "description");
         String ogImage = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:image");
@@ -267,23 +306,23 @@ public final class InstagramMediaResolver implements ExternalMediaResolver {
         return value ? "y" : "n";
     }
 
-    private JSONObject extractPrimaryMediaObject(ParsedLink link, String html, String[] anchorOut) {
+    JSONObject extractPrimaryMediaObject(ParsedLink link, String html, String[] anchorOut) {
         if (TextUtils.isEmpty(html)) {
             return null;
         }
         String shortcode = link != null ? link.id : null;
         if (!TextUtils.isEmpty(shortcode)) {
-            JSONObject object = extractPrimaryMediaObjectByField(html, shortcode, VIDEO_VERSIONS_MARKER, "video_versions");
-            if (object != null) {
-                if (anchorOut != null) {
-                    anchorOut[0] = "video_versions";
-                }
-                return object;
-            }
-            object = extractPrimaryMediaObjectByField(html, shortcode, CAROUSEL_MEDIA_MARKER, "carousel_media");
+            JSONObject object = extractPrimaryMediaObjectByField(html, shortcode, CAROUSEL_MEDIA_MARKER, "carousel_media");
             if (object != null) {
                 if (anchorOut != null) {
                     anchorOut[0] = "carousel_media";
+                }
+                return object;
+            }
+            object = extractPrimaryMediaObjectByField(html, shortcode, VIDEO_VERSIONS_MARKER, "video_versions");
+            if (object != null) {
+                if (anchorOut != null) {
+                    anchorOut[0] = "video_versions";
                 }
                 return object;
             }

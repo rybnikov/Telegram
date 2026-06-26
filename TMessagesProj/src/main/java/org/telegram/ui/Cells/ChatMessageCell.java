@@ -139,6 +139,7 @@ import org.telegram.messenger.WebFile;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.browser.external.ExternalLinkRouter;
 import org.telegram.messenger.browser.external.ExternalMediaPreviewStore;
+import org.telegram.messenger.browser.external.ExternalPreviewCellBinder;
 import org.telegram.messenger.browser.external.ExternalPreviewManager;
 import org.telegram.messenger.utils.CountdownTimer;
 import org.telegram.messenger.utils.DrawableUtils;
@@ -3141,6 +3142,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         }
                     } else if (currentMessageObject != null && !currentMessageObject.preview) {
                         TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
+                        // FOLDOGRAM-EXT-PREVIEW: external previews should not open as generic embedded webviews.
                         if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && !isCustomExternalPreviewSite(webPage.site_name)/* && TextUtils.isEmpty(WebPlayerView.getYouTubeVideoId(webPage.embed_url))*/) {
                             if (delegate != null) {
                                 delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.title, webPage.url, webPage.embed_width, webPage.embed_height);
@@ -3153,6 +3155,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                 Browser.openUrl(getContext(), webPage.url);
                             }
                         }
+                        // END FOLDOGRAM-EXT-PREVIEW
                     }
                     playSoundEffect(SoundEffectConstants.CLICK);
                     if (selectorDrawable[0] != null) {
@@ -3216,6 +3219,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             }
                         } else if (!currentMessageObject.preview) {
                             TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
+                            // FOLDOGRAM-EXT-PREVIEW: keep custom previews out of the generic embed-webview branch.
                             if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && !isCustomExternalPreviewSite(webPage.site_name)) {
                                 delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.title, webPage.url, webPage.embed_width, webPage.embed_height);
                             } else if (buttonState == -1 || buttonState == 3) {
@@ -3228,6 +3232,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                     Browser.openUrl(getContext(), webPage.url);
                                 }
                             }
+                            // END FOLDOGRAM-EXT-PREVIEW
                         }
                         resetPressedLink(2);
                         return true;
@@ -5968,11 +5973,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             if (buttonState == -1) {
                 TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
                 if (webPage != null) {
+                    // FOLDOGRAM-EXT-PREVIEW: custom previews bypass generic GIF embed handling.
                     if (webPage.embed_url != null && webPage.embed_url.length() != 0 && !isCustomExternalPreviewSite(webPage.site_name)) {
                         delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.description, webPage.url, webPage.embed_width, webPage.embed_height);
                     } else {
                         Browser.openUrl(getContext(), webPage.url);
                     }
+                    // END FOLDOGRAM-EXT-PREVIEW
                 }
             }
         } else if (hasInvoicePreview) {
@@ -7281,10 +7288,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         + " mediaClass=" + mediaClass
                         + " webPageClass=" + webPageClass);
                 }
+                // FOLDOGRAM-EXT-PREVIEW: hydrate/request fork previews before link preview layout.
                 if (!messageObject.isRestrictedMessage) {
                     ExternalPreviewManager.applyCachedPreviewIfAvailable(messageObject);
                     ExternalLinkRouter.requestPreviewIfNeeded(messageObject);
                 }
+                // END FOLDOGRAM-EXT-PREVIEW
                 hasLinkPreview = !messageObject.isRestrictedMessage && MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage && MessageObject.getMedia(messageObject.messageOwner).webpage instanceof TLRPC.TL_webPage;
                 TLRPC.WebPage webpage = hasLinkPreview ? MessageObject.getMedia(messageObject.messageOwner).webpage : null;
                 if (messageObject.isStoryMention()) {
@@ -7294,6 +7303,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
                 drawInstantView = hasLinkPreview && webpage.cached_page != null;
                 String siteName = hasLinkPreview ? webpage.site_name : null;
+                // FOLDOGRAM-EXT-PREVIEW: external preview sites reuse the instant button slot and disable generic embeds.
                 if (!drawInstantView && hasLinkPreview && isCustomExternalPreviewSite(siteName)) {
                     String btnText = ExternalLinkRouter.getInstantButtonText(siteName, webpage);
                     if (btnText != null) {
@@ -7303,6 +7313,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     }
                 }
                 hasEmbed = hasLinkPreview && !TextUtils.isEmpty(webpage.embed_url) && !messageObject.isGif() && !isCustomExternalPreviewSite(siteName);
+                // END FOLDOGRAM-EXT-PREVIEW
                 boolean slideshow = false;
                 String webpageType = webpage != null ? webpage.type : null;
                 TLRPC.Document androidThemeDocument = null;
@@ -7780,18 +7791,18 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             documentCover = photo;
                             photo = null;
                         }
-                        boolean renderExternalDocumentAsPoster = shouldRenderExternalDocumentAsPoster(webPage, document);
-                        if (renderExternalDocumentAsPoster) {
+                        // FOLDOGRAM-EXT-PREVIEW: render external videos as poster previews, not as webpage documents.
+                        ExternalMediaPreviewStore.VideoPreview linkVideoPreview = ExternalMediaPreviewStore.getVideoPreview(webPage.id);
+                        if (linkVideoPreview != null) {
                             document = null;
                         }
-                        type = renderExternalDocumentAsPoster ? "photo" : webPage.type;
+                        type = webPage.type;
                         duration = webPage.duration;
                         if (isCustomExternalPreviewSite(site_name) && photo == null && document == null) {
-                            ExternalMediaPreviewStore.VideoPreview preview = ExternalMediaPreviewStore.getVideoPreview(webPage.id);
-                            if (preview != null && !TextUtils.isEmpty(preview.posterUrl)) {
-                                directImageUrl = preview.posterUrl;
-                                directImageWidth = preview.width;
-                                directImageHeight = preview.height;
+                            if (linkVideoPreview != null && !TextUtils.isEmpty(linkVideoPreview.posterUrl)) {
+                                directImageUrl = linkVideoPreview.posterUrl;
+                                directImageWidth = linkVideoPreview.width;
+                                directImageHeight = linkVideoPreview.height;
                             } else if (!TextUtils.isEmpty(webPage.embed_url)) {
                                 directImageUrl = webPage.embed_url;
                                 directImageWidth = webPage.embed_width;
@@ -7801,6 +7812,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         if (isCustomExternalPreviewSite(site_name) && (photo != null || directImageUrl != null)) {
                             linkPreviewMaxWidth = Math.max(AndroidUtilities.displaySize.y / 3, currentMessageObject.textWidth);
                         }
+                        // END FOLDOGRAM-EXT-PREVIEW
                         final boolean isSmallImageType = isSmallImageLinkPreviewType(type);
                         smallImage = !slideshow && (!drawInstantView || drawInstantViewType == 1 || drawInstantViewType == 29 || drawInstantViewType == 2 || drawInstantViewType == 9 || drawInstantViewType == 11 || drawInstantViewType == 25 || drawInstantViewType == 13 || drawInstantViewType == 18 || drawInstantViewType == 20 || drawInstantViewType == 22 || drawInstantViewType == INSTANT_BUTTON_TYPE_PROFILE || drawInstantViewType == INSTANT_BUTTON_TYPE_AI_STYLE) && document == null && isSmallImageType || (drawInstantViewType == 23 || drawInstantViewType == 24 || drawInstantViewType == 28) && stickers != null && !stickers.isEmpty();
                         TLRPC.MessageMedia media = MessageObject.getMedia(messageObject.messageOwner);
@@ -8470,6 +8482,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                     float scale = width / (float) (maxPhotoWidth - dp(2));
                                     width /= scale;
                                     height /= scale;
+                                    // FOLDOGRAM-EXT-PREVIEW: allow taller poster previews for supported external sites.
                                     if (!isCustomExternalPreviewSite(site_name) && documentAttachType == 0) {
                                         if (height > AndroidUtilities.displaySize.y / 3) {
                                             height = AndroidUtilities.displaySize.y / 3;
@@ -8479,6 +8492,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                             height = AndroidUtilities.displaySize.y / 2;
                                         }
                                     }
+                                    // END FOLDOGRAM-EXT-PREVIEW
                                     if (imageBackgroundSideColor != 0) {
                                         scale = height / (float) dp(160);
                                         width /= scale;
@@ -8576,6 +8590,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                 photoImage.setNeedsQualityThumb(true);
                                 photoImage.setShouldGenerateQualityThumb(true);
                                 boolean hasVideoFile = (currentMessageObject.mediaExists || currentMessageObject.attachPathExists);
+                                // FOLDOGRAM-EXT-PREVIEW: external video previews use cached poster/playback metadata.
                                 ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
                                 if (externalVideoPreview != null) {
                                     hasVideoFile = externalVideoExists(externalVideoPreview) || currentMessageObject.attachPathExists;
@@ -8604,6 +8619,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                         photoImage.setImage(null, null, ImageLocation.getForObject(currentPhotoObject, photoParentObject), currentPhotoObject instanceof TLRPC.TL_photoStrippedSize || "s".equals(currentPhotoObject.type) ? currentPhotoFilterThumb : currentPhotoFilter, currentPhotoObjectThumbStripped, 0, null, messageObject, 0);
                                     }
                                 }
+                                // END FOLDOGRAM-EXT-PREVIEW
                             } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_GIF || documentAttachType == DOCUMENT_ATTACH_TYPE_ROUND) {
                                 photoImage.setAllowDecodeSingleFrame(true);
                                 boolean autoDownload = false;
@@ -17312,100 +17328,47 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         invalidate();
     }
 
+    // FOLDOGRAM-EXT-PREVIEW: thin cell hooks into ExternalPreviewCellBinder.
     private ExternalMediaPreviewStore.VideoPreview getExternalVideoPreview() {
-        if (documentAttachType != DOCUMENT_ATTACH_TYPE_VIDEO || currentMessageObject == null || currentMessageObject.messageOwner == null || documentAttach == null) {
-            return null;
-        }
-        if (!(currentMessageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage)) {
-            return null;
-        }
-        TLRPC.WebPage webPage = ((TLRPC.TL_messageMediaWebPage) currentMessageObject.messageOwner.media).webpage;
-        if (webPage == null || !ExternalMediaPreviewStore.isExternalPreviewDocument(webPage.id, documentAttach)) {
-            return null;
-        }
-        return ExternalMediaPreviewStore.getVideoPreview(webPage.id);
-    }
-
-    private boolean shouldRenderExternalDocumentAsPoster(TLRPC.WebPage webPage, TLRPC.Document document) {
-        return webPage != null
-            && ExternalMediaPreviewStore.isFabricatedExternalDocument(document)
-            && ExternalMediaPreviewStore.getVideoPreview(webPage.id) == null;
+        return ExternalPreviewCellBinder.getVideoPreview(currentMessageObject);
     }
 
     private ImageLocation getExternalVideoLocation(ExternalMediaPreviewStore.VideoPreview preview) {
-        return preview == null ? null : ImageLocation.getForWebFile(preview.videoWebFile);
+        return ExternalPreviewCellBinder.getVideoLocation(preview);
     }
 
     private ImageLocation getExternalPosterLocation(ExternalMediaPreviewStore.VideoPreview preview) {
-        if (preview != null && !TextUtils.isEmpty(preview.posterUrl)) {
-            return ImageLocation.getForPath(preview.posterUrl);
-        }
-        if (preview != null && preview.posterWebFile != null) {
-            return ImageLocation.getForWebFile(preview.posterWebFile);
-        }
-        if (currentPhotoObject != null) {
-            return ImageLocation.getForObject(currentPhotoObject, photoParentObject);
-        }
-        if (currentPhotoObjectThumb != null) {
-            return ImageLocation.getForObject(currentPhotoObjectThumb, photoParentObject);
-        }
-        return null;
+        return ExternalPreviewCellBinder.getPosterLocation(preview, currentPhotoObject, currentPhotoObjectThumb, photoParentObject);
     }
 
     private ImageLocation getExternalThumbLocation() {
-        return currentPhotoObjectThumb == null ? null : ImageLocation.getForObject(currentPhotoObjectThumb, photoParentObject);
+        return ExternalPreviewCellBinder.getThumbLocation(currentPhotoObjectThumb, photoParentObject);
     }
 
     private boolean isCustomExternalPreviewSite(CharSequence siteName) {
-        return siteName != null && ExternalLinkRouter.isExternalPreviewSite(siteName.toString());
+        return ExternalPreviewCellBinder.isExternalPreviewSite(siteName);
     }
 
     private String getExternalPosterFilter() {
-        if (currentPhotoObject instanceof TLRPC.TL_photoStrippedSize || currentPhotoObject != null && "s".equals(currentPhotoObject.type)) {
-            return currentPhotoFilterThumb;
-        }
-        return currentPhotoFilter != null ? currentPhotoFilter : currentPhotoFilterThumb;
+        return ExternalPreviewCellBinder.getPosterFilter(currentPhotoObject, currentPhotoFilter, currentPhotoFilterThumb);
     }
 
     private boolean externalVideoExists(ExternalMediaPreviewStore.VideoPreview preview) {
-        ImageLocation videoLocation = getExternalVideoLocation(preview);
-        return videoLocation != null && FileLoader.getInstance(currentAccount).getLocalFile(videoLocation) != null;
+        return ExternalPreviewCellBinder.videoExists(currentAccount, preview);
     }
 
     private void setExternalVideoPreviewImage(MessageObject messageObject, ExternalMediaPreviewStore.VideoPreview preview, boolean autoplay) {
-        ImageLocation posterLocation = getExternalPosterLocation(preview);
-        ImageLocation thumbLocation = getExternalThumbLocation();
-        ImageLocation videoLocation = getExternalVideoLocation(preview);
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("poster-trace setImage autoplay=" + autoplay
-                + " previewNull=" + (preview == null)
-                + " posterWebFileNull=" + (preview == null || preview.posterWebFile == null)
-                + " posterLocationNull=" + (posterLocation == null)
-                + " videoLocationNull=" + (videoLocation == null)
-                + " photoObj=" + (currentPhotoObject == null ? "null" : "set"));
-        }
-        String posterFilter = getExternalPosterFilter();
-        String thumbFilter = currentPhotoFilterThumb != null ? currentPhotoFilterThumb : posterFilter;
-        if (autoplay) {
-            if (videoLocation != null) {
-                photoImage.setImage(videoLocation, ImageLoader.AUTOPLAY_FILTER, posterLocation, posterFilter, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, preview.videoWebFile != null ? preview.videoWebFile.size : 0, null, messageObject, 1);
-                return;
-            }
-        }
-        if (posterLocation != null) {
-            photoImage.setImage(posterLocation, posterFilter, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, 0, null, messageObject, 1);
-        } else if (thumbLocation != null || currentPhotoObjectThumbStripped != null) {
-            photoImage.setImage(null, null, thumbLocation, thumbFilter, currentPhotoObjectThumbStripped, 0, null, messageObject, 0);
-        } else {
-            photoImage.setImageBitmap((Drawable) null);
-        }
+        ExternalPreviewCellBinder.setVideoPreviewImage(currentAccount, photoImage, messageObject, preview, autoplay, currentPhotoObject, currentPhotoObjectThumb, photoParentObject, currentPhotoObjectThumbStripped, currentPhotoFilter, currentPhotoFilterThumb);
     }
+    // END FOLDOGRAM-EXT-PREVIEW
 
     public void updateButtonState(boolean ifSame, boolean animated, boolean fromSet) {
         if (currentMessageObject == null) {
             return;
         }
+        // FOLDOGRAM-EXT-PREVIEW: external videos share the regular media button state machine.
         ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
+        // END FOLDOGRAM-EXT-PREVIEW
         if (currentMessageObject.type == MessageObject.TYPE_STORY && currentMessageObject.isVideoStory()) {
             buttonState = 2;
             getIconForCurrentState();
@@ -17442,8 +17405,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 fileName = currentMessageObject.messageOwner.attachPath;
                 fileExists = true;
             } else if (externalVideoPreview != null) {
+                // FOLDOGRAM-EXT-PREVIEW: use external video webfile as the observed download target.
                 fileName = FileLoader.getAttachFileName(externalVideoPreview.videoWebFile);
                 fileExists = externalVideoExists(externalVideoPreview);
+                // END FOLDOGRAM-EXT-PREVIEW
             } else if (!currentMessageObject.isSendError() || documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO || documentAttachType == DOCUMENT_ATTACH_TYPE_MUSIC) {
                 fileName = currentMessageObject.getFileName();
 //                currentMessageObject.updateQualitiesCached(true);
@@ -17455,6 +17420,21 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         } else if (currentPhotoObject != null) {
             fileName = FileLoader.getAttachFileName(currentPhotoObject);
             fileExists = currentMessageObject.mediaExists();
+        }
+
+        if (externalVideoPreview != null && currentMessageObject.type == MessageObject.TYPE_TEXT && drawPhotoImage && drawImageButton) {
+            // FOLDOGRAM-EXT-PREVIEW: text-link external videos render as poster+play, not download media.
+            DownloadController.getInstance(currentAccount).removeLoadingFileObserver(this);
+            canStreamVideo = false;
+            hasMiniProgress = 0;
+            drawVideoImageButton = false;
+            drawVideoSize = false;
+            buttonState = 3;
+            radialProgress.setIcon(getIconForCurrentState(), ifSame, animated);
+            videoRadialProgress.setIcon(MediaActionDrawable.ICON_NONE, ifSame, false);
+            invalidate();
+            return;
+            // END FOLDOGRAM-EXT-PREVIEW
         }
 
         boolean autoDownload;
@@ -17710,11 +17690,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_GIF && !fileExists) {
                         currentMessageObject.hadAnimationNotReadyLoading = true;
                     } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && !isLoadingVideo) {
+                        // FOLDOGRAM-EXT-PREVIEW: check external video image-loading key when no local file exists.
                         ImageLocation imageLocation = externalVideoPreview != null ? getExternalVideoLocation(externalVideoPreview) : ImageLocation.getForDocument(documentAttach);
                         String key = imageLocation != null ? imageLocation.getKey(null, null, false) : null;
                         if (key != null) {
                             isLoadingVideo = ImageLoader.getInstance().imageLoadingKeys.contains(key);
                         }
+                        // END FOLDOGRAM-EXT-PREVIEW
                     }
                 }
                 if (hasMiniProgress != 0) {
@@ -17858,7 +17840,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private void didPressMiniButton(boolean animated) {
+        // FOLDOGRAM-EXT-PREVIEW: mini-button load/cancel targets external video webfile when present.
         ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
+        // END FOLDOGRAM-EXT-PREVIEW
         if (miniButtonState == 0) {
             miniButtonState = 1;
             radialProgress.setProgress(0, false);
@@ -17871,7 +17855,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO || documentAttachType == DOCUMENT_ATTACH_TYPE_ROUND) {
                 createLoadingProgressLayout(documentAttach);
                 if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && externalVideoPreview != null) {
+                    // FOLDOGRAM-EXT-PREVIEW: download external video preview webfile.
                     FileLoader.getInstance(currentAccount).loadFile(externalVideoPreview.videoWebFile, FileLoader.PRIORITY_NORMAL_UP, 1);
+                    // END FOLDOGRAM-EXT-PREVIEW
                 } else {
                     FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL_UP, currentMessageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
                 }
@@ -17888,7 +17874,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             miniButtonState = 0;
             currentMessageObject.loadingCancelled = true;
             if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && externalVideoPreview != null) {
+                // FOLDOGRAM-EXT-PREVIEW: cancel external video preview webfile download.
                 FileLoader.getInstance(currentAccount).cancelLoadFile(externalVideoPreview.videoWebFile);
+                // END FOLDOGRAM-EXT-PREVIEW
             } else {
                 FileLoader.getInstance(currentAccount).cancelLoadFile(documentAttach);
             }
@@ -17898,7 +17886,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private void didPressButton(boolean animated, boolean video) {
+        // FOLDOGRAM-EXT-PREVIEW: main media button can target external video previews.
         ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
+        // END FOLDOGRAM-EXT-PREVIEW
         if (delegate != null && currentMessageObject.isSensitive() && currentMessageObject.hasMediaSpoilers() && !currentMessageObject.needDrawBluredPreview() && !currentMessageObject.isMediaSpoilersRevealed) {
             delegate.didPressRevealSensitiveContent(this);
             return;
@@ -17965,7 +17955,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     }
                 } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
                     if (externalVideoPreview != null) {
+                        // FOLDOGRAM-EXT-PREVIEW: load external video preview webfile.
                         FileLoader.getInstance(currentAccount).loadFile(externalVideoPreview.videoWebFile, FileLoader.PRIORITY_NORMAL, 1);
+                        // END FOLDOGRAM-EXT-PREVIEW
                     } else {
                         FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL, cacheType);
                     }
@@ -18124,7 +18116,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     @Override
     public void onSuccessDownload(String fileName) {
+        // FOLDOGRAM-EXT-PREVIEW: restore external video poster/autoplay after webfile download.
         ExternalMediaPreviewStore.VideoPreview externalVideoPreview = getExternalVideoPreview();
+        // END FOLDOGRAM-EXT-PREVIEW
         if (documentAttachType == DOCUMENT_ATTACH_TYPE_STICKER && currentMessageObject.isDice()) {
             DownloadController.getInstance(currentAccount).removeLoadingFileObserver(this);
             setCurrentDiceValue(true);
@@ -18145,6 +18139,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     photoImage.startAnimation();
                     autoPlayingMedia = true;
                 } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && externalVideoPreview != null) {
+                    // FOLDOGRAM-EXT-PREVIEW: external video preview uses poster image binding, not document thumb.
                     if (!isSmallImage && !currentMessageObject.isHiddenSensitive() && !currentMessageObject.hasVideoCover() && SharedConfig.isAutoplayVideo() && !currentMessageObject.isRepostPreview && (currentPosition == null || (currentPosition.flags & MessageObject.POSITION_FLAG_LEFT) != 0 && (currentPosition.flags & MessageObject.POSITION_FLAG_RIGHT) != 0)) {
                         animatingNoSound = 2;
                         photoImage.setAllowDecodeSingleFrame(true);
@@ -18161,6 +18156,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         photoImage.stopAnimation();
                         setExternalVideoPreviewImage(currentMessageObject, externalVideoPreview, false);
                     }
+                    // END FOLDOGRAM-EXT-PREVIEW
                 } else if (!isSmallImage && !currentMessageObject.isHiddenSensitive() && (!currentMessageObject.hasVideoCover() || currentMessageObject.isLivePhoto()) && SharedConfig.isAutoplayVideo() && !currentMessageObject.isRepostPreview && documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO && (currentPosition == null || (currentPosition.flags & MessageObject.POSITION_FLAG_LEFT) != 0 && (currentPosition.flags & MessageObject.POSITION_FLAG_RIGHT) != 0)) {
                     animatingNoSound = 2;
                     if (currentMessageObject.cachedQuality != null) {

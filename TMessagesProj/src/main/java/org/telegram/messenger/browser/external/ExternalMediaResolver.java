@@ -2,6 +2,8 @@ package org.telegram.messenger.browser.external;
 
 import android.net.Uri;
 
+import org.telegram.tgnet.TLRPC;
+
 import java.util.Set;
 
 public interface ExternalMediaResolver {
@@ -25,5 +27,12 @@ public interface ExternalMediaResolver {
      */
     default boolean supportsDirectVideoStreaming() {
         return true;
+    }
+
+    /**
+     * Platform-specific repair hook for stale persisted video previews.
+     */
+    default boolean shouldRefreshResolvedVideoPreview(TLRPC.WebPage webPage, ParsedLink link) {
+        return false;
     }
 }

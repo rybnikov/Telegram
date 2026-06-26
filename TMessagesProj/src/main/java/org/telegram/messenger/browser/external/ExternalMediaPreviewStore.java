@@ -18,9 +18,9 @@ public final class ExternalMediaPreviewStore {
     private ExternalMediaPreviewStore() {
     }
 
-    public static TLRPC.Document putVideo(long webPageId, String sourceName, String sourceUrl, String videoUrl, String posterUrl, int width, int height, String title, String description) {
+    public static void putVideo(long webPageId, String sourceName, String sourceUrl, String videoUrl, String posterUrl, int width, int height, String title, String description) {
         if (webPageId == 0 || TextUtils.isEmpty(videoUrl)) {
-            return null;
+            return;
         }
         VideoPreview preview = new VideoPreview(
             webPageId,
@@ -32,7 +32,6 @@ public final class ExternalMediaPreviewStore {
             height,
             title,
             description,
-            buildVideoDocument(videoUrl, width, height),
             buildWebFile(videoUrl, "video/mp4", width, height, true),
             buildWebFile(posterUrl, guessImageMimeType(posterUrl), width, height, false)
         );
@@ -40,25 +39,12 @@ public final class ExternalMediaPreviewStore {
             videoCache.put(webPageId, preview);
             trimCache();
         }
-        return preview.document;
     }
 
     public static VideoPreview getVideoPreview(long webPageId) {
         synchronized (lock) {
             return videoCache.get(webPageId);
         }
-    }
-
-    public static boolean isExternalPreviewDocument(long webPageId, TLRPC.Document document) {
-        VideoPreview preview = getVideoPreview(webPageId);
-        return preview != null && document != null && preview.document != null && preview.document.id == document.id;
-    }
-
-    public static boolean isFabricatedExternalDocument(TLRPC.Document document) {
-        return document != null
-            && (document.id & Long.MIN_VALUE) != 0
-            && document.dc_id == 0
-            && document.size == 0;
     }
 
     public static void clearDebugState() {
@@ -72,32 +58,6 @@ public final class ExternalMediaPreviewStore {
             Map.Entry<Long, VideoPreview> entry = videoCache.entrySet().iterator().next();
             videoCache.remove(entry.getKey());
         }
-    }
-
-    private static TLRPC.Document buildVideoDocument(String videoUrl, int width, int height) {
-        TLRPC.TL_document document = new TLRPC.TL_document();
-        document.id = stableLong(videoUrl) | Long.MIN_VALUE;
-        document.access_hash = stableLong(videoUrl + "#external");
-        document.file_reference = new byte[0];
-        document.mime_type = "video/mp4";
-        document.size = 0;
-        document.dc_id = 0;
-        document.date = 0;
-        document.attributes = new ArrayList<>();
-        document.thumbs = new ArrayList<>();
-        document.video_thumbs = new ArrayList<>();
-
-        TLRPC.TL_documentAttributeVideo videoAttribute = new TLRPC.TL_documentAttributeVideo();
-        videoAttribute.supports_streaming = true;
-        videoAttribute.flags |= 2;
-        videoAttribute.w = Math.max(width, 1);
-        videoAttribute.h = Math.max(height, 1);
-        document.attributes.add(videoAttribute);
-
-        TLRPC.TL_documentAttributeFilename fileName = new TLRPC.TL_documentAttributeFilename();
-        fileName.file_name = "external_" + Math.abs(document.id) + ".mp4";
-        document.attributes.add(fileName);
-        return document;
     }
 
     private static WebFile buildWebFile(String url, String mimeType, int width, int height, boolean isVideo) {
@@ -127,11 +87,7 @@ public final class ExternalMediaPreviewStore {
     }
 
     private static String guessImageMimeType(String url) {
-        return ExternalMediaOpenHelper.guessImageMimeType(url);
-    }
-
-    private static long stableLong(String value) {
-        return ExternalPreviewManager.computeStableId(value);
+        return PreviewMapper.guessImageMimeType(url);
     }
 
     public static final class VideoPreview {
@@ -144,11 +100,10 @@ public final class ExternalMediaPreviewStore {
         public final int height;
         public final String title;
         public final String description;
-        public final TLRPC.Document document;
         public final WebFile videoWebFile;
         public final WebFile posterWebFile;
 
-        private VideoPreview(long webPageId, String sourceName, String sourceUrl, String videoUrl, String posterUrl, int width, int height, String title, String description, TLRPC.Document document, WebFile videoWebFile, WebFile posterWebFile) {
+        private VideoPreview(long webPageId, String sourceName, String sourceUrl, String videoUrl, String posterUrl, int width, int height, String title, String description, WebFile videoWebFile, WebFile posterWebFile) {
             this.webPageId = webPageId;
             this.sourceName = sourceName;
             this.sourceUrl = sourceUrl;
@@ -158,7 +113,6 @@ public final class ExternalMediaPreviewStore {
             this.height = height;
             this.title = title;
             this.description = description;
-            this.document = document;
             this.videoWebFile = videoWebFile;
             this.posterWebFile = posterWebFile;
         }

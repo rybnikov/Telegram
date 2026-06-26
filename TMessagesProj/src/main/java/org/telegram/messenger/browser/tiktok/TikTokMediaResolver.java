@@ -8,8 +8,11 @@ import org.json.JSONObject;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
+import org.telegram.messenger.browser.external.Playback;
+import org.telegram.messenger.browser.external.PlaybackResolver;
 import org.telegram.messenger.browser.external.ResolvedMedia;
 
 import java.net.CookieHandler;
@@ -22,7 +25,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-public final class TikTokMediaResolver implements ExternalMediaResolver {
+public final class TikTokMediaResolver implements ExternalMediaResolver, PlaybackResolver {
 
     private static final String TAG = "TikTokResolver";
     private static final String REHYDRATION_SCRIPT_ID = "__UNIVERSAL_DATA_FOR_REHYDRATION__";
@@ -54,7 +57,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         CookieHandler.setDefault(cookieManager);
         String html = null;
         try {
-            html = ExternalHtmlUtils.fetchHtml(canonicalUrl, REHYDRATION_SCRIPT_ID, "</script>", MAX_SCRIPT_CHARS);
+            html = ExternalHttpClient.fetchHtml(canonicalUrl, REHYDRATION_SCRIPT_ID, "</script>", MAX_SCRIPT_CHARS);
             String scriptContent = ExternalHtmlUtils.findScriptContentById(html, REHYDRATION_SCRIPT_ID);
             if (TextUtils.isEmpty(scriptContent)) {
                 logPlaybackResult(canonicalUrl, html, false, false, "null");
@@ -127,29 +130,59 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
     }
 
     @Override
+    public Playback resolvePlayback(ParsedLink link) throws Exception {
+        String streamUrl = resolveVideoForPlayback(link.canonicalUrl);
+        if (!TextUtils.isEmpty(streamUrl)) {
+            return resolvePlayback(streamUrl, null, link.canonicalUrl);
+        }
+
+        String finalUrl = null;
+        try {
+            ResolvedMedia media = resolve(link);
+            if (media instanceof ResolvedMedia.Video) {
+                finalUrl = ((ResolvedMedia.Video) media).videoUrl;
+            }
+        } catch (Exception e) {
+            FileLog.d(TAG + ": playback preview fallback failed " + e.getClass().getSimpleName());
+        }
+        return resolvePlayback(null, finalUrl, link.canonicalUrl);
+    }
+
+    static Playback resolvePlayback(String streamUrl, String finalUrl, String fallbackUrl) {
+        if (!TextUtils.isEmpty(streamUrl)) {
+            return new Playback.DirectStream(streamUrl);
+        }
+        String embedUrl = buildTikTokEmbedUrl(finalUrl, fallbackUrl);
+        if (!TextUtils.isEmpty(embedUrl)) {
+            return new Playback.Embed(embedUrl);
+        }
+        return Playback.External.INSTANCE;
+    }
+
+    @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
         String previewUrl = link.canonicalUrl;
         String previewHtml = null;
 
         if (isShortTikTokUrl(link.canonicalUrl)) {
-            ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
+            ExternalHtmlUtils.FetchResult fetchResult = ExternalHttpClient.fetchHtmlWithFinalUrl(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
             previewHtml = fetchResult.html;
             previewUrl = canonicalizePreviewUrl(fetchResult.finalUrl, link.canonicalUrl);
         }
 
         JSONObject json = fetchOEmbed(previewUrl);
+        ResolvedMedia oEmbedPreview = buildPreviewFromOEmbed(previewUrl, json);
 
-        String title = json != null ? json.optString("title", null) : null;
-        String author = json != null ? json.optString("author_name", null) : null;
-        String posterUrl = json != null ? json.optString("thumbnail_url", null) : null;
-        int width = json != null ? json.optInt("thumbnail_width", 0) : 0;
-        int height = json != null ? json.optInt("thumbnail_height", 0) : 0;
-        String description = !TextUtils.isEmpty(author) ? author : null;
+        String title = oEmbedPreview != null ? oEmbedPreview.title : null;
+        String description = oEmbedPreview != null ? oEmbedPreview.description : null;
+        String posterUrl = oEmbedPreview instanceof ResolvedMedia.Video ? ((ResolvedMedia.Video) oEmbedPreview).posterUrl : null;
+        int width = oEmbedPreview instanceof ResolvedMedia.Video ? ((ResolvedMedia.Video) oEmbedPreview).width : 0;
+        int height = oEmbedPreview instanceof ResolvedMedia.Video ? ((ResolvedMedia.Video) oEmbedPreview).height : 0;
         String branch = !TextUtils.isEmpty(posterUrl) ? "oembed" : null;
 
         if (TextUtils.isEmpty(posterUrl)) {
             if (previewHtml == null) {
-                ExternalHtmlUtils.FetchResult fetchResult = ExternalHtmlUtils.fetchHtmlWithFinalUrl(previewUrl, null, "</head>", MAX_HEAD_CHARS);
+                ExternalHtmlUtils.FetchResult fetchResult = ExternalHttpClient.fetchHtmlWithFinalUrl(previewUrl, null, "</head>", MAX_HEAD_CHARS);
                 previewHtml = fetchResult.html;
                 previewUrl = canonicalizePreviewUrl(fetchResult.finalUrl, previewUrl);
             }
@@ -181,6 +214,19 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
         // the stream from the cache key, and embed fallback extracts /video/<id> from this.
         FileLog.d(TAG + ": oEmbed preview " + ExternalHtmlUtils.trimForLog(posterUrl));
         logPreviewResult(link.canonicalUrl, previewUrl, previewHtml, branch, posterUrl, true);
+        return new ResolvedMedia.Video(previewUrl, posterUrl, title, description, width, height);
+    }
+
+    static ResolvedMedia buildPreviewFromOEmbed(String previewUrl, JSONObject json) {
+        if (json == null) {
+            return null;
+        }
+        String title = json.optString("title", null);
+        String author = json.optString("author_name", null);
+        String posterUrl = json.optString("thumbnail_url", null);
+        int width = json.optInt("thumbnail_width", 0);
+        int height = json.optInt("thumbnail_height", 0);
+        String description = !TextUtils.isEmpty(author) ? author : null;
         return new ResolvedMedia.Video(previewUrl, posterUrl, title, description, width, height);
     }
 
@@ -227,7 +273,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
     private static JSONObject fetchOEmbed(String previewUrl) {
         try {
             String oembedUrl = "https://www.tiktok.com/oembed?url=" + Uri.encode(previewUrl);
-            String response = ExternalHtmlUtils.fetchHtml(oembedUrl, null, null, MAX_OEMBED_CHARS);
+            String response = ExternalHttpClient.fetchHtml(oembedUrl, null, null, MAX_OEMBED_CHARS);
             if (TextUtils.isEmpty(response)) {
                 return null;
             }
@@ -271,6 +317,46 @@ public final class TikTokMediaResolver implements ExternalMediaResolver {
 
     private static String firstNonEmpty(String first, String second) {
         return !TextUtils.isEmpty(first) ? first : second;
+    }
+
+    static String buildTikTokEmbedUrl(String finalUrl, String fallbackUrl) {
+        String videoId = extractTikTokVideoId(finalUrl);
+        if (TextUtils.isEmpty(videoId)) {
+            videoId = extractTikTokVideoId(fallbackUrl);
+        }
+        return TextUtils.isEmpty(videoId) ? null : "https://www.tiktok.com/embed/v2/" + videoId;
+    }
+
+    private static String extractTikTokVideoId(String url) {
+        if (TextUtils.isEmpty(url)) {
+            return null;
+        }
+        try {
+            List<String> segments = Uri.parse(url).getPathSegments();
+            if (segments == null) {
+                return null;
+            }
+            for (int i = 0; i < segments.size() - 1; i++) {
+                if ("video".equalsIgnoreCase(segments.get(i))) {
+                    String value = segments.get(i + 1);
+                    return isDigits(value) ? value : null;
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    private static boolean isDigits(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String pickVideoUrl(JSONObject video) {

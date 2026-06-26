@@ -6,6 +6,7 @@ import android.text.TextUtils;
 import org.json.JSONObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.ResolvedMedia;
@@ -50,7 +51,7 @@ public final class TwitterMediaResolver implements ExternalMediaResolver {
         int height = 0;
 
         try {
-            String html = ExternalHtmlUtils.fetchHtml(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
+            String html = ExternalHttpClient.fetchHtml(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
 
             videoUrl = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:video");
             if (TextUtils.isEmpty(videoUrl)) {
@@ -72,7 +73,7 @@ public final class TwitterMediaResolver implements ExternalMediaResolver {
         if (TextUtils.isEmpty(videoUrl)) {
             try {
                 String oembedUrl = "https://publish.twitter.com/oembed?url=" + Uri.encode(link.canonicalUrl);
-                String response = ExternalHtmlUtils.fetchHtml(oembedUrl, null, null, 32 * 1024);
+                String response = ExternalHttpClient.fetchHtml(oembedUrl, null, null, 32 * 1024);
                 if (!TextUtils.isEmpty(response)) {
                     JSONObject json = new JSONObject(response);
                     String oembedTitle = json.optString("author_name", null);

@@ -5,6 +5,7 @@ import android.text.TextUtils;
 
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
+import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.ResolvedMedia;
@@ -43,7 +44,7 @@ public final class PinterestMediaResolver implements ExternalMediaResolver {
 
     @Override
     public ResolvedMedia resolve(ParsedLink link) throws Exception {
-        String html = ExternalHtmlUtils.fetchHtml(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
+        String html = ExternalHttpClient.fetchHtml(link.canonicalUrl, null, "</head>", MAX_HEAD_CHARS);
         String title = ExternalHtmlUtils.findMetaContentDecoded(html, "property", "og:title");
         if (TextUtils.isEmpty(title)) {
             title = ExternalHtmlUtils.findMetaContentDecoded(html, "name", "twitter:title");
