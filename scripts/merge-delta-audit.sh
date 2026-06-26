@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
+# Advisory diagnostic, NOT a gate.
+# This script surfaces fork-added source lines that may need merge review.
+# Acceptance is enforced by check-fork-anchors.sh / MergeRegressionCanaryTest.
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
   echo "Usage: $0 <old-base> <new-base> <fork-tip>" >&2
-  echo "Prints fork-added source lines that existed against old-base but disappear against new-base." >&2
+  echo "Advisory diagnostic, NOT a gate: prints fork-added source lines that existed against old-base but disappear against new-base." >&2
   exit 2
 fi
 

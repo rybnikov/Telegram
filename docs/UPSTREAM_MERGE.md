@@ -76,9 +76,10 @@ noisy result as final proof.
 scripts/check-fork-anchors.sh docs/FORK_FEATURES.md
 ```
 
-`check-fork-anchors.sh` is the strict gate once implemented. It must parse the
-`json` blocks in `docs/FORK_FEATURES.md` and fail if protected anchors disappear.
-Until that script exists, `MergeRegressionCanaryTest` is the strict tracked gate.
+`check-fork-anchors.sh` is the strict gate. It delegates to the registry-driven
+`MergeRegressionCanaryTest`, which parses the `json` blocks in
+`docs/FORK_FEATURES.md` and fails if protected anchors disappear. The shell
+wrapper intentionally has no Python or jq dependency.
 
 ## Conflict Resolution Algorithm
 
@@ -132,9 +133,8 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privat
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
 ```
 
-If `check-fork-anchors.sh` or `check-secrets-policy.sh` do not exist yet, record
-that explicitly in the merge report and rely on the current canary/tests until
-Phase 3 adds the scripts. Do not pretend the missing gate passed.
+If a required script is missing or not executable, the gate failed. Restore the
+script from this runbook/registry work before accepting the merge.
 
 ## Stop Rules
 
@@ -170,6 +170,10 @@ Update fork protection baseline after intentional removal: <reason>
 If a threshold must be lowered because upstream now implements the invariant,
 first prove the invariant with code inspection or a test, then update the
 registry in that dedicated commit.
+
+Current canary baseline is intentionally pinned to 13 feature blocks and 111
+anchors. TODO: make this count dynamic after the registry/CI flow is stable. Until
+then, update the pinned count only in the same dedicated registry baseline commit.
 
 ## Database Migration Rule
 
@@ -217,16 +221,17 @@ Before accepting a merge, run:
 
 ```bash
 git status --short
-git ls-files | grep -E '(^|/)google-services\.json$|\.keystore$|\.jks$|\.p12$'
+scripts/check-secrets-policy.sh
 ```
 
-The second command is diagnostic until `scripts/check-secrets-policy.sh` defines
-the reviewed allowlist.
+The reviewed allowlist lives in `scripts/check-secrets-policy.sh`. Raw
+`git ls-files | grep -E '(^|/)google-services\.json$|\.keystore$|\.jks$|\.p12$'`
+is only a diagnostic aid.
 
 ## Merge Report
 
 Every upstream merge must end with a report before it is merged back to
-`foldogram`.
+`foldogram`. Use `docs/MERGE_REPORT_TEMPLATE.md` as the report skeleton.
 
 Required fields:
 
@@ -246,12 +251,14 @@ Feature matrix:
 ext-preview:
 nav-recovery:
 fold-tablet:
+cutout:
 android-auto:
 maps-live-location:
 places-index:
 db-preview:
 browser-iv:
 identity:
+share-shortcuts:
 ci-release:
 secrets-policy:
 

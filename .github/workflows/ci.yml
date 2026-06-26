@@ -1,0 +1,62 @@
+name: Foldogram CI
+
+on:
+  push:
+    branches:
+      - foldogram
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Fork protection and unit tests
+    runs-on: ubuntu-latest
+
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Release secrets are not used here
+        run: |
+          echo "This workflow does not sign artifacts, upload to Play, publish releases, or read release secrets."
+
+      - name: Fast merge canary
+        run: ./gradlew :TMessagesProj:testHA_privateUnitTest --tests '*MergeRegressionCanaryTest'
+
+      - name: Full unit tests
+        run: ./gradlew :TMessagesProj:testHA_privateUnitTest
+
+      - name: Compile HA private Java
+        run: ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
+
+      - name: Check fork anchors
+        run: scripts/check-fork-anchors.sh
+
+      - name: Check secrets policy
+        run: scripts/check-secrets-policy.sh
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          if-no-files-found: ignore
