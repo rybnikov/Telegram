@@ -40,13 +40,16 @@ inside a conflict-resolution commit.
 ## nav-recovery
 
 Human explanation: Foldogram carries navigation recovery fixes for foldable and
-tablet flows where back gestures, external activities, and layout migration can
-leave zombie fragments or stuck animation state. These fixes were added after
-real device regressions in split/tablet mode.
+tablet flows where back gestures, predictive-back cancellation, external
+activities, multi-window changes, multi-instance activity teardown, and layout
+migration can leave zombie fragments or stuck animation state. These fixes were
+added after real device regressions in split/tablet mode.
 
 Invariant: Back navigation and fragment stack migration must not leave stuck
-animations, zombie fragments, or a broken split layout after lifecycle changes,
-external activity returns, or tablet/split reflows.
+animations, stale predictive-back state, zombie fragments, destroyed global UI
+from another LaunchActivity task, or a broken split layout after lifecycle
+changes, external activity returns, multi-window transitions, or tablet/split
+reflows.
 
 Conflict policy: If upstream rewrites `ActionBarLayout` or `LaunchActivity`,
 verify whether the new implementation already clears stale animation and resets
@@ -55,19 +58,21 @@ hook. If not, port the invariant to the new code path and keep the canary green.
 Do not preserve old code mechanically if upstream changed the fragment model.
 
 ```json
-{"id":"nav-recovery","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"private void forceResetAnimationState()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"forceResetAnimationState();","min_count":5},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"resetNavigationStateIfNeeded"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"animationInProgressStartTime"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"chatFragment.resetFragment();"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java","contains":"public static boolean isUiCompletelyPaused()"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java","contains":"return mainInterfacePaused && externalInterfacePaused;"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java","contains":"if (chatsDict == null && ApplicationLoader.isUiCompletelyPaused())"}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"nav-recovery","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"private void forceResetAnimationState()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"forceResetAnimationState();","min_count":5},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"resetNavigationStateIfNeeded"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"animationInProgressStartTime"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"fragment.resetFragment();"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"chatFragment.resetFragment();"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private void cancelStalePredictiveBack(String reason)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"cancelStalePredictiveBack(\"multiwindow\")"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"public void onMultiWindowModeChanged(boolean isInMultiWindowMode)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private boolean hasOtherLaunchActivityInstanceInAppTasks()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"allowGlobalUiTeardown"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"fragmentOwnerTaskIds"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"destroyOwnedFragments"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private final int instanceId = System.identityHashCode(this)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"onTopResumedActivityChanged"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java","contains":"public static boolean isUiCompletelyPaused()"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java","contains":"return mainInterfacePaused && externalInterfacePaused;"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java","contains":"if (chatsDict == null && ApplicationLoader.isUiCompletelyPaused())"}],"tests":["MergeRegressionCanaryTest"]}
 ```
 
 ## fold-tablet
 
 Human explanation: Foldogram changes tablet/foldable detection and list layout
-behavior so OPPO Find N style split/tablet mode does not lose the chat pane or
-misclassify the window after resize. It also carries bottom-panel observer hooks
+behavior so OPPO Find N style split/tablet mode does not lose the chat pane,
+misclassify the window after cold start, or get trapped in ChatActivity pre-draw
+cancel/redraw loops after resize. It also carries bottom-panel observer hooks
 for foldable UI state.
 
 Invariant: Tablet mode is driven by the measured window width, split layout can
-migrate without losing the active chat, and transient empty list layouts do not
-trigger false pagination/filter loading.
+migrate without losing the active chat or root tabs, cold-start tablet detection
+uses current display size, and transient empty list layouts do not trigger false
+pagination/filter loading.
 
 Conflict policy: If upstream changes tablet detection, `DialogsActivity` list
 loading, or bottom-panel notification wiring, compare the new behavior with the
@@ -76,7 +81,29 @@ equivalent. Do not drop `hideBottomPanelChanged` consumers just because upstream
 moved observer wiring.
 
 ```json
-{"id":"fold-tablet","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/NotificationCenter.java","contains":"hideBottomPanelChanged"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java","contains":"postNotificationName(NotificationCenter.hideBottomPanelChanged)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java","contains":"transientEmptyLayout"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java","contains":"hideBottomPanelChanged"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java","contains":"hideBottomPanelChanged"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java","contains":"public static boolean isTabletForce()"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java","contains":"widthDp >= 600 && heightDp >= 320"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private void invalidateTabletMode()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"checkTabletLayoutInvariant"}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"fold-tablet","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/NotificationCenter.java","contains":"hideBottomPanelChanged"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java","contains":"postNotificationName(NotificationCenter.hideBottomPanelChanged)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java","contains":"transientEmptyLayout"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java","contains":"hideBottomPanelChanged"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java","contains":"hideBottomPanelChanged"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java","contains":"public static boolean isTabletForce()"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java","contains":"widthDp >= 600 && heightDp >= 320"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private int measuredWindowWidth"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private void updateDisplaySizeFromRootMeasure(int width, int height)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private void onWindowWidthChanged()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private boolean shouldFreezeTabletModeChange(boolean wasTablet, boolean nextTablet)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private void scheduleWindowWidthChanged(long delay)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"checkTabletLayoutInvariant(\"windowWidthChanged\")"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"measuredWindowWidth = 0;"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private void invalidateTabletMode()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"mainTabsActivity.prepareDialogsActivity(null)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"checkTabletLayoutInvariant"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java","contains":"tablet/window transitions can trap the whole activity in cancelAndRedraw"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java","contains":"fixLayoutInternal();"}],"tests":["MergeRegressionCanaryTest"]}
+```
+
+## cutout
+
+Human explanation: Foldogram carries a display-cutout workaround for landscape
+rotation where a side cutout could expose an unwanted visual stripe. The current
+implementation tracks cutout presence in `DrawerLayoutContainer`, draws black
+side coverage for cutout insets, and keeps v31 themes in `shortEdges` cutout
+mode.
+
+Invariant: Display-cutout side insets remain explicitly handled in the drawer
+container and v31 styles keep the cutout mode expected by the current workaround.
+If upstream changes cutout handling, verify the rotation/cutout visual invariant
+instead of preserving these exact lines blindly.
+
+Conflict policy: If upstream removes the manual cutout drawing or changes
+`windowLayoutInDisplayCutoutMode`, test the affected orientation/cutout scenario.
+Keep either the current workaround or an upstream-equivalent fix. Never commit
+hardcoded device-specific dimensions.
+
+```json
+{"id":"cutout","criticality":"med","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"DisplayCutoutCompat"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"private boolean hasCutout"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"insets.getDisplayCutout()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"getBoundingRects().isEmpty()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"if (hasCutout)"},{"path":"TMessagesProj/src/main/res/values-v31/styles.xml","contains":"android:windowLayoutInDisplayCutoutMode\">shortEdges","min_count":2}],"tests":["MergeRegressionCanaryTest"]}
 ```
 
 ## android-auto
@@ -194,6 +221,27 @@ upstream package into app modules or Play release workflow.
 
 ```json
 {"id":"identity","criticality":"high","anchors":[{"path":"gradle.properties","contains":"APP_PACKAGE=com.rbnkv.foldogram"},{"path":"TMessagesProj_App/build.gradle","contains":"defaultConfig.applicationId = APP_PACKAGE"},{"path":"TMessagesProj_AppHockeyApp/build.gradle","contains":"defaultConfig.applicationId = APP_PACKAGE"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java","contains":"https://play.google.com/store/apps/details?id=com.rbnkv.foldogram"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":"${applicationId}.provider"}],"tests":["MergeRegressionCanaryTest"]}
+```
+
+## share-shortcuts
+
+Human explanation: Foldogram ranks Android direct-share shortcuts with local
+share/send/open signals instead of relying only on upstream remote hints. The
+ranker stores local scores, blends them with remote hints, and feeds both the
+share sheet and dynamic shortcut publication.
+
+Invariant: Share target ranking remains backed by `ShareTargetRanker`, local
+share/send/open events update the ranker, `MediaDataController.getShareHints`
+uses ranked dialogs, and Android dynamic shortcuts are reported/updated with the
+ranked results.
+
+Conflict policy: If upstream rewrites share hints or shortcut publication,
+preserve the local ranking invariant or prove upstream now provides an equivalent
+ranker. Do not remove `ShareTargetRanker` as unused if `MediaDataController`
+still owns share hints and dynamic shortcuts.
+
+```json
+{"id":"share-shortcuts","criticality":"med","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ShareTargetRanker.java","contains":"class ShareTargetRanker extends BaseController"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ShareTargetRanker.java","contains":"private static final String TABLE_NAME = \"share_hints_v1\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ShareTargetRanker.java","contains":"public ArrayList<RankedDialog> getTopDialogs"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ShareTargetRanker.java","contains":"public boolean recordSuccessfulSend(long dialogId)"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java","contains":"shareTargetRanker = new ShareTargetRanker(num)"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java","contains":"private final ShareTargetRanker shareTargetRanker"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java","contains":"shareTargetRanker.getTopDialogs"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java","contains":"shareTargetRanker.recordSuccessfulSend(dialogId)"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java","contains":"ShortcutManagerCompat.reportShortcutUsed"}],"tests":["MergeRegressionCanaryTest"]}
 ```
 
 ## ci-release

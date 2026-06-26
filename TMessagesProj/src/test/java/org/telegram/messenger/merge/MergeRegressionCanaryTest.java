@@ -47,8 +47,8 @@ public final class MergeRegressionCanaryTest {
                 checkedAnchors++;
             }
         }
-        assertEquals("Unexpected registry feature count", 11, features.size());
-        assertEquals("Unexpected registry anchor count", 76, checkedAnchors);
+        assertEquals("Unexpected registry feature count", 13, features.size());
+        assertEquals("Unexpected registry anchor count", 111, checkedAnchors);
     }
 
     @Test
