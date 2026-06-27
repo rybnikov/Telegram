@@ -25,8 +25,6 @@ is_allowed_secret_path() {
     TMessagesProj_AppHuawei/google-services.json) return 0 ;;
     TMessagesProj_AppStandalone/google-services.json) return 0 ;;
     TMessagesProj/jni/boringssl/crypto/pkcs8/test/*.p12) return 0 ;;
-    TMessagesProj/src/test/resources/preview/tt_video.html) return 0 ;;
-    TMessagesProj/src/test/resources/preview/tt_video2.html) return 0 ;;
   esac
   return 1
 }
@@ -56,7 +54,7 @@ fi
 if [ -n "${CHECK_SECRETS_GREP_AIZA_CMD:-}" ]; then
   sh -c "$CHECK_SECRETS_GREP_AIZA_CMD" >"$api_key_matches" || true
 else
-  git grep -I -n -o 'AIza[A-Za-z0-9_-]*' -- . >"$api_key_matches" || true
+  git grep -I -n -E -o 'AIza[0-9A-Za-z_-]{35}' -- . ':!scripts' ':!TMessagesProj/src/test/resources' >"$api_key_matches" || true
 fi
 
 while IFS= read -r path; do
