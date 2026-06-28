@@ -1,0 +1,1 @@
+../../../.agents/skills/foldogram-dev/SKILL.md

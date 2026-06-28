@@ -1,0 +1,55 @@
+---
+name: upstream-merge
+description: "Use when merging upstream DrKLO/Telegram into the foldogram fork. Branch strategy, per-conflict feature-id->invariant resolution, DB migration freeze/append/idempotency rule, CI gates and merge report. Do NOT use for normal feature work."
+---
+
+# Upstream Merge Skill
+
+Use this skill only for upstream DrKLO/Telegram sync work.
+
+## Workflow
+
+1. Start from `foldogram` and create a dedicated merge branch such as
+   `merge/upstream-<version>`.
+2. Fetch upstream and merge the real upstream history. Do not apply source
+   snapshots over `foldogram`.
+3. For every conflict, map the touched code to a `feature-id` in
+   `docs/FORK_FEATURES.md`.
+4. Read the feature invariant and conflict policy before editing.
+5. Inspect the new upstream code:
+   if upstream now implements the invariant, discard the obsolete fork hook;
+   if upstream rewrote the surrounding code, adapt the hook;
+   otherwise preserve the fork behavior.
+6. Never resolve conflicts with blind `ours` or `theirs`.
+
+## Database Migration Rule
+
+Released Foldogram migration numbers are frozen. New upstream migrations are
+appended above the released Foldogram floor. Fork DDL must be idempotent:
+`CREATE ... IF NOT EXISTS`, and `ADD COLUMN` through `executeNoException`.
+
+For every DB conflict, include a parked-user-version trace in the merge report:
+which migrations run, which ones are skipped, and why the upgrade is safe.
+
+## Stop Rules
+
+- Canary red: restore the invariant. Do not lower thresholds in a conflict
+  commit.
+- DB migration ambiguity: stop and produce the user-version trace before
+  continuing.
+- Secret-like file staged: unstage it and fix the source.
+- Missing fork feature invariant: stop and ask for review.
+
+## Gates
+
+```bash
+JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest
+JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
+JAVA_HOME=$(/usr/libexec/java_home -v 17) sh scripts/check-fork-anchors.sh
+sh scripts/check-secrets-policy.sh
+scripts/merge-delta-audit.sh <old-upstream-base> <new-upstream-base> <fork-tip>
+```
+
+Full reference: `docs/UPSTREAM_MERGE.md`.
+Registry: `docs/FORK_FEATURES.md`.
+Report template: `docs/MERGE_REPORT_TEMPLATE.md`.

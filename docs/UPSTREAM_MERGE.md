@@ -4,9 +4,10 @@ This is the executable merge procedure for Foldogram. It is written for agents,
 not as informal notes. Follow it when syncing `foldogram` with upstream
 DrKLO/Telegram.
 
-`CLAUDE.md` is not a source of truth. It is local, ignored, and must not be
-committed. Mandatory merge procedures live in `docs/`. If local agent memory and
-tracked docs disagree, tracked docs are authoritative.
+`AGENTS.md` and the `CLAUDE.md -> AGENTS.md` symlink only route agents to tracked
+docs. Mandatory merge procedures live in `docs/`. `CLAUDE.local.md` is local,
+ignored, and must not be committed. If local agent memory and tracked docs
+disagree, tracked docs are authoritative.
 
 ## Remote Layout
 
@@ -259,7 +260,7 @@ new upstream table depending on the exact conflict resolution.
 Never add newly generated app credentials or local notes to git:
 
 ```text
-CLAUDE.md
+CLAUDE.local.md
 TMessagesProj_App/google-services.json
 TMessagesProj_AppHockeyApp/google-services.json
 local generated google-services.json files

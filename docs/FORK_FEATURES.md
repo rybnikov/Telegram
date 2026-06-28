@@ -276,10 +276,11 @@ real API keys must not be newly committed. Current history still contains some
 legacy/upstream tracked config files, so future strict secret checks must classify
 legacy tracked files separately instead of silently expanding the tracked surface.
 
-Invariant: `CLAUDE.md` remains local and ignored, generated app `google-services.json`
-files remain ignored, app modules generate Google services config from env/local
-inputs, and release workflows consume secrets through GitHub secrets without
-printing their contents.
+Invariant: `CLAUDE.local.md` remains local and ignored, tracked `CLAUDE.md` is
+only a symlink to `AGENTS.md`, generated app `google-services.json` files remain
+ignored, app modules generate Google services config from env/local inputs, and
+release workflows consume secrets through GitHub secrets without printing their
+contents.
 
 Conflict policy: If upstream adds or rewrites Firebase/Google service config,
 stop and classify the file before committing. Do not add real generated app
@@ -287,5 +288,5 @@ configs to git. If a check must allow a legacy tracked upstream file, document t
 allowlist in the check and do not broaden it without review.
 
 ```json
-{"id":"secrets-policy","criticality":"high","anchors":[{"path":".gitignore","contains":"CLAUDE.md"},{"path":".gitignore","contains":"google-services.json"},{"path":".gitignore","contains":"**/google-services.json"},{"path":"TMessagesProj_AppHockeyApp/.gitignore","contains":"google-services.json"},{"path":"TMessagesProj_App/build.gradle","contains":"GOOGLE_SERVICES_JSON"},{"path":"TMessagesProj_AppHockeyApp/build.gradle","contains":"GOOGLE_SERVICES_JSON_HOCKEYAPP"},{"path":".github/workflows/internal-release.yml","contains":"secrets.GOOGLE_SERVICES_JSON"}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"secrets-policy","criticality":"high","anchors":[{"path":".gitignore","contains":"CLAUDE.local.md"},{"path":".gitignore","contains":"google-services.json"},{"path":".gitignore","contains":"**/google-services.json"},{"path":"TMessagesProj_AppHockeyApp/.gitignore","contains":"google-services.json"},{"path":"TMessagesProj_App/build.gradle","contains":"GOOGLE_SERVICES_JSON"},{"path":"TMessagesProj_AppHockeyApp/build.gradle","contains":"GOOGLE_SERVICES_JSON_HOCKEYAPP"},{"path":".github/workflows/internal-release.yml","contains":"secrets.GOOGLE_SERVICES_JSON"}],"tests":["MergeRegressionCanaryTest"]}
 ```

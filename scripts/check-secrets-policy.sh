@@ -29,12 +29,18 @@ is_allowed_secret_path() {
   return 1
 }
 
-require_gitignore_entry "CLAUDE.md"
+require_gitignore_entry "CLAUDE.local.md"
 require_gitignore_entry "google-services.json"
 require_gitignore_entry "**/google-services.json"
 
-if git ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1; then
-  add_failure "CLAUDE.md must not be tracked"
+claude_entry="$(git ls-files -s CLAUDE.md || true)"
+if [ -n "$claude_entry" ]; then
+  set -- $claude_entry
+  claude_mode="$1"
+  claude_target="$(git show :CLAUDE.md 2>/dev/null || true)"
+  if [ "$claude_mode" != "120000" ] || [ "$claude_target" != "AGENTS.md" ]; then
+    add_failure "CLAUDE.md may be tracked only as a symlink to AGENTS.md"
+  fi
 fi
 
 if git ls-files --error-unmatch TMessagesProj_App/google-services.json >/dev/null 2>&1; then
@@ -59,8 +65,8 @@ fi
 
 while IFS= read -r path; do
   case "$path" in
-    CLAUDE.md)
-      add_failure "CLAUDE.md must not be tracked"
+    CLAUDE.local.md)
+      add_failure "CLAUDE.local.md must not be tracked"
       ;;
     *google-services.json|*.keystore|*.jks|*.p12)
       if ! is_allowed_secret_path "$path"; then
