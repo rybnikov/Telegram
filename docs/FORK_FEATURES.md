@@ -201,12 +201,12 @@ that state when deciding between custom tabs, in-app browser, and normal externa
 opening.
 
 Conflict policy: If upstream rewrites `Browser.openUrl`, keep an explicit
-Instant View state predicate or prove the new upstream path has equivalent
-behavior. Do not remove `isInstantViewOpen` just because it looks like a small
-helper.
+Instant View state predicate near the in-app browser decision or prove the new
+upstream path has equivalent behavior. Do not remove `isInstantViewOpen` just
+because it looks like a small helper.
 
 ```json
-{"id":"browser-iv","criticality":"med","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/Browser.java","contains":"public static boolean isInstantViewOpen()"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/Browser.java","contains":"SharedConfig.inappBrowser || isInstantViewOpen()"}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"browser-iv","criticality":"med","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/Browser.java","contains":"public static boolean isInstantViewOpen()"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/Browser.java","contains":"isWebBrowserOpenInApp(uri.toString()) || isInstantViewOpen()"}],"tests":["MergeRegressionCanaryTest"]}
 ```
 
 ## identity

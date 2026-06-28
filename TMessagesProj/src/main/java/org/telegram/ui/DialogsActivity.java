@@ -11325,6 +11325,18 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             }
 
             @Override
+            public boolean canSetTimer() {
+                if (selectedDialogs.isEmpty()) return false;
+                final MessagesController mc = getMessagesController();
+                for (long did : selectedDialogs) {
+                    if (!DialogObject.isUserDialog(did)) return false;
+                    final TLRPC.User u = mc.getUser(did);
+                    if (u == null || u.bot || UserObject.isUserSelf(u)) return false;
+                }
+                return true;
+            }
+
+            @Override
             public CharSequence getTitleFor(int index) {
                 if (sharedMediaEntries == null || sharedMediaEntries.isEmpty()) return null;
                 final int total = sharedMediaEntries.size();

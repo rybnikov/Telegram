@@ -1675,6 +1675,12 @@ public class DatabaseMigrationHelper {
             database.executeFast("PRAGMA user_version = 175").stepThis().dispose();
             version = 175;
         }
+        if (version == 175) {
+            database.executeFast("CREATE TABLE IF NOT EXISTS web_browser_settings(data BLOB)").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 176").stepThis().dispose();
+            version = 176;
+        }
+
         return version;
     }
 
