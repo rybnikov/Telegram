@@ -1610,7 +1610,7 @@ public class DatabaseMigrationHelper {
         }
 
         if (version == 168) {
-            database.executeFast("CREATE TABLE external_previews_v1(id INTEGER PRIMARY KEY, canonical_url TEXT NOT NULL UNIQUE, platform TEXT NOT NULL, webpage BLOB NOT NULL, preview_kind INTEGER NOT NULL, media_url TEXT, poster_url TEXT, width INTEGER, height INTEGER, title TEXT, description TEXT, updated_at INTEGER NOT NULL);").stepThis().dispose();
+            database.executeFast("CREATE TABLE IF NOT EXISTS external_previews_v1(id INTEGER PRIMARY KEY, canonical_url TEXT NOT NULL UNIQUE, platform TEXT NOT NULL, webpage BLOB NOT NULL, preview_kind INTEGER NOT NULL, media_url TEXT, poster_url TEXT, width INTEGER, height INTEGER, title TEXT, description TEXT, updated_at INTEGER NOT NULL);").stepThis().dispose();
             database.executeFast("CREATE INDEX IF NOT EXISTS external_previews_v1_updated_at_idx ON external_previews_v1(updated_at);").stepThis().dispose();
             database.executeFast("PRAGMA user_version = 169").stepThis().dispose();
             version = 169;
@@ -1671,7 +1671,7 @@ public class DatabaseMigrationHelper {
             version = 174;
         }
         if (version == 174) {
-            database.executeFast("ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT").stepThis().dispose();
+            executeNoException(database, "ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT");
             database.executeFast("PRAGMA user_version = 175").stepThis().dispose();
             version = 175;
         }

@@ -31,6 +31,7 @@ public final class MergeRegressionCanaryTest {
     private static final Pattern JSON_BLOCK_PATTERN = Pattern.compile("```json\\s*(.*?)\\s*```", Pattern.DOTALL);
     private static final Pattern FEATURE_HEADING_PATTERN = Pattern.compile("(?m)^##\\s+([A-Za-z0-9_-]+)\\s*$");
     private static final Pattern LAST_DB_VERSION_PATTERN = Pattern.compile("LAST_DB_VERSION\\s*=\\s*(\\d+)");
+    private static final int SHIPPED_DB_FLOOR = 175;
 
     @Test
     public void registryAnchorsAreStillPresent() throws Exception {
@@ -58,12 +59,14 @@ public final class MergeRegressionCanaryTest {
         String externalPreviewStorage = readRepoFile("TMessagesProj/src/main/java/org/telegram/messenger/browser/external/ExternalPreviewStorage.java");
         String previewRepository = readRepoFile("TMessagesProj/src/main/java/org/telegram/messenger/browser/external/PreviewRepository.java");
 
-        assertLastDbVersionAtLeast(messagesStorage, 175);
+        assertLastDbVersionAtLeast(messagesStorage, SHIPPED_DB_FLOOR);
 
-        assertContains(dbMessage("ExternalPreviewStorage create schema missing"), externalPreviewStorage, "CREATE TABLE external_previews_v1");
+        assertContains(dbMessage("ExternalPreviewStorage create schema missing"), externalPreviewStorage, "CREATE TABLE IF NOT EXISTS external_previews_v1");
         assertContains(dbMessage("ExternalPreviewStorage create schema missing extra column"), externalPreviewStorage, "extra TEXT");
-        assertContains(dbMessage("external_previews_v1 migration create missing"), migrationHelper, "CREATE TABLE external_previews_v1");
-        assertContains(dbMessage("external_previews_v1 migration extra-column upgrade missing"), migrationHelper, "ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT");
+        assertContains(dbMessage("external_previews_v1 migration create missing"), migrationHelper, "CREATE TABLE IF NOT EXISTS external_previews_v1");
+        assertContains(dbMessage("external_previews_v1 migration index create must be idempotent"), migrationHelper, "CREATE INDEX IF NOT EXISTS external_previews_v1_updated_at_idx");
+        assertContains(dbMessage("external_previews_v1 migration extra-column upgrade must be idempotent"), migrationHelper, "executeNoException(database, \"ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT\")");
+        assertFalse(dbMessage("external_previews_v1 extra-column upgrade must not use bare executeFast") + ": ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT", migrationHelper.contains("database.executeFast(\"ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT\""));
 
         assertContains(dbMessage("MessagesStorage createTables delegate missing"), messagesStorage, "ExternalPreviewStorage.createTables(database)");
         assertContains(dbMessage("MessagesStorage putExternalPreview delegate missing"), messagesStorage, "ExternalPreviewStorage.put(this, preview)");

@@ -173,17 +173,21 @@ delegated to `ExternalPreviewStorage` to keep upstream `MessagesStorage` merge
 conflicts smaller.
 
 Invariant: `external_previews_v1` schema, migrations, read/write delegates, and
-format-version purge remain intact. Fork database migrations must stay one step
-above the upstream version when conflicts occur.
+format-version purge remain intact. Released fork migration numbers are frozen:
+the shipped preview migration at user_version 174 -> 175 must not be renumbered.
+`LAST_DB_VERSION` may grow after upstream merges, but it must never fall below
+the shipped Foldogram DB floor. Fork DDL must be idempotent: `CREATE` statements
+use `IF NOT EXISTS`, and fork `ADD COLUMN` migrations use `executeNoException`.
 
 Conflict policy: On any database conflict, stop and inspect `LAST_DB_VERSION`,
 upstream migrations, and Foldogram preview migrations together. Never choose
-`ours` or `theirs` for migration blocks. If upstream increments the DB version,
-renumber Foldogram migration steps to upstream+1 and keep preview storage data
-compatible or intentionally purged.
+`ours` or `theirs` for migration blocks. Do not renumber shipped Foldogram
+migrations. If upstream increments the DB version, append upstream's new
+migration above the shipped fork floor and prove the upgrade path for users
+parked on every released `user_version`.
 
 ```json
-{"id":"db-preview","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java","contains":"public final static int LAST_DB_VERSION = 175"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/external/ExternalPreviewStorage.java","contains":"public static final String TABLE_NAME = \"external_previews_v1\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/external/ExternalPreviewStorage.java","contains":"CREATE TABLE external_previews_v1"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/DatabaseMigrationHelper.java","contains":"ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/external/PreviewRepository.java","contains":"EXTERNAL_PREVIEW_FORMAT_VERSION = 3"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java","contains":"public void putExternalPreview"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java","contains":"public void getExternalPreview"}],"tests":["MergeRegressionCanaryTest","PreviewMapperTest"]}
+{"id":"db-preview","criticality":"high","anchors":[{"path":"TMessagesProj/src/test/java/org/telegram/messenger/merge/MergeRegressionCanaryTest.java","contains":"SHIPPED_DB_FLOOR = 175"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/external/ExternalPreviewStorage.java","contains":"public static final String TABLE_NAME = \"external_previews_v1\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/external/ExternalPreviewStorage.java","contains":"CREATE TABLE IF NOT EXISTS external_previews_v1"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/DatabaseMigrationHelper.java","contains":"executeNoException(database, \"ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT\")"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/external/PreviewRepository.java","contains":"EXTERNAL_PREVIEW_FORMAT_VERSION = 3"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java","contains":"public void putExternalPreview"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java","contains":"public void getExternalPreview"}],"tests":["MergeRegressionCanaryTest","PreviewMapperTest"]}
 ```
 
 ## browser-iv

@@ -177,13 +177,30 @@ then, update the pinned count only in the same dedicated registry baseline commi
 
 ## Database Migration Rule
 
-Foldogram database migrations must remain above the upstream migration version
-that they extend.
+Released Foldogram database migration numbers are frozen. Once a build has
+shipped with a fork migration at a specific `user_version`, that migration must
+stay at that number forever. Existing users may already be parked at that
+version; renumbering it can either rerun a non-idempotent DDL statement or skip a
+new upstream migration.
 
-When upstream increments `MessagesStorage.LAST_DB_VERSION`:
+When upstream increments `MessagesStorage.LAST_DB_VERSION`, append the new
+upstream migration above the released Foldogram floor:
 
 ```text
-new Foldogram LAST_DB_VERSION = upstream LAST_DB_VERSION + 1
+current released Foldogram LAST_DB_VERSION = N
+new upstream migration = if (version == N) { ...; PRAGMA user_version = N + 1; }
+new Foldogram LAST_DB_VERSION = N + 1
+```
+
+If upstream has multiple new migrations, append them in order as `N + 1`,
+`N + 2`, and so on. Never insert a new migration at a `user_version` that
+released Foldogram users may already have passed.
+
+All Foldogram DDL must be idempotent:
+
+```text
+CREATE TABLE/INDEX -> CREATE ... IF NOT EXISTS
+ADD COLUMN          -> executeNoException(database, "ALTER TABLE ... ADD COLUMN ...")
 ```
 
 If upstream also changes migration blocks around `external_previews_v1`, stop and
@@ -197,8 +214,45 @@ ExternalPreviewStorage.purgeForFormatUpgrade
 PreviewRepository.EXTERNAL_PREVIEW_FORMAT_VERSION
 ```
 
-Never resolve database migration conflicts with `ours` or `theirs`. Renumber and
-adapt the Foldogram migration explicitly.
+Never resolve database migration conflicts with `ours` or `theirs`. Preserve
+released fork migration numbers, append new upstream migrations above them, and
+adapt the surrounding DDL explicitly.
+
+Every merge report must include a DB upgrade trace for each parked
+`user_version` that released users can have. For each parked version, list which
+migrations run, which ones are skipped, and why the upgrade is safe.
+
+Worked example, upstream 12.8.1 `web_browser_settings`:
+
+Correct:
+
+```text
+if (version == 174) {
+    executeNoException(database, "ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT");
+    PRAGMA user_version = 175;
+}
+if (version == 175) {
+    CREATE TABLE IF NOT EXISTS web_browser_settings (...);
+    PRAGMA user_version = 176;
+}
+LAST_DB_VERSION = 176
+```
+
+A user already on released Foldogram `user_version=175` receives only
+`web_browser_settings`. A fresh install or older upgrade still passes through
+the frozen Foldogram preview migration first, then the appended upstream
+migration.
+
+Incorrect:
+
+```text
+if (version == 174) { CREATE TABLE web_browser_settings (...); -> 175 }
+if (version == 175) { ALTER TABLE external_previews_v1 ADD COLUMN extra TEXT; -> 176 }
+```
+
+That renumbers the shipped fork migration. A released user parked on 175 may
+rerun the preview `ADD COLUMN` and crash on a duplicate column, or may miss the
+new upstream table depending on the exact conflict resolution.
 
 ## Secrets Policy During Merge
 
