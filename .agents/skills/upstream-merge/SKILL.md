@@ -21,6 +21,11 @@ Use this skill only for upstream DrKLO/Telegram sync work.
    if upstream rewrote the surrounding code, adapt the hook;
    otherwise preserve the fork behavior.
 6. Never resolve conflicts with blind `ours` or `theirs`.
+7. For `LaunchActivity.onConfigurationChanged`, do not reintroduce upstream's
+   immediate `AndroidUtilities.resetTabletFlag()`, `invalidateTabletMode()`, or
+   `checkLayout()` calls. Foldogram tablet/layout transitions must stay
+   measure-driven through `updateDisplaySizeFromRootMeasure`,
+   `scheduleWindowWidthChanged`, and `onWindowWidthChanged`.
 
 ## Database Migration Rule
 

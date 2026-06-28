@@ -112,6 +112,13 @@ delete a hook because the compiler passes
 lower an anchor threshold to make CI green
 ```
 
+LaunchActivity tablet/layout transitions are merge-sensitive. Do not reintroduce
+upstream's immediate `AndroidUtilities.resetTabletFlag()`, `invalidateTabletMode()`,
+or `checkLayout()` calls inside `LaunchActivity.onConfigurationChanged`; Foldogram
+must keep configuration changes measure-driven through
+`updateDisplaySizeFromRootMeasure -> scheduleWindowWidthChanged ->
+onWindowWidthChanged` so `shouldFreezeTabletModeChange` is not bypassed.
+
 Feature-id comes from one of:
 
 ```text

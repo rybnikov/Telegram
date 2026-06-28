@@ -81,6 +81,16 @@ public final class MergeRegressionCanaryTest {
     }
 
     @Test
+    public void launchActivityConfigurationChangesStayMeasureDriven() throws Exception {
+        String launchActivity = readRepoFile("TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java");
+        String body = methodBody(launchActivity, "public void onConfigurationChanged(Configuration newConfig)");
+
+        assertFalse("fold-tablet onConfigurationChanged must not reset tablet state directly", body.contains("AndroidUtilities.resetTabletFlag()"));
+        assertFalse("fold-tablet onConfigurationChanged must not invalidate tablet layout directly", body.contains("invalidateTabletMode()"));
+        assertFalse("fold-tablet onConfigurationChanged must not run checkLayout directly", body.contains("checkLayout()"));
+    }
+
+    @Test
     public void registryJsonBlocksHaveMatchingProseSections() throws Exception {
         String registry = readRepoFile(REGISTRY_PATH);
         LinkedHashSet<String> headingIds = parseFeatureHeadings(registry);
@@ -161,6 +171,72 @@ public final class MergeRegressionCanaryTest {
 
     private static String readFile(Path path) throws IOException {
         return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+    }
+
+    private static String methodBody(String source, String signature) {
+        int signatureIndex = source.indexOf(signature);
+        assertTrue("Method signature missing: " + signature, signatureIndex >= 0);
+        int openBrace = source.indexOf('{', signatureIndex + signature.length());
+        assertTrue("Method body missing: " + signature, openBrace >= 0);
+        int closeBrace = findMatchingBrace(source, openBrace);
+        return source.substring(openBrace + 1, closeBrace);
+    }
+
+    private static int findMatchingBrace(String source, int openBrace) {
+        int depth = 0;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        boolean inString = false;
+        boolean inChar = false;
+        boolean escaped = false;
+        for (int i = openBrace; i < source.length(); i++) {
+            char c = source.charAt(i);
+            char next = i + 1 < source.length() ? source.charAt(i + 1) : '\0';
+            if (inLineComment) {
+                if (c == '\n' || c == '\r') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+            if (inBlockComment) {
+                if (c == '*' && next == '/') {
+                    inBlockComment = false;
+                    i++;
+                }
+                continue;
+            }
+            if (inString || inChar) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (inString && c == '"') {
+                    inString = false;
+                } else if (inChar && c == '\'') {
+                    inChar = false;
+                }
+                continue;
+            }
+            if (c == '/' && next == '/') {
+                inLineComment = true;
+                i++;
+            } else if (c == '/' && next == '*') {
+                inBlockComment = true;
+                i++;
+            } else if (c == '"') {
+                inString = true;
+            } else if (c == '\'') {
+                inChar = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        throw new AssertionError("Method body closing brace missing");
     }
 
     private static Path repoRoot() {

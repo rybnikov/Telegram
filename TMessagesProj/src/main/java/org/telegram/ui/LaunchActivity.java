@@ -7544,9 +7544,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         measuredWindowWidth = 0;
         super.onConfigurationChanged(newConfig);
         pipActivityHandler.onConfigurationChanged(newConfig);
-        AndroidUtilities.resetTabletFlag();
-        invalidateTabletMode();
-        checkLayout();
         if (frameLayout != null) {
             frameLayout.requestLayout();
         }

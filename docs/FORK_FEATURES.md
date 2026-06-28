@@ -49,13 +49,19 @@ Invariant: Back navigation and fragment stack migration must not leave stuck
 animations, stale predictive-back state, zombie fragments, destroyed global UI
 from another LaunchActivity task, or a broken split layout after lifecycle
 changes, external activity returns, multi-window transitions, or tablet/split
-reflows.
+reflows. `LaunchActivity.onConfigurationChanged` must not run immediate tablet
+state resets or layout checks; tablet/layout transitions stay measure-driven
+through `updateDisplaySizeFromRootMeasure`, `scheduleWindowWidthChanged`, and
+`onWindowWidthChanged` so anti-flap freeze logic can run.
 
 Conflict policy: If upstream rewrites `ActionBarLayout` or `LaunchActivity`,
 verify whether the new implementation already clears stale animation and resets
 finished fragments during migration. If yes, remove the duplicate Foldogram
 hook. If not, port the invariant to the new code path and keep the canary green.
 Do not preserve old code mechanically if upstream changed the fragment model.
+If upstream adds `resetTabletFlag`, `invalidateTabletMode`, or `checkLayout` to
+`LaunchActivity.onConfigurationChanged`, remove those immediate calls and keep
+the measured-width path as the sole tablet transition trigger.
 
 ```json
 {"id":"nav-recovery","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"private void forceResetAnimationState()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"forceResetAnimationState();","min_count":5},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"resetNavigationStateIfNeeded"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"animationInProgressStartTime"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"fragment.resetFragment();"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"chatFragment.resetFragment();"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private void cancelStalePredictiveBack(String reason)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"cancelStalePredictiveBack(\"multiwindow\")"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"public void onMultiWindowModeChanged(boolean isInMultiWindowMode)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private boolean hasOtherLaunchActivityInstanceInAppTasks()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"allowGlobalUiTeardown"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"fragmentOwnerTaskIds"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"destroyOwnedFragments"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"private final int instanceId = System.identityHashCode(this)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java","contains":"onTopResumedActivityChanged"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java","contains":"public static boolean isUiCompletelyPaused()"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java","contains":"return mainInterfacePaused && externalInterfacePaused;"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java","contains":"if (chatsDict == null && ApplicationLoader.isUiCompletelyPaused())"}],"tests":["MergeRegressionCanaryTest"]}
