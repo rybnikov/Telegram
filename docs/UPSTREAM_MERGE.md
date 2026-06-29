@@ -68,10 +68,14 @@ Run both checks after conflict resolution and before accepting the merge.
 scripts/merge-delta-audit.sh "$OLD_BASE" "$NEW_BASE" "$FORK_TIP"
 ```
 
-`merge-delta-audit.sh` is a diagnostic radar. It shows fork-added source lines
-that may have disappeared relative to a new upstream base. It is intentionally
-noisy and advisory. Use it to decide what to inspect; do not treat a clean or
-noisy result as final proof.
+The third argument is the pre-merge `foldogram` tip, not the merge `HEAD`.
+Passing merge `HEAD` includes the whole new upstream delta and produces thousands
+of noisy rows that are not useful for review.
+
+`merge-delta-audit.sh` is an advisory pre-merge collision-lister: it shows the
+small set of fork-added source lines that the new upstream base touches and that
+therefore need review. It is not a post-merge loss detector. Canary coverage and
+manual conflict review prove whether protected hooks survived.
 
 ```bash
 scripts/check-fork-anchors.sh docs/FORK_FEATURES.md
@@ -143,6 +147,24 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_pri
 
 If a required script is missing or not executable, the gate failed. Restore the
 script from this runbook/registry work before accepting the merge.
+
+## Required Device Test
+
+A device test is mandatory after every upstream merge and before merging the
+merge branch back into `foldogram`.
+
+The key scenario is the existing-user database upgrade path:
+
+1. Install the current released Foldogram build.
+2. Launch it once so the released database schema is initialized.
+3. Install the merged build over the same package, with the same signing key.
+4. Launch it and verify there is no startup crash, the database migration ran,
+   and new upstream runtime features work.
+
+Also verify a fresh install of the merged build.
+
+Static gates and the merge canary do not execute native SQLite upgrade paths or
+full application runtime startup. Device testing covers that gap.
 
 ## Stop Rules
 

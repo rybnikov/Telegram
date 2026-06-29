@@ -18,9 +18,11 @@ skill instead.
 5. Use `TMessagesProj_App` and `bundleAfatRelease` for store artifacts.
 6. Run the merge canary before merging merge-sensitive changes.
 7. Run the four CI gates before merging into `foldogram` or preparing a release.
-8. Keep commit messages free of AI traces such as `Claude`, `AI`,
+8. After every upstream merge, run the required device test from
+   `docs/UPSTREAM_MERGE.md` before merging back to `foldogram`.
+9. Keep commit messages free of AI traces such as `Claude`, `AI`,
    `Co-Authored`, or `Generated`.
-9. Never commit generated Google services files, signing keys,
+10. Never commit generated Google services files, signing keys,
    `local.properties`, credentials, or local notes.
 
 Full reference: `docs/DEVELOPMENT.md`.

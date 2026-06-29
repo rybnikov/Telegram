@@ -85,6 +85,8 @@ public final class MergeRegressionCanaryTest {
         String launchActivity = readRepoFile("TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java");
         String body = methodBody(launchActivity, "public void onConfigurationChanged(Configuration newConfig)");
 
+        assertContains("fold-tablet onConfigurationChanged sentinel missing", body, "measuredWindowWidth = 0");
+        assertContains("fold-tablet onConfigurationChanged sentinel missing", body, "super.onConfigurationChanged(newConfig)");
         assertFalse("fold-tablet onConfigurationChanged must not reset tablet state directly", body.contains("AndroidUtilities.resetTabletFlag()"));
         assertFalse("fold-tablet onConfigurationChanged must not invalidate tablet layout directly", body.contains("invalidateTabletMode()"));
         assertFalse("fold-tablet onConfigurationChanged must not run checkLayout directly", body.contains("checkLayout()"));
@@ -179,7 +181,9 @@ public final class MergeRegressionCanaryTest {
         int openBrace = source.indexOf('{', signatureIndex + signature.length());
         assertTrue("Method body missing: " + signature, openBrace >= 0);
         int closeBrace = findMatchingBrace(source, openBrace);
-        return source.substring(openBrace + 1, closeBrace);
+        String body = source.substring(openBrace + 1, closeBrace);
+        assertFalse("Method body unexpectedly empty: " + signature, body.trim().isEmpty());
+        return body;
     }
 
     private static int findMatchingBrace(String source, int openBrace) {

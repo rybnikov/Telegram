@@ -26,6 +26,9 @@ Use this skill only for upstream DrKLO/Telegram sync work.
    `checkLayout()` calls. Foldogram tablet/layout transitions must stay
    measure-driven through `updateDisplaySizeFromRootMeasure`,
    `scheduleWindowWidthChanged`, and `onWindowWidthChanged`.
+8. Before merging back to `foldogram`, perform the required device test from
+   `docs/UPSTREAM_MERGE.md`, including the existing-user DB upgrade path and a
+   fresh install.
 
 ## Database Migration Rule
 
@@ -52,8 +55,12 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privat
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
 JAVA_HOME=$(/usr/libexec/java_home -v 17) sh scripts/check-fork-anchors.sh
 sh scripts/check-secrets-policy.sh
-scripts/merge-delta-audit.sh <old-upstream-base> <new-upstream-base> <fork-tip>
+scripts/merge-delta-audit.sh <old-upstream-base> <new-upstream-base> <pre-merge-foldogram-tip>
 ```
+
+The delta-audit third argument is the pre-merge `foldogram` tip, not merge
+`HEAD`. The script is an advisory pre-merge collision-lister, not a post-merge
+loss detector; canary coverage and manual review verify hook survival.
 
 Full reference: `docs/UPSTREAM_MERGE.md`.
 Registry: `docs/FORK_FEATURES.md`.
