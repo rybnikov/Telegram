@@ -5,8 +5,9 @@ Detailed procedures live in tracked docs; this file only routes.
 
 ## Routes
 
-- Development, builds, installs, tests, releases, and normal code changes:
+- Development, builds, installs, tests, and normal code changes:
   `docs/DEVELOPMENT.md`.
+- Internal Google Play release: `docs/RELEASE.md`.
 - Upstream DrKLO/Telegram merges: `docs/UPSTREAM_MERGE.md`.
 - Fork feature invariants and merge anchors: `docs/FORK_FEATURES.md`.
 - Merge reporting: `docs/MERGE_REPORT_TEMPLATE.md`.
