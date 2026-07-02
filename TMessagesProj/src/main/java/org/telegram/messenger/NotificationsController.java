@@ -67,6 +67,7 @@ import androidx.core.graphics.drawable.IconCompat;
 import com.google.common.collect.Lists;
 
 import org.telegram.messenger.support.LongSparseIntArray;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.utils.tlutils.TlUtils;
 import org.telegram.messenger.voip.VoIPGroupNotification;
 import org.telegram.tgnet.ConnectionsManager;
@@ -1074,6 +1075,8 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                     continue;
                 }
+                // FOLDOGRAM-DURESS: Keep hidden-chat messages stored but out of notification state.
+                if (EmergencyPasscode.isHidden(currentAccount, messageObject.getDialogId())) { continue; }
                 if (messageObject.isStoryPush) {
                     long date = messageObject.messageOwner == null ? System.currentTimeMillis() : messageObject.messageOwner.date * 1000L;
                     long dialogId = messageObject.getDialogId();
@@ -1727,6 +1730,8 @@ public class NotificationsController extends BaseController implements Notificat
                                         continue;
                                     }
                                 }
+                                // FOLDOGRAM-DURESS: Exclude hidden chats from the app-icon badge.
+                                if (dialog != null && EmergencyPasscode.isHidden(a, dialog.id)) { continue; }
                                 if (dialog != null) {
                                     count += MessagesController.getInstance(a).getDialogUnreadCount(dialog);
                                 }
@@ -1735,7 +1740,9 @@ public class NotificationsController extends BaseController implements Notificat
                             FileLog.e(e);
                         }
                     } else {
-                        count += controller.total_unread_count;
+                        // FOLDOGRAM-DURESS: Default badge counters are derived from pushDialogs,
+                        // so hidden chats remain excluded even if upstream changes update paths.
+                        count += getVisiblePushDialogsCount(controller, a, true);
                     }
                 } else {
                     if (controller.showBadgeMuted) {
@@ -1748,6 +1755,8 @@ public class NotificationsController extends BaseController implements Notificat
                                         continue;
                                     }
                                 }
+                                // FOLDOGRAM-DURESS: Exclude hidden chats from the app-icon badge.
+                                if (EmergencyPasscode.isHidden(a, dialog.id)) { continue; }
                                 if (MessagesController.getInstance(a).getDialogUnreadCount(dialog) != 0) {
                                     count++;
                                 }
@@ -1757,9 +1766,29 @@ public class NotificationsController extends BaseController implements Notificat
                             FileLog.e(e, false);
                         }
                     } else {
-                        count += controller.pushDialogs.size();
+                        // FOLDOGRAM-DURESS: Count only visible chats in the app-icon badge.
+                        count += getVisiblePushDialogsCount(controller, a, false);
                     }
                 }
+            }
+        }
+        return count;
+    }
+
+    private static int getVisiblePushDialogsCount(NotificationsController controller, int account, boolean countMessages) {
+        int count = 0;
+        for (int i = 0, size = controller.pushDialogs.size(); i < size; i++) {
+            long dialogId = controller.pushDialogs.keyAt(i);
+            if (EmergencyPasscode.isHidden(account, dialogId)) {
+                continue;
+            }
+            if (countMessages) {
+                Integer unreadCount = controller.pushDialogs.valueAt(i);
+                if (unreadCount != null) {
+                    count += unreadCount;
+                }
+            } else {
+                count++;
             }
         }
         return count;

@@ -56,6 +56,7 @@ import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.ringtone.RingtoneDataStore;
 import org.telegram.messenger.ringtone.RingtoneUploader;
 import org.telegram.tgnet.ConnectionsManager;
@@ -5015,6 +5016,10 @@ public class MediaDataController extends BaseController {
         return getShareHints(limit, new ArrayList<>(hints));
     }
 
+    public ArrayList<TLRPC.TL_topPeer> getVisibleHints() {
+        return filterHiddenTopPeers(hints, getUserConfig().getClientUserId());
+    }
+
     private ArrayList<TLRPC.TL_topPeer> getShareHints(int limit, ArrayList<TLRPC.TL_topPeer> remoteHints) {
         ArrayList<TLRPC.TL_topPeer> result = new ArrayList<>();
         if (limit <= 0) {
@@ -5023,6 +5028,8 @@ public class MediaDataController extends BaseController {
         ArrayList<ShareTargetRanker.RankedDialog> rankedDialogs = shareTargetRanker.getTopDialogs(Math.max(limit * 3, limit), remoteHints);
         for (int i = 0; i < rankedDialogs.size() && result.size() < limit; i++) {
             ShareTargetRanker.RankedDialog rankedDialog = rankedDialogs.get(i);
+            // FOLDOGRAM-DURESS: Hidden chats never become ranked share targets.
+            if (EmergencyPasscode.isHidden(currentAccount, rankedDialog.dialogId)) { continue; }
             if (!isShareableShortcutDialog(rankedDialog.dialogId)) {
                 continue;
             }
@@ -5033,6 +5040,29 @@ public class MediaDataController extends BaseController {
             TLRPC.TL_topPeer topPeer = new TLRPC.TL_topPeer();
             topPeer.peer = peer;
             topPeer.rating = rankedDialog.score;
+            result.add(topPeer);
+        }
+        return result;
+    }
+
+    private ArrayList<TLRPC.TL_topPeer> filterHiddenTopPeers(ArrayList<TLRPC.TL_topPeer> peers, long selfUserId) {
+        ArrayList<TLRPC.TL_topPeer> result = new ArrayList<>();
+        if (peers == null) {
+            return result;
+        }
+        for (int i = 0; i < peers.size(); i++) {
+            TLRPC.TL_topPeer topPeer = peers.get(i);
+            if (topPeer == null || topPeer.peer == null) {
+                continue;
+            }
+            long dialogId = DialogObject.getPeerDialogId(topPeer.peer);
+            if (dialogId == selfUserId) {
+                continue;
+            }
+            // FOLDOGRAM-DURESS: Hidden chats never appear in top-peer search hints.
+            if (EmergencyPasscode.isHidden(currentAccount, dialogId)) {
+                continue;
+            }
             result.add(topPeer);
         }
         return result;
@@ -5073,6 +5103,8 @@ public class MediaDataController extends BaseController {
                     hintsFinal.addAll(getShareHints(maxShortcuts - 2, hintsCopy));
                     if (hintsFinal.isEmpty()) {
                         for (int a = 0; a < hintsCopy.size(); a++) {
+                            // FOLDOGRAM-DURESS: Hidden chats never become direct-share shortcuts.
+                            if (EmergencyPasscode.isHidden(currentAccount, MessageObject.getPeerId(hintsCopy.get(a).peer))) { continue; }
                             hintsFinal.add(hintsCopy.get(a));
                             if (hintsFinal.size() == maxShortcuts - 2) {
                                 break;
@@ -5409,6 +5441,8 @@ public class MediaDataController extends BaseController {
                         if (did == selfUserId) {
                             continue;
                         }
+                        // FOLDOGRAM-DURESS: Hidden chats are omitted from loaded share hints.
+                        if (EmergencyPasscode.isHidden(currentAccount, did)) { continue; }
                         int type = cursor.intValue(1);
                         TLRPC.TL_topPeer peer = new TLRPC.TL_topPeer();
                         peer.rating = cursor.doubleValue(2);
@@ -5494,15 +5528,7 @@ public class MediaDataController extends BaseController {
                             guestBots = category.peers;
                             getUserConfig().botGuestRatingLoadTime = time;
                         } else {
-                            hints = category.peers;
-                            long selfUserId = getUserConfig().getClientUserId();
-                            for (int b = 0; b < hints.size(); b++) {
-                                TLRPC.TL_topPeer topPeer = hints.get(b);
-                                if (topPeer.peer.user_id == selfUserId) {
-                                    hints.remove(b);
-                                    break;
-                                }
-                            }
+                            hints = filterHiddenTopPeers(category.peers, getUserConfig().getClientUserId());
                             getUserConfig().ratingLoadTime = (int) (System.currentTimeMillis() / 1000);
                         }
                     }
@@ -5533,8 +5559,12 @@ public class MediaDataController extends BaseController {
                                 }
                                 for (int b = 0; b < category.peers.size(); b++) {
                                     TLRPC.TL_topPeer peer = category.peers.get(b);
+                                    long did = MessageObject.getPeerId(peer.peer);
+                                    if (type == 0 && did == getUserConfig().getClientUserId()) {
+                                        continue;
+                                    }
                                     state.requery();
-                                    state.bindLong(1, MessageObject.getPeerId(peer.peer));
+                                    state.bindLong(1, did);
                                     state.bindInteger(2, type);
                                     state.bindDouble(3, peer.rating);
                                     state.bindInteger(4, 0);

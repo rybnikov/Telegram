@@ -131,6 +131,7 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
 import org.telegram.messenger.utils.SearchTextWatcher;
 import org.telegram.tgnet.ConnectionsManager;
@@ -3604,13 +3605,17 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         return 0;
                     }
                     if (tabId == filterTabsView.getDefaultTabId()) {
-                        return getMessagesStorage().getMainUnreadCount();
+                        // FOLDOGRAM-DURESS: Subtract currently hidden dialogs from the visible default tab counter.
+                        // Storage count and dialog snapshot can disagree briefly; avoid mutating upstream unread state here.
+                        return EmergencyPasscode.adjustTabCounter(currentAccount, getMessagesController().getDialogs(0), getMessagesStorage().getMainUnreadCount());
                     }
                     ArrayList<MessagesController.DialogFilter> dialogFilters = getMessagesController().getDialogFilters();
                     if (tabId < 0 || tabId >= dialogFilters.size()) {
                         return 0;
                     }
-                    return getMessagesController().getDialogFilters().get(tabId).unreadCount;
+                    MessagesController.DialogFilter filter = getMessagesController().getDialogFilters().get(tabId);
+                    // FOLDOGRAM-DURESS: Subtract currently hidden dialogs from the visible filter tab counter.
+                    return EmergencyPasscode.adjustTabCounter(currentAccount, filter.dialogs, filter.unreadCount);
                 }
 
                 @Override
@@ -7918,6 +7923,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
 
         if (dialogId == 0) {
+            return;
+        }
+        // FOLDOGRAM-DURESS: Search/list clicks must not open emergency-hidden chats.
+        if (EmergencyPasscode.isHidden(currentAccount, dialogId)) {
             return;
         }
 
@@ -12932,6 +12941,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
             @Override
             public void didPressedOnSubDialog(long did) {
+                // FOLDOGRAM-DURESS: Sub-dialog search clicks must not open emergency-hidden chats.
+                if (EmergencyPasscode.isHidden(currentAccount, did)) {
+                    return;
+                }
                 if (onlySelect) {
                     if (!validateSlowModeDialog(did)) {
                         return;
@@ -13045,6 +13058,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         searchViewPager.channelsSearchListView.setOnItemClickListener((view, position, x, y) -> {
             Object obj = searchViewPager.channelsSearchAdapter.getObject(position);
             if (obj instanceof TLRPC.Chat) {
+                // FOLDOGRAM-DURESS: Channel search clicks must not open emergency-hidden chats.
+                if (EmergencyPasscode.isHidden(currentAccount, -((TLRPC.Chat) obj).id)) { return; }
                 Bundle args = new Bundle();
                 args.putLong("chat_id", ((TLRPC.Chat) obj).id);
                 ChatActivity chatActivity = new ChatActivity(args);
@@ -13052,6 +13067,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 presentFragment(chatActivity);
             } else if (obj instanceof MessageObject) {
                 MessageObject msg = (MessageObject) obj;
+                // FOLDOGRAM-DURESS: Channel message search clicks must not open emergency-hidden chats.
+                if (EmergencyPasscode.isHidden(currentAccount, msg.getDialogId())) { return; }
                 Bundle args = new Bundle();
                 if (msg.getDialogId() >= 0) {
                     args.putLong("user_id", msg.getDialogId());
@@ -13066,9 +13083,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         searchViewPager.botsSearchListView.setOnItemClickListener((view, position, x, y) -> {
             Object obj = searchViewPager.botsSearchAdapter.getObject(position);
             if (obj instanceof TLRPC.User) {
+                // FOLDOGRAM-DURESS: Bot/user search clicks must not open emergency-hidden chats.
+                if (EmergencyPasscode.isHidden(currentAccount, ((TLRPC.User) obj).id)) { return; }
                 presentFragment(ProfileActivity.of(((TLRPC.User) obj).id));
             } else if (obj instanceof MessageObject) {
                 MessageObject msg = (MessageObject) obj;
+                // FOLDOGRAM-DURESS: Bot message search clicks must not open emergency-hidden chats.
+                if (EmergencyPasscode.isHidden(currentAccount, msg.getDialogId())) { return; }
                 Bundle args = new Bundle();
                 if (msg.getDialogId() >= 0) {
                     args.putLong("user_id", msg.getDialogId());
@@ -13084,6 +13105,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             UItem item = searchViewPager.hashtagSearchAdapter.getItem(position);
             if (item.object instanceof MessageObject) {
                 MessageObject msg = (MessageObject) item.object;
+                // FOLDOGRAM-DURESS: Hashtag message search clicks must not open emergency-hidden chats.
+                if (EmergencyPasscode.isHidden(currentAccount, msg.getDialogId())) { return; }
                 Bundle args = new Bundle();
                 if (msg.getDialogId() >= 0) {
                     args.putLong("user_id", msg.getDialogId());
@@ -13123,6 +13146,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (item instanceof TLRPC.TL_sponsoredPeer) {
                 final TLRPC.TL_sponsoredPeer peer = (TLRPC.TL_sponsoredPeer) item;
                 final long did = DialogObject.getPeerDialogId(peer.peer);
+                // FOLDOGRAM-DURESS: Sponsored search clicks must not open emergency-hidden chats.
+                if (EmergencyPasscode.isHidden(currentAccount, did)) { return; }
                 presentFragment(ChatActivity.of(did));
                 searchViewPager.dialogsSearchAdapter.clickedSponsoredPeer(peer);
                 return;

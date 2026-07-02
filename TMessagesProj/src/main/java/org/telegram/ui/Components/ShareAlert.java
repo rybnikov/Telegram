@@ -88,6 +88,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLObject;
@@ -2929,8 +2930,11 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
             }
             if (!MessagesController.getInstance(currentAccount).dialogsForward.isEmpty()) {
                 TLRPC.Dialog dialog = MessagesController.getInstance(currentAccount).dialogsForward.get(0);
-                dialogs.add(dialog);
-                dialogsMap.put(dialog.id, dialog);
+                // FOLDOGRAM-DURESS: Do not insert hidden chats into the share sheet forward slot.
+                if (!EmergencyPasscode.isHidden(currentAccount, dialog.id)) {
+                    dialogs.add(dialog);
+                    dialogsMap.put(dialog.id, dialog);
+                }
             }
             ArrayList<TLRPC.Dialog> archivedDialogs = new ArrayList<>();
             ArrayList<TLRPC.Dialog> allDialogs = MessagesController.getInstance(currentAccount).getAllDialogs();
@@ -2939,6 +2943,8 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                 if (!(dialog instanceof TLRPC.TL_dialog)) {
                     continue;
                 }
+                // FOLDOGRAM-DURESS: Do not list hidden chats in the share sheet.
+                if (EmergencyPasscode.isHidden(currentAccount, dialog.id)) { continue; }
                 if (dialog.id == selfUserId) {
                     continue;
                 }

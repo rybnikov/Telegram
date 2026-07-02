@@ -31,6 +31,7 @@ import org.json.JSONObject;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.SwipeGestureSettingsView;
@@ -467,6 +468,8 @@ public class SharedConfig {
                 editor.putString("storageCacheDir", !TextUtils.isEmpty(storageCacheDir) ? storageCacheDir : "");
                 editor.putBoolean("proxyRotationEnabled", proxyRotationEnabled);
                 editor.putInt("proxyRotationTimeout", proxyRotationTimeout);
+                // FOLDOGRAM-DURESS: Persist fork-owned emergency passcode state.
+                EmergencyPasscode.save(editor);
 
                 if (pendingAppUpdate != null) {
                     try {
@@ -516,6 +519,8 @@ public class SharedConfig {
             SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("userconfing", Context.MODE_PRIVATE);
             saveIncomingPhotos = preferences.getBoolean("saveIncomingPhotos", false);
             passcodeHash = preferences.getString("passcodeHash1", "");
+            // FOLDOGRAM-DURESS: Load fork-owned emergency passcode state.
+            EmergencyPasscode.load(preferences);
             appLocked = preferences.getBoolean("appLocked", false);
             passcodeType = preferences.getInt("passcodeType", 0);
             passcodeRetryInMs = preferences.getLong("passcodeRetryInMs", 0);
@@ -892,6 +897,8 @@ public class SharedConfig {
         dayNightThemeSwitchHintCount = 3;
         stealthModeSendMessageConfirm = 2;
         dayNightWallpaperSwitchHint = 0;
+        // FOLDOGRAM-DURESS: Clear fork-owned emergency passcode state.
+        EmergencyPasscode.clear();
         saveConfig();
     }
 

@@ -84,6 +84,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.utils.DrawableUtils;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
@@ -1056,7 +1057,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             TLRPC.Dialog dialog = dialogs.get(a);
             TLRPC.User currentUser = null;
             TLRPC.Chat currentChat = null;
-            if (messagesController.isHiddenByUndo(dialog.id)) {
+            // FOLDOGRAM-DURESS: Hide emergency-selected chats from the archive preview.
+            if (messagesController.isHiddenByUndo(dialog.id) || EmergencyPasscode.isHidden(currentAccount, dialog.id)) {
                 continue;
             }
             if (DialogObject.isEncryptedDialog(dialog.id)) {

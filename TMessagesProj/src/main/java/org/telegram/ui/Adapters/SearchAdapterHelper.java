@@ -23,6 +23,7 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.RequestDelegate;
 import org.telegram.tgnet.TLObject;
@@ -226,12 +227,16 @@ public class SearchAdapterHelper {
                                         if (!allowChats || canAddGroupsOnly && !ChatObject.canAddBotsToChat(chat) || !allowGlobalResults && ChatObject.isNotInChat(chat) || !filter(chat)) {
                                             continue;
                                         }
+                                        // FOLDOGRAM-DURESS: Drop hidden chats from global/server search results.
+                                        if (EmergencyPasscode.isHidden(currentAccount, -chat.id)) { continue; }
                                         globalSearch.add(chat);
                                         globalSearchMap.put(-chat.id, chat);
                                     } else if (user != null) {
                                         if (canAddGroupsOnly || !allowBots && user.bot || !allowSelf && user.self || !allowGlobalResults && b == 1 && !user.contact || !filter(user)) {
                                             continue;
                                         }
+                                        // FOLDOGRAM-DURESS: Drop hidden chats from global/server search results.
+                                        if (EmergencyPasscode.isHidden(currentAccount, user.id)) { continue; }
                                         globalSearch.add(user);
                                         globalSearchMap.put(user.id, user);
                                     }
@@ -253,12 +258,16 @@ public class SearchAdapterHelper {
                                         if (!allowChats || canAddGroupsOnly && !ChatObject.canAddBotsToChat(chat) || -chat.id == exceptDialogId || !filter(chat)) {
                                             continue;
                                         }
+                                        // FOLDOGRAM-DURESS: Drop hidden chats from local server search results.
+                                        if (EmergencyPasscode.isHidden(currentAccount, -chat.id)) { continue; }
                                         localServerSearch.add(chat);
                                         globalSearchMap.put(-chat.id, chat);
                                     } else if (user != null) {
                                         if (canAddGroupsOnly || !allowBots && user.bot || !allowSelf && user.self || user.id == exceptDialogId || !filter(user)) {
                                             continue;
                                         }
+                                        // FOLDOGRAM-DURESS: Drop hidden chats from local server search results.
+                                        if (EmergencyPasscode.isHidden(currentAccount, user.id)) { continue; }
                                         localServerSearch.add(user);
                                         globalSearchMap.put(user.id, user);
                                     }

@@ -3130,6 +3130,11 @@
     <string name="DisablePasscode">Turn Passcode Off</string>
     <string name="DisablePasscodeConfirmMessage">Are you sure you want to turn off passcode?</string>
     <string name="DisablePasscodeTurnOff">Turn Off</string>
+    <string name="EmergencyPasscode">Emergency passcode</string>
+    <string name="EmergencyPasscodeInfo">Use a second passcode to unlock the app while hiding selected chats, notifications, search results, and counters. Enter your original passcode to return to normal mode.</string>
+    <string name="EmergencyChooseChats">Chats to hide</string>
+    <string name="EmergencyMustDiffer">Emergency passcode must be different from your passcode</string>
+    <string name="EmergencyDisableConfirm">Turn off the emergency passcode?</string>
     <string name="EnterNewPasscode">Enter your new passcode</string>
     <string name="EnterYourTelegramPasscode">Enter your Telegram passcode</string>
     <string name="AutoLock">Auto-lock</string>

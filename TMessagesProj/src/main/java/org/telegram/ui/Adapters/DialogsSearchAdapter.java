@@ -46,6 +46,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -219,6 +220,7 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
         private boolean forceDarkTheme;
         private boolean showPremiumBlock;
         private Theme.ResourcesProvider resourcesProvider;
+        private ArrayList<TLRPC.TL_topPeer> visibleHints = new ArrayList<>();
 
         public CategoryAdapterRecycler(Context context, int account, boolean drawChecked, boolean showPremiumBlock, Theme.ResourcesProvider resourcesProvider) {
             this.drawChecked = drawChecked;
@@ -226,10 +228,16 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
             currentAccount = account;
             this.showPremiumBlock = showPremiumBlock;
             this.resourcesProvider = resourcesProvider;
+            refreshHints();
         }
 
         public void setIndex(int value) {
+            refreshHints();
             notifyDataSetChanged();
+        }
+
+        private void refreshHints() {
+            visibleHints = MediaDataController.getInstance(currentAccount).getVisibleHints();
         }
 
         @Override
@@ -251,7 +259,12 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             HintDialogCell cell = (HintDialogCell) holder.itemView;
 
-            TLRPC.TL_topPeer peer = MediaDataController.getInstance(currentAccount).hints.get(position);
+            if (position < 0 || position >= visibleHints.size()) {
+                cell.setTag(0L);
+                cell.setDialog(0, true, "");
+                return;
+            }
+            TLRPC.TL_topPeer peer = visibleHints.get(position);
             TLRPC.Dialog dialog = new TLRPC.TL_dialog();
             TLRPC.Chat chat = null;
             TLRPC.User user = null;
@@ -278,7 +291,7 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
 
         @Override
         public int getItemCount() {
-            return MediaDataController.getInstance(currentAccount).hints.size();
+            return visibleHints.size();
         }
     }
 
@@ -466,6 +479,8 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
                         for (int a = 0; a < res.messages.size(); a++) {
                             TLRPC.Message message = res.messages.get(a);
                             long did = MessageObject.getDialogId(message);
+                            // FOLDOGRAM-DURESS: Drop hidden chats from forum message search results.
+                            if (EmergencyPasscode.isHidden(currentAccount, did)) { continue; }
                             int maxId = MessagesController.getInstance(currentAccount).deletedHistory.get(did);
                             if (maxId != 0 && message.id <= maxId) {
                                 continue;
@@ -629,6 +644,8 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
                                 continue;
                             }
                             MessageObject msg = messageObjects.get(a);
+                            // FOLDOGRAM-DURESS: Drop hidden chats from message search results.
+                            if (EmergencyPasscode.isHidden(currentAccount, msg.getDialogId())) { continue; }
                             if (!searchForumResultMessages.isEmpty()) {
                                 boolean foundDuplicate = false;
                                 for (int i = 0; i < searchForumResultMessages.size(); ++i) {
@@ -1010,6 +1027,14 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
                 } else if (obj instanceof TLRPC.EncryptedChat) {
                     TLRPC.EncryptedChat chat = (TLRPC.EncryptedChat) obj;
                     MessagesController.getInstance(currentAccount).putEncryptedChat(chat, true);
+                }
+
+                // FOLDOGRAM-DURESS: Drop hidden chats from local dialog search results.
+                if (dialogId != 0 && EmergencyPasscode.isHidden(currentAccount, dialogId)) {
+                    result.remove(a);
+                    names.remove(a);
+                    a--;
+                    continue;
                 }
 
                 if (dialogId != 0) {
@@ -1658,6 +1683,10 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
                 //horizontalListView.setDisallowInterceptTouchEvents(true);
                 horizontalListView.setAdapter(new CategoryAdapterRecycler(mContext, currentAccount, false, dialogsType == DialogsActivity.DIALOGS_TYPE_FORWARD, resourcesProvider));
                 horizontalListView.setOnItemClickListener((view1, position) -> {
+                    Long did = (Long) view1.getTag();
+                    if (did == null || EmergencyPasscode.isHidden(currentAccount, did)) {
+                        return;
+                    }
                     if (view1 instanceof HintDialogCell && ((HintDialogCell) view1).isBlocked()) {
                         if (delegate != null) {
                             delegate.didPressedBlockedDialog(view1, ((HintDialogCell) view1).getDialogId());
@@ -1665,12 +1694,16 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
                         return;
                     }
                     if (delegate != null) {
-                        delegate.didPressedOnSubDialog((Long) view1.getTag());
+                        delegate.didPressedOnSubDialog(did);
                     }
                 });
                 horizontalListView.setOnItemLongClickListener((view12, position) -> {
+                    Long did = (Long) view12.getTag();
+                    if (did == null || EmergencyPasscode.isHidden(currentAccount, did)) {
+                        return true;
+                    }
                     if (delegate != null) {
-                        delegate.needRemoveHint((Long) view12.getTag());
+                        delegate.needRemoveHint(did);
                     }
                     return true;
                 });
@@ -1705,7 +1738,7 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
     }
 
     private boolean hasHints() {
-        return !searchWas && !MediaDataController.getInstance(currentAccount).hints.isEmpty() && (dialogsType != DialogsActivity.DIALOGS_TYPE_START_ATTACH_BOT || dialogsActivity.allowUsers);
+        return !searchWas && !MediaDataController.getInstance(currentAccount).getVisibleHints().isEmpty() && (dialogsType != DialogsActivity.DIALOGS_TYPE_START_ATTACH_BOT || dialogsActivity.allowUsers);
     }
 
     private int messagesSectionPosition = -1;
@@ -2331,6 +2364,8 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
             filteredRecentSearchObjects.clear();
             final int count = recentSearchObjects.size();
             for (int i = 0; i < count; ++i) {
+                // FOLDOGRAM-DURESS: Drop hidden chats from recent search.
+                if (EmergencyPasscode.isHidden(currentAccount, recentSearchObjects.get(i).did)) { continue; }
                 if (delegate != null && delegate.getSearchForumDialogId() == recentSearchObjects.get(i).did || !filter(recentSearchObjects.get(i).object)) {
                     continue;
                 }
@@ -2345,6 +2380,8 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
             if (obj == null || obj.object == null) {
                 continue;
             }
+            // FOLDOGRAM-DURESS: Drop hidden chats from filtered recent search.
+            if (EmergencyPasscode.isHidden(currentAccount, obj.did)) { continue; }
             if (delegate != null && delegate.getSearchForumDialogId() == obj.did || !filter(recentSearchObjects.get(i).object)) {
                 continue;
             }

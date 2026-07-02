@@ -68,6 +68,8 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.support.fingerprint.FingerprintManagerCompat;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.LaunchActivity;
@@ -934,6 +936,7 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
     }
 
     private void processDone(boolean fingerprint) {
+        int passcodeResult = EmergencyPasscode.PASSCODE_RESULT_CURRENT;
         if (!fingerprint) {
             if (SharedConfig.passcodeRetryInMs > 0) {
                 return;
@@ -948,7 +951,9 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
                 onPasscodeError();
                 return;
             }
-            if (!SharedConfig.checkPasscode(password)) {
+            // FOLDOGRAM-DURESS: Route typed passcodes through the fork-owned decision table.
+            passcodeResult = EmergencyPasscode.checkType(password);
+            if (passcodeResult == EmergencyPasscode.PASSCODE_RESULT_NONE) {
                 SharedConfig.increaseBadPasscodeTries();
                 if (SharedConfig.passcodeRetryInMs > 0) {
                     checkRetryTextView();
@@ -979,6 +984,8 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
 
         SharedConfig.appLocked = false;
         SharedConfig.saveConfig();
+        // FOLDOGRAM-DURESS: Apply sticky emergency/owner unlock effects after success.
+        EmergencyPasscode.onPasscodeAccepted(UserConfig.selectedAccount, passcodeResult);
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.didSetPasscode);
         setOnTouchListener(null);
         if (delegate != null) {
@@ -1228,7 +1235,8 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
 
     private boolean hasFingerprint() {
         Activity parentActivity = AndroidUtilities.findActivity(getContext());
-        if (Build.VERSION.SDK_INT >= 23 && parentActivity != null && SharedConfig.useFingerprintLock) {
+        // FOLDOGRAM-DURESS: Biometric unlock is unavailable while an emergency code exists.
+        if (Build.VERSION.SDK_INT >= 23 && parentActivity != null && SharedConfig.useFingerprintLock && !EmergencyPasscode.hasEmergency()) {
             try {
                 FingerprintManagerCompat fingerprintManager = FingerprintManagerCompat.from(ApplicationLoader.applicationContext);
                 return fingerprintManager.isHardwareDetected() && fingerprintManager.hasEnrolledFingerprints() && FingerprintController.isKeyReady() && !FingerprintController.checkDeviceFingerprintsChanged();
@@ -1242,7 +1250,8 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
     private void checkFingerprintButton() {
         boolean hasFingerprint = false;
         Activity parentActivity = AndroidUtilities.findActivity(getContext());
-        if (Build.VERSION.SDK_INT >= 23 && parentActivity != null && SharedConfig.useFingerprintLock) {
+        // FOLDOGRAM-DURESS: Hide the fingerprint affordance while an emergency code exists.
+        if (Build.VERSION.SDK_INT >= 23 && parentActivity != null && SharedConfig.useFingerprintLock && !EmergencyPasscode.hasEmergency()) {
             try {
                 FingerprintManagerCompat fingerprintManager = FingerprintManagerCompat.from(ApplicationLoader.applicationContext);
                 if (fingerprintManager.isHardwareDetected() && fingerprintManager.hasEnrolledFingerprints() && FingerprintController.isKeyReady() && !FingerprintController.checkDeviceFingerprintsChanged()) {

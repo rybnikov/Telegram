@@ -57,6 +57,7 @@ import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.browser.external.ExternalPreviewManager;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.support.LongSparseLongArray;
 import org.telegram.messenger.voip.GroupCallMessagesController;
@@ -21580,7 +21581,8 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                 }
             }
-            if ((getDialogUnreadCount(d) != 0 || d.unread_mark) && !isDialogMuted(d.id, 0)) {
+            // FOLDOGRAM-DURESS: Hidden chats do not contribute to aggregate unmuted unread counters.
+            if ((getDialogUnreadCount(d) != 0 || d.unread_mark) && !isDialogMuted(d.id, 0) && !EmergencyPasscode.isHidden(currentAccount, d.id)) {
                 unreadUnmutedDialogs++;
             }
             if (promoDialog != null && d.id == promoDialog.id && isLeftPromoChannel) {

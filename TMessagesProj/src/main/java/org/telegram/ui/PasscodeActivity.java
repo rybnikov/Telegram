@@ -55,6 +55,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -133,6 +134,8 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
 
     @Keep
     private int changePasscodeRow;
+    // FOLDOGRAM-DURESS: Normal-mode settings entry for emergency passcode configuration.
+    private int emergencyRow;
     @Keep
     private int fingerprintRow;
     @Keep
@@ -149,6 +152,8 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
     private int rowCount;
 
     private ActionBarMenuItem otherItem;
+    // FOLDOGRAM-DURESS: Setup mode can write the emergency credential instead of the current gate.
+    private boolean settingEmergencyPasscode;
 
     private boolean postedHidePasscodesDoNotMatch;
     private final Runnable hidePasscodesDoNotMatch = () -> {
@@ -161,6 +166,15 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
     public PasscodeActivity(@PasscodeActivityType int type) {
         super();
         this.type = type;
+    }
+
+    // FOLDOGRAM-DURESS: Called by emergency settings and emergency-mode change-passcode flow.
+    public PasscodeActivity setSettingEmergencyPasscode(boolean value) {
+        settingEmergencyPasscode = value;
+        if (settingEmergencyPasscode) {
+            currentPasswordType = SharedConfig.passcodeType;
+        }
+        return this;
     }
 
     @Override
@@ -283,6 +297,8 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
                                     SharedConfig.passcodeHash = "";
                                     SharedConfig.appLocked = false;
                                     SharedConfig.saveConfig();
+                                    // FOLDOGRAM-DURESS: Normal disable wipes emergency state; emergency-mode disable preserves owner recovery.
+                                    if (!EmergencyPasscode.emergencyModeActive) { EmergencyPasscode.wipeAll(); }
                                     getMediaDataController().buildShortcuts();
                                     int count = listView.getChildCount();
                                     for (int a = 0; a < count; a++) {
@@ -299,7 +315,15 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
                         alertDialog.show();
                         ((TextView)alertDialog.getButton(Dialog.BUTTON_POSITIVE)).setTextColor(Theme.getColor(Theme.key_text_RedBold));
                     } else if (position == changePasscodeRow) {
-                        presentFragment(new PasscodeActivity(TYPE_SETUP_CODE));
+                        if (EmergencyPasscode.emergencyModeActive) {
+                            // FOLDOGRAM-DURESS: In emergency mode, changing the passcode changes only the emergency credential.
+                            presentFragment(new PasscodeActivity(TYPE_SETUP_CODE).setSettingEmergencyPasscode(true));
+                        } else {
+                            presentFragment(new PasscodeActivity(TYPE_SETUP_CODE));
+                        }
+                    } else if (position == emergencyRow) {
+                        // FOLDOGRAM-DURESS: Open fork-owned emergency passcode configuration.
+                        presentFragment(new EmergencyPasscodeActivity());
                     } else if (position == autoLockRow) {
                         if (getParentActivity() == null) {
                             return;
@@ -380,7 +404,7 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
                     ActionBarMenu menu = actionBar.createMenu();
 
                     ActionBarMenuSubItem switchItem;
-                    if (type == TYPE_SETUP_CODE) {
+                    if (type == TYPE_SETUP_CODE && !settingEmergencyPasscode) {
                         otherItem = menu.addItem(0, R.drawable.ic_ab_other);
                         switchItem = otherItem.addSubItem(ID_SWITCH_TYPE, R.drawable.msg_permissions, LocaleController.getString(R.string.PasscodeSwitchToPassword));
                     } else switchItem = null;
@@ -430,7 +454,10 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
                 titleTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
                 titleTextView.setTypeface(AndroidUtilities.bold());
                 if (type == TYPE_SETUP_CODE) {
-                    if (!SharedConfig.passcodeHash.isEmpty()) {
+                    if (settingEmergencyPasscode && !EmergencyPasscode.emergencyModeActive) {
+                        // FOLDOGRAM-DURESS: Normal-mode emergency setup names the credential being configured.
+                        titleTextView.setText(LocaleController.getString(R.string.EmergencyPasscode));
+                    } else if (!SharedConfig.passcodeHash.isEmpty()) {
                         titleTextView.setText(LocaleController.getString(R.string.EnterNewPasscode));
                     } else {
                         titleTextView.setText(LocaleController.getString(R.string.CreatePasscode));
@@ -802,12 +829,17 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
 
     private void updateRows() {
         fingerprintRow = -1;
+        emergencyRow = -1;
         rowCount = 0;
         utyanRow = rowCount++;
         hintRow = rowCount++;
         changePasscodeRow = rowCount++;
+        // FOLDOGRAM-DURESS: Hide every trace of the feature while emergency mode is active.
+        if (!EmergencyPasscode.emergencyModeActive) {
+            emergencyRow = rowCount++;
+        }
         try {
-            if (Build.VERSION.SDK_INT >= 23) {
+            if (Build.VERSION.SDK_INT >= 23 && !EmergencyPasscode.hasEmergency()) {
                 if (
                     BiometricManager.from(ApplicationLoader.applicationContext).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS &&
                     AndroidUtilities.isKeyguardSecure()
@@ -908,6 +940,28 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
         passcodeSetStep = 1;
     }
 
+    // FOLDOGRAM-DURESS: Reset setup UI after rejecting an emergency code equal to a real passcode.
+    private void resetSetupFields() {
+        firstPassword = null;
+        passcodeSetStep = 0;
+        passwordEditText.setText("");
+        passwordEditText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        for (CodeNumberField f : codeFieldContainer.codeField) {
+            f.setText("");
+        }
+        if (otherItem != null && !settingEmergencyPasscode) {
+            otherItem.setVisibility(View.VISIBLE);
+        }
+        if (settingEmergencyPasscode && !EmergencyPasscode.emergencyModeActive) {
+            titleTextView.setText(LocaleController.getString(R.string.EmergencyPasscode));
+        } else if (!SharedConfig.passcodeHash.isEmpty()) {
+            titleTextView.setText(LocaleController.getString(R.string.EnterNewPasscode));
+        } else {
+            titleTextView.setText(LocaleController.getString(R.string.CreatePasscode));
+        }
+        updateFields();
+    }
+
     private boolean isPinCode() {
         return type == TYPE_SETUP_CODE && currentPasswordType == SharedConfig.PASSCODE_TYPE_PIN ||
                 type == TYPE_ENTER_CODE_TO_MANAGE_SETTINGS && SharedConfig.passcodeType == SharedConfig.PASSCODE_TYPE_PIN;
@@ -944,6 +998,35 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
                 return;
             }
 
+            if (settingEmergencyPasscode) {
+                // FOLDOGRAM-DURESS: Emergency setup writes only the emergency credential.
+                currentPasswordType = SharedConfig.passcodeType;
+                if (!EmergencyPasscode.setEmergencyCode(currentAccount, firstPassword, SharedConfig.passcodeType)) {
+                    Toast.makeText(getParentActivity(), LocaleController.getString(R.string.EmergencyMustDiffer), Toast.LENGTH_SHORT).show();
+                    resetSetupFields();
+                    onPasscodeError();
+                    return;
+                }
+                passwordEditText.clearFocus();
+                AndroidUtilities.hideKeyboard(passwordEditText);
+                for (CodeNumberField f : codeFieldContainer.codeField) {
+                    f.clearFocus();
+                    AndroidUtilities.hideKeyboard(f);
+                }
+                keyboardView.setEditText(null);
+
+                animateSuccessAnimation(() -> {
+                    getMediaDataController().buildShortcuts();
+                    if (EmergencyPasscode.emergencyModeActive) {
+                        finishFragment();
+                    } else {
+                        presentFragment(new PasscodeActivity(TYPE_MANAGE_CODE_SETTINGS), true);
+                    }
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.didSetPasscode);
+                });
+                return;
+            }
+
             boolean isFirst = SharedConfig.passcodeHash.isEmpty();
             try {
                 SharedConfig.passcodeSalt = new byte[16];
@@ -960,6 +1043,8 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
             SharedConfig.allowScreenCapture = true;
             SharedConfig.passcodeType = currentPasswordType;
             SharedConfig.saveConfig();
+            // FOLDOGRAM-DURESS: Normal-mode passcode changes refresh the retained owner credential.
+            EmergencyPasscode.snapshotOwnerIfNeeded(currentAccount);
 
             passwordEditText.clearFocus();
             AndroidUtilities.hideKeyboard(passwordEditText);
@@ -997,7 +1082,9 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
                 onPasscodeError();
                 return;
             }
-            if (!SharedConfig.checkPasscode(password)) {
+            // FOLDOGRAM-DURESS: Manage-settings unlock can enter or leave emergency mode.
+            int passcodeResult = EmergencyPasscode.checkType(password);
+            if (passcodeResult == EmergencyPasscode.PASSCODE_RESULT_NONE) {
                 SharedConfig.increaseBadPasscodeTries();
                 passwordEditText.setText("");
                 for (CodeNumberField f : codeFieldContainer.codeField) {
@@ -1011,6 +1098,8 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
             }
             SharedConfig.badPasscodeTries = 0;
             SharedConfig.saveConfig();
+            // FOLDOGRAM-DURESS: Apply sticky emergency/owner unlock effects before showing settings.
+            EmergencyPasscode.onPasscodeAccepted(currentAccount, passcodeResult);
 
             passwordEditText.clearFocus();
             AndroidUtilities.hideKeyboard(passwordEditText);
@@ -1075,7 +1164,7 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
             return position == fingerprintRow || position == autoLockRow || position == captureRow ||
-                    position == changePasscodeRow || position == disablePasscodeRow;
+                    position == changePasscodeRow || position == emergencyRow || position == disablePasscodeRow;
         }
 
         @Override
@@ -1132,6 +1221,11 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
                             textCell.setTag(Theme.key_windowBackgroundWhiteBlackText);
                             textCell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
                         }
+                    } else if (position == emergencyRow) {
+                        // FOLDOGRAM-DURESS: Normal-mode emergency settings row.
+                        textCell.setTextAndValue(LocaleController.getString(R.string.EmergencyPasscode), LocaleController.getString(EmergencyPasscode.hasEmergency() ? R.string.NotificationsOn : R.string.NotificationsOff), true);
+                        textCell.setTag(Theme.key_windowBackgroundWhiteBlackText);
+                        textCell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
                     } else if (position == autoLockRow) {
                         String val;
                         if (SharedConfig.autoLockIn == 0) {
@@ -1189,7 +1283,7 @@ public class PasscodeActivity extends BaseFragment implements NotificationCenter
         public int getItemViewType(int position) {
             if (position == fingerprintRow || position == captureRow) {
                 return VIEW_TYPE_CHECK;
-            } else if (position == changePasscodeRow || position == autoLockRow || position == disablePasscodeRow) {
+            } else if (position == changePasscodeRow || position == emergencyRow || position == autoLockRow || position == disablePasscodeRow) {
                 return VIEW_TYPE_SETTING;
             } else if (position == autoLockDetailRow || position == captureDetailRow || position == hintRow) {
                 return VIEW_TYPE_INFO;

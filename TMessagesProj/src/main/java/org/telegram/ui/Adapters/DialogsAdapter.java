@@ -43,6 +43,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
@@ -1640,10 +1641,11 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
             }
         }
 
-        if (!messagesController.hiddenUndoChats.isEmpty()) {
+        // FOLDOGRAM-DURESS: Remove emergency-hidden dialogs from the rendered list.
+        if (!messagesController.hiddenUndoChats.isEmpty() || EmergencyPasscode.isActive(currentAccount)) {
             for (int i = 0; i < itemInternals.size(); ++i) {
                 ItemInternal item = itemInternals.get(i);
-                if (item.viewType == VIEW_TYPE_DIALOG && item.dialog != null && messagesController.isHiddenByUndo(item.dialog.id)) {
+                if (item.viewType == VIEW_TYPE_DIALOG && item.dialog != null && (messagesController.isHiddenByUndo(item.dialog.id) || EmergencyPasscode.isHidden(currentAccount, item.dialog.id))) {
                     itemInternals.remove(i);
                     i--;
                 }
