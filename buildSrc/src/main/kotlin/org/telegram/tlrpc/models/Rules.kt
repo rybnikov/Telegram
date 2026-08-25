@@ -8,7 +8,7 @@ object TlSchemaRules {
             "UserFull", "ChatFull",
             "StarsTransaction", "StarGift",
             "SavedStarGift", "InputStorePaymentPurpose", //, "ChatTheme"
-            "ForumTopic"
+            "ForumTopic", "EphemeralMessage"
         ),
         ignoredTypes = setOf(
             "True",
@@ -63,7 +63,8 @@ object TlSchemaRules {
                 "updateInlineBotCallbackQuery",
                 "updatePtsChanged",
                 "updateSmsJob",
-                "updateBotGuestChatQuery"
+                "updateBotGuestChatQuery",
+                "updateBotStarsSubscription"
             ),
             "MessageAction" to setOf(
                 "messageActionRequestedPeerSentMe",
@@ -73,7 +74,6 @@ object TlSchemaRules {
                 "inputTakeoutFileLocation",
                 "inputPhotoLegacyFileLocation"
             ),
-            "KeyboardButton" to setOf("inputKeyboardButtonRequestPeer"),
             "InputPaymentCredentials" to setOf("inputPaymentCredentialsApplePay"),
             "InputStickerSet" to setOf("inputStickerSetAnimatedEmojiAnimations"),
             "InputWebFileLocation" to setOf("inputWebFileAudioAlbumThumbLocation"),
