@@ -1,6 +1,6 @@
 ---
 name: upstream-merge
-description: "Use when merging upstream DrKLO/Telegram into the foldogram fork. Branch strategy, per-conflict feature-id->invariant resolution, DB migration freeze/append/idempotency rule, CI gates and merge report. Do NOT use for normal feature work."
+description: "Use when merging upstream DrKLO/Telegram into the foldogram fork. Branch strategy, per-conflict feature-id to invariant resolution, DB migration freeze/append/idempotency rule, CI gates and merge report. Do NOT use for normal feature work."
 ---
 
 # Upstream Merge Skill
@@ -28,7 +28,11 @@ Use this skill only for upstream DrKLO/Telegram sync work.
    `scheduleWindowWidthChanged`, and `onWindowWidthChanged`.
 8. Before merging back to `foldogram`, perform the required device test from
    `docs/UPSTREAM_MERGE.md`, including the existing-user DB upgrade path and a
-   fresh install.
+   fresh install. Verify the installed package version/commit and get owner
+   acceptance after that verification.
+9. Do not push an upstream merge to `fork/foldogram` before device acceptance.
+   Pushes to `foldogram` trigger Foldogram CI, so pushing is part of the
+   post-acceptance release boundary.
 
 ## Database Migration Rule
 
@@ -47,6 +51,9 @@ which migrations run, which ones are skipped, and why the upgrade is safe.
   continuing.
 - Secret-like file staged: unstage it and fix the source.
 - Missing fork feature invariant: stop and ask for review.
+- Device acceptance is stale or unverified: install the current build, verify
+  the package version/commit, and wait for fresh owner acceptance before pushing
+  `fork/foldogram` or starting release.
 
 ## Gates
 

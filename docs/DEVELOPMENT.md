@@ -15,7 +15,9 @@ For upstream merges, do not duplicate the procedure here. Use
   explicitly requires stacked changes.
 - Keep rehearsal or experimental merge branches local until the owner accepts the
   result.
-- Do not push unless explicitly asked.
+- Do not push unless explicitly asked. For upstream merges, a push to
+  `fork/foldogram` triggers Foldogram CI and must wait until the owner has
+  accepted the current installed build after its version/commit was verified.
 
 ## Java And Gradle
 

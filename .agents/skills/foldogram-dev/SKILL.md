@@ -19,10 +19,14 @@ skill instead.
 6. Run the merge canary before merging merge-sensitive changes.
 7. Run the four CI gates before merging into `foldogram` or preparing a release.
 8. After every upstream merge, run the required device test from
-   `docs/UPSTREAM_MERGE.md` before merging back to `foldogram`.
-9. Keep commit messages free of AI traces such as `Claude`, `AI`,
+   `docs/UPSTREAM_MERGE.md` before merging back to `foldogram`. Verify the
+   installed package version/commit and get owner acceptance after that install.
+9. Treat `git push fork foldogram` as a release-boundary side effect: it triggers
+   Foldogram CI. Do not push an upstream merge to `fork/foldogram` until the
+   current installed build has passed owner acceptance.
+10. Keep commit messages free of AI traces such as `Claude`, `AI`,
    `Co-Authored`, or `Generated`.
-10. Never commit generated Google services files, signing keys,
+11. Never commit generated Google services files, signing keys,
    `local.properties`, credentials, or local notes.
 
 Full reference: `docs/DEVELOPMENT.md`.

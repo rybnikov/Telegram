@@ -8,12 +8,17 @@ pushes the tag itself**; you never create or push a release tag by hand.
 ## Prerequisites
 
 - The code to release is on `foldogram`.
-- The mandatory device test has passed (see "Required Device Test" in
-  `docs/UPSTREAM_MERGE.md`). Every upstream merge must be device-tested before it
-  is released.
+- The mandatory device test has passed on the exact build being released (see
+  "Required Device Test" in `docs/UPSTREAM_MERGE.md`). Every upstream merge must
+  be device-tested before it is released.
+- The owner has accepted that installed build after the package version/commit
+  was verified. If testing was later found to have used a missing, disconnected,
+  or different-version build, any earlier release approval is stale.
 - `foldogram` is pushed to the `fork` remote (`rybnikov/Telegram`) and up to
-  date. The workflow guard requires `github.ref == refs/heads/foldogram`, so the
-  branch must already carry the exact code you want released.
+  date, but only after the device-test acceptance above. A push to this branch
+  triggers Foldogram CI, so it is part of the post-acceptance release boundary.
+  The workflow guard requires `github.ref == refs/heads/foldogram`, so the branch
+  must already carry the exact code you want released.
 - `gh` is authenticated as `rybnikov` (the guard requires
   `github.actor == 'rybnikov'`).
 
@@ -109,7 +114,9 @@ repository. If a secret-like file appears in `git diff --cached`, unstage it.
 2. The tag must be strictly greater than the `gradle.properties` base **and** the
    highest `v*` tag. After merging upstream `X.Y.Z`, the first release is
    `vX.Y.(Z+1)`.
-3. CI creates and pushes the tag — never create or push it manually; it must not
+3. `git push fork foldogram` triggers Foldogram CI. Do not push or release an
+   upstream merge until the current installed build has fresh owner acceptance.
+4. CI creates and pushes the tag — never create or push it manually; it must not
    pre-exist.
-4. Verify with `gh run view --json conclusion` plus tag/release existence; do not
+5. Verify with `gh run view --json conclusion` plus tag/release existence; do not
    trust the `gh run watch` exit status.

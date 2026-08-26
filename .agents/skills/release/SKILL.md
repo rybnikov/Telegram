@@ -11,9 +11,10 @@ to the Play internal track, and creates the tag and GitHub release.
 
 ## Checklist
 
-1. Code is on `foldogram`, the mandatory device test passed (see Required Device
-   Test in `docs/UPSTREAM_MERGE.md`), and `foldogram` is pushed to the `fork`
-   remote and up to date.
+1. Code is on `foldogram`, the mandatory device test passed on the exact build
+   being released (see Required Device Test in `docs/UPSTREAM_MERGE.md`), and
+   the owner accepted that installed build after its version/commit was verified.
+   Only then may `foldogram` be pushed to the `fork` remote and released.
 2. Pick the version. The tag must be STRICTLY greater than both the
    `gradle.properties` `APP_VERSION_NAME`/`APP_VERSION_CODE` baseline and the
    highest existing `v*` tag. After merging upstream `X.Y.Z` the base is `X.Y.Z`,
@@ -34,6 +35,11 @@ to the Play internal track, and creates the tag and GitHub release.
   PATCH and re-trigger; do not edit `gradle.properties` to work around it.
 - CI creates and pushes the tag; never create or push it manually, and it must
   not pre-exist.
+- `git push fork foldogram` triggers Foldogram CI. After an upstream merge, do
+  not push or start the internal release from a stale "release it" instruction if
+  the installed test build was later found to be missing, disconnected, or from a
+  different version. Install the current build and wait for fresh owner
+  acceptance first.
 - `gh run watch --exit-status` has reported `0` on a real failure; always confirm
   via `gh run view --json conclusion` and tag/release existence.
 

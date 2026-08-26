@@ -158,13 +158,20 @@ The key scenario is the existing-user database upgrade path:
 1. Install the current released Foldogram build.
 2. Launch it once so the released database schema is initialized.
 3. Install the merged build over the same package, with the same signing key.
-4. Launch it and verify there is no startup crash, the database migration ran,
+4. Verify the installed package version/commit matches the merge candidate.
+5. Launch it and verify there is no startup crash, the database migration ran,
    and new upstream runtime features work.
 
 Also verify a fresh install of the merged build.
 
 Static gates and the merge canary do not execute native SQLite upgrade paths or
 full application runtime startup. Device testing covers that gap.
+
+Owner acceptance must happen after the current merged build is installed and the
+installed version/commit is verified. If the agent later discovers that the
+tested device build was absent, disconnected during install, or from a different
+version, any earlier merge/release approval is stale; install the current build
+and wait for fresh owner acceptance.
 
 ## Stop Rules
 
@@ -179,6 +186,7 @@ registry description contradicts the real code
 upstream touched a registry file but canary stayed green
 secret/config files are added, removed, or changed unexpectedly
 release workflow semantics change
+device acceptance is stale or unverified
 ```
 
 A green canary is necessary but not sufficient. If upstream changed files listed
@@ -352,11 +360,12 @@ Manual device smoke needed:
 ```
 
 Do not merge the branch into `foldogram` and do not push it until the owner
-accepts the report.
+accepts the report and the required device test.
 
 ## Final Acceptance
 
-After all gates pass and the report is accepted:
+After all gates pass, the required device test is accepted, and the report is
+accepted:
 
 ```bash
 git checkout foldogram
@@ -364,4 +373,6 @@ git merge --no-ff merge/upstream-<version>-into-foldogram
 git status --short
 ```
 
-Push only after explicit owner approval.
+Push only after explicit owner approval that follows the current-build device
+acceptance. `git push fork foldogram` triggers Foldogram CI, so treat it as an
+external side effect and part of the post-acceptance release boundary.
