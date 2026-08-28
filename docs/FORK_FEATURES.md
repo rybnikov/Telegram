@@ -226,7 +226,9 @@ Foldogram-specific.
 Invariant: Release variants use the Foldogram package identity, beta variants add
 `.beta` on top of it, and release metadata points to the Foldogram Play listing.
 Local development and device testing target beta, never the Play-installed
-stable package.
+stable package. The canary intentionally counts separate `.beta` suffix anchors
+in both application modules so an upstream Gradle rewrite cannot silently point
+local installation back at stable.
 
 Conflict policy: If upstream changes Gradle packaging or manifests, preserve
 `APP_PACKAGE=com.rbnkv.foldogram` as the source of truth and preserve `.beta` on

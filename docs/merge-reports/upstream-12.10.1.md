@@ -90,7 +90,9 @@ Registry anchors changed: added explicit `.beta` suffix anchors for
 `TMessagesProj_App` and `TMessagesProj_AppHockeyApp` after the device-test
 runbook was corrected to protect the Play installation.
 
-Threshold/min_count changes: none.
+Threshold/min_count changes: no `min_count` was lowered. The canary exact-count
+baseline was raised from 141 to 143 for the two added beta-identity anchors; the
+stale runbook count was corrected from 13/111 to 14/143.
 
 Database migration changes: none. The upstream range does not touch
 `MessagesStorage`, `DatabaseMigrationHelper`, or external preview storage.

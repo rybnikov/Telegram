@@ -237,7 +237,7 @@ If a threshold must be lowered because upstream now implements the invariant,
 first prove the invariant with code inspection or a test, then update the
 registry in that dedicated commit.
 
-Current canary baseline is intentionally pinned to 13 feature blocks and 111
+Current canary baseline is intentionally pinned to 14 feature blocks and 143
 anchors. TODO: make this count dynamic after the registry/CI flow is stable. Until
 then, update the pinned count only in the same dedicated registry baseline commit.
 
