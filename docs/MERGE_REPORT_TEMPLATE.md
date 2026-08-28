@@ -61,6 +61,22 @@ Database migration changes:
 
 Secrets/config files classified:
 
+## Device Test
+
+Candidate commit and build/install command:
+
+Test package (must be `com.rbnkv.foldogram.beta`):
+
+Existing-user beta baseline:
+
+Upgrade-in-place result and installed beta version:
+
+Fresh beta install result and test environment:
+
+Production `com.rbnkv.foldogram` preservation:
+
+Owner acceptance:
+
 ## Residual Risk
 
 Known residual risks:

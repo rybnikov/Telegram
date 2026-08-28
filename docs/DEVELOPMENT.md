@@ -33,18 +33,42 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17)
 
 ## Build And Install
 
-The beta/device-test build uses the `TMessagesProj_AppHockeyApp` module:
+The beta/device-test build uses the `TMessagesProj_AppHockeyApp` module and the
+package `com.rbnkv.foldogram.beta`:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj_AppHockeyApp:compileAfatHA_privateJavaWithJavac
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj_AppHockeyApp:installAfatHA_private
 ```
 
+`installAfatHA_private` is the canonical physical-device task. When the signing
+key matches, it upgrades the existing Foldogram Beta installation in place and
+preserves its database. Before and after installing, verify that the target is
+the beta package:
+
+```bash
+adb shell dumpsys package com.rbnkv.foldogram.beta
+```
+
+Local development and device smoke tests must never install over, clear, or
+uninstall `com.rbnkv.foldogram`, which is the Google Play installation. The
+stable and beta packages have independent app data; a beta database initialized
+by the previous accepted Foldogram code is the existing-user baseline for local
+migration tests.
+
+Fresh-install testing also targets only `com.rbnkv.foldogram.beta`. Prefer an
+emulator or isolated Android profile so the upgrade-test beta data remains
+available. Clearing or uninstalling beta on a shared device destroys beta data
+and requires explicit owner approval.
+
 The release bundle uses the `TMessagesProj_App` module:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj_App:bundleAfatRelease
 ```
+
+This release artifact is for the Google Play workflow, not for local device
+installation over the stable app.
 
 Release version and signing overrides must come from environment variables,
 GitHub secrets, or `local.properties`; never hardcode them in tracked files.

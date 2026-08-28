@@ -153,16 +153,43 @@ script from this runbook/registry work before accepting the merge.
 A device test is mandatory after every upstream merge and before merging the
 merge branch back into `foldogram`.
 
-The key scenario is the existing-user database upgrade path:
+All local merge testing uses Foldogram Beta:
 
-1. Install the current released Foldogram build.
-2. Launch it once so the released database schema is initialized.
-3. Install the merged build over the same package, with the same signing key.
-4. Verify the installed package version/commit matches the merge candidate.
-5. Launch it and verify there is no startup crash, the database migration ran,
-   and new upstream runtime features work.
+```text
+package: com.rbnkv.foldogram.beta
+module:  TMessagesProj_AppHockeyApp
+task:    :TMessagesProj_AppHockeyApp:installAfatHA_private
+```
 
-Also verify a fresh install of the merged build.
+Never install a local candidate over, clear, or uninstall
+`com.rbnkv.foldogram`. That package belongs to the Google Play release flow and
+must remain untouched during local development.
+
+The key scenario is the existing-user beta database upgrade path:
+
+1. Confirm that `com.rbnkv.foldogram.beta` is installed from the previous
+   accepted Foldogram code and has been launched, so its database represents the
+   previous accepted schema. If it is missing, create the baseline from the
+   previous accepted commit; do not substitute the Play app's data.
+2. Record `git rev-parse HEAD`, require a clean tracked worktree, and build and
+   install `:TMessagesProj_AppHockeyApp:installAfatHA_private` without changing
+   the candidate worktree between build and install.
+3. Install over the existing beta package with the same signing key. Do not
+   clear or uninstall beta first; preserving beta data is what exercises the
+   upgrade path.
+4. Verify with `adb shell dumpsys package com.rbnkv.foldogram.beta` that the
+   installed package, version name, and version code match the candidate. Record
+   the candidate commit and build/install command in the merge report to preserve
+   commit provenance.
+5. Launch beta and verify there is no startup crash, the database migration ran,
+   and new upstream runtime features work. Owner acceptance applies only after
+   this current candidate is installed and verified.
+
+Also verify a fresh beta install. Prefer an emulator or isolated Android profile
+so the existing-user beta database is retained. On a shared physical device,
+clearing or uninstalling `com.rbnkv.foldogram.beta` requires explicit owner
+approval because it destroys beta data. It never authorizes touching
+`com.rbnkv.foldogram`.
 
 Static gates and the merge canary do not execute native SQLite upgrade paths or
 full application runtime startup. Device testing covers that gap.
@@ -187,6 +214,7 @@ upstream touched a registry file but canary stayed green
 secret/config files are added, removed, or changed unexpectedly
 release workflow semantics change
 device acceptance is stale or unverified
+local/device artifact resolves to com.rbnkv.foldogram instead of the beta package
 ```
 
 A green canary is necessary but not sufficient. If upstream changed files listed
@@ -357,6 +385,9 @@ secrets-policy:
 Conflicts resolved:
 Known residual risks:
 Manual device smoke needed:
+Device test package and baseline:
+Installed beta verification and candidate provenance:
+Production Play package preservation:
 ```
 
 Do not merge the branch into `foldogram` and do not push it until the owner

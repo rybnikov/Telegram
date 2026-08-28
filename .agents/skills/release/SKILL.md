@@ -11,10 +11,12 @@ to the Play internal track, and creates the tag and GitHub release.
 
 ## Checklist
 
-1. Code is on `foldogram`, the mandatory device test passed on the exact build
-   being released (see Required Device Test in `docs/UPSTREAM_MERGE.md`), and
-   the owner accepted that installed build after its version/commit was verified.
-   Only then may `foldogram` be pushed to the `fork` remote and released.
+1. Code is on `foldogram`, the mandatory device test passed from the exact commit
+   being released via `com.rbnkv.foldogram.beta` (see Required Device Test in
+   `docs/UPSTREAM_MERGE.md`), and the owner accepted that beta after its package,
+   version, and candidate provenance were verified. Local testing must not
+   replace, clear, or uninstall the Play package `com.rbnkv.foldogram`. Only then
+   may `foldogram` be pushed to the `fork` remote and released.
 2. Pick the version. The tag must be STRICTLY greater than both the
    `gradle.properties` `APP_VERSION_NAME`/`APP_VERSION_CODE` baseline and the
    highest existing `v*` tag. After merging upstream `X.Y.Z` the base is `X.Y.Z`,
@@ -35,6 +37,9 @@ to the Play internal track, and creates the tag and GitHub release.
   PATCH and re-trigger; do not edit `gradle.properties` to work around it.
 - CI creates and pushes the tag; never create or push it manually, and it must
   not pre-exist.
+- Device acceptance comes from Foldogram Beta. Do not locally install a release
+  artifact over the Play-installed `com.rbnkv.foldogram`; CI/Google Play owns
+  that package transition.
 - `git push fork foldogram` triggers Foldogram CI. After an upstream merge, do
   not push or start the internal release from a stale "release it" instruction if
   the installed test build was later found to be missing, disconnected, or from a

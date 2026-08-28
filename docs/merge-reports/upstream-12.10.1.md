@@ -38,7 +38,7 @@ merge-delta-audit (advisory): pass, exit 0, no collision rows. Command:
 
 check-fork-anchors: pending; Gradle execution was explicitly deferred.
 
-Static registry audit: pass, all 14 feature blocks and 141 anchors are present
+Static registry audit: pass, all 14 feature blocks and 143 anchors are present
 at or above their configured thresholds.
 
 check-secrets-policy: pass, exit 0.
@@ -64,7 +64,7 @@ CI run: not run. The branch has not been pushed.
 | places-index | pass | Geo extraction and navigation paths were not changed. |
 | db-preview | pass | No database file or migration changed; `LAST_DB_VERSION` remains 179 and released Foldogram steps remain frozen. |
 | browser-iv | pass | Browser Instant View paths were not changed. |
-| identity | conflict resolved | Accepted `12.10.1` / `7038` and SDK 36; retained `APP_PACKAGE=com.rbnkv.foldogram`, app-module `APP_PACKAGE` wiring, and `RESOLVED_APP_VERSION_NAME`. |
+| identity | conflict resolved | Accepted `12.10.1` / `7038` and SDK 36; retained `APP_PACKAGE=com.rbnkv.foldogram`, app-module `APP_PACKAGE` wiring, `.beta` device identities, and `RESOLVED_APP_VERSION_NAME`. |
 | share-shortcuts | pass | Share ranker and shortcut paths were not changed. |
 | ci-release | pass | Workflows were not changed. Existing CI and internal-release checkouts already initialize submodules recursively. |
 | secrets-policy | conflict resolved | Dropped upstream dummy signing passwords and retained local/env-based signing and Google-services generation. Secrets policy passes. |
@@ -86,7 +86,9 @@ Conflicts resolved:
 - `settings.gradle` (build tooling): accepted upstream's equivalent jlatexmath
   project mapping.
 
-Registry anchors changed: none.
+Registry anchors changed: added explicit `.beta` suffix anchors for
+`TMessagesProj_App` and `TMessagesProj_AppHockeyApp` after the device-test
+runbook was corrected to protect the Play installation.
 
 Threshold/min_count changes: none.
 
@@ -103,8 +105,8 @@ No new migration executes for a released Foldogram user. Users parked at 174,
 175, or 176 still traverse the already accepted frozen/appended chain through
 179 exactly as documented in the 12.10.0 report. A user already at 179 remains
 at 179. Fresh creation still records version 179 and creates the same upstream
-and external-preview schemas. The required install-over-existing-user device
-test remains pending even though the migration graph is unchanged.
+and external-preview schemas. The required install-over-existing-beta device test
+remains pending even though the migration graph is unchanged.
 
 ## Submodule and Build Audit
 
@@ -119,9 +121,13 @@ The full native build and ABI/media runtime checks are pending.
 
 Connected device: OPPO CPH2671 (`220a0b5c`), Android 16 / API 36.
 
-Installed existing-user baseline: `com.rbnkv.foldogram`, version `12.10.1`,
-version code `120100019`, target SDK 35, installed from Google Play. The app was
-running when inspected. No merge-candidate APK has been built or installed.
+Installed existing-user baseline: `com.rbnkv.foldogram.beta`, version `12.10.0`,
+version code `70319`, target SDK 35. It was installed through Android shell,
+has been launched, and retains beta app data suitable for an in-place upgrade
+test. No merge-candidate APK has been built or installed.
+
+The Google Play package `com.rbnkv.foldogram` is intentionally outside the local
+test path. It must not be replaced, cleared, or uninstalled during this merge.
 
 ## Residual Risk
 
@@ -131,12 +137,17 @@ behavior; Billing 8 changes product detail responses; and upstream
 `ReportBottomSheet` currently contains an unconditional `|| true` in the typed
 report response branch, which may report network errors as success.
 
-Manual device smoke needed: build and install the current merge commit over the
-verified Play baseline, verify installed version/commit, startup, and unchanged
-DB version, then test fold/unfold, split layout, predictive-back cancellation,
-external previews, emergency hidden chats/notifications, Android Auto, billing,
-rich/ephemeral messages, reporting, and representative video-call H264 paths.
-A fresh install of the same candidate is also required.
+Manual device smoke needed: build
+`:TMessagesProj_AppHockeyApp:installAfatHA_private` from the current merge commit
+and install it over the verified `com.rbnkv.foldogram.beta` 12.10.0 baseline
+without clearing beta data. Verify the installed beta version and candidate
+provenance, startup, and unchanged DB version, then test fold/unfold, split
+layout, predictive-back cancellation, external previews, emergency hidden
+chats/notifications, Android Auto, billing, rich/ephemeral messages, reporting,
+and representative video-call H264 paths. A fresh install of the same beta
+candidate is also required, preferably in an isolated profile/emulator; clearing
+the device's beta data requires explicit owner approval. The Play package must
+remain untouched.
 
 Owner decisions needed: authorize the deferred Gradle gates/build and candidate
 installation. Do not merge back to `foldogram` or push before current-build
