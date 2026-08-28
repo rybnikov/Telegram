@@ -1,0 +1,143 @@
+# Upstream Merge Report
+
+## Refs
+
+Merge branch: `merge/upstream-12.10.1-into-foldogram`
+
+Old upstream base: `3f03bfc73f1d176e349765c2990e52f490409813`
+
+New upstream base: `62b56a07ca7e30e39f7fd00a6728d6bbd716ca1c`
+
+Foldogram tip before merge: `794379d5aa08068e9665e68eaa32ce0c4c062531`
+
+Merge result commit: `96f2bd21e`
+
+## Upstream Summary
+
+The merge updates the upstream application baseline from Telegram Android
+12.10.0 (`7031`) to 12.10.1 (`7038`) while retaining the Foldogram package id
+`com.rbnkv.foldogram` and release-time version override.
+
+The largest change is in native/build infrastructure. Upstream converts
+`libyuv` and `openh264` from vendored source trees to pinned Git submodules,
+moves refreshed `tlottie` and new OpenH264 static libraries into `jni/prebuild`,
+and rewrites the native link configuration around those libraries. It also
+updates compile/target SDK and Build Tools to 36, CMake to 3.22.1, Android
+Gradle Plugin to 8.10.1, Kotlin to 2.1.0, and Play Billing to 8.0.0.
+
+Runtime changes include a foreground-aware debug ANR detector, FileLog
+initialization changes, bot-forum draft cleanup, ephemeral-message restrictions,
+rich-message unsupported-block and button-hit-area fixes, ActionBar/comment UI
+changes, filter-tab null guards, typed report requests, and structural TL object
+comparison for bot keyboards.
+
+## Gates
+
+merge-delta-audit (advisory): pass, exit 0, no collision rows. Command:
+`scripts/merge-delta-audit.sh 3f03bfc73 62b56a07c 794379d5aa08068e9665e68eaa32ce0c4c062531`
+
+check-fork-anchors: pending; Gradle execution was explicitly deferred.
+
+Static registry audit: pass, all 14 feature blocks and 141 anchors are present
+at or above their configured thresholds.
+
+check-secrets-policy: pass, exit 0.
+
+MergeRegressionCanaryTest: pending; Gradle execution was explicitly deferred.
+
+testHA_privateUnitTest: pending; Gradle execution was explicitly deferred.
+
+compileHA_privateJavaWithJavac: pending; Gradle execution was explicitly deferred.
+
+CI run: not run. The branch has not been pushed.
+
+## Feature Matrix
+
+| feature-id | status | notes |
+| --- | --- | --- |
+| ext-preview | pass | `ChatMessageCell` auto-merged; all 20 cell markers, six storage markers, binder bridge, cache hydration, request, and click-dispatch anchors remain. Runtime smoke is pending. |
+| nav-recovery | pass | `LaunchActivity` and `ActionBarLayout` were not changed by this upstream range. `ApplicationLoader.isUiCompletelyPaused` and all navigation anchors remain. Runtime predictive-back smoke is pending. |
+| fold-tablet | pass | Upstream additions in `AndroidUtilities` and `ChatActivity` auto-merged without deleting width-driven tablet detection or the pre-draw recovery hook. Fold/unfold smoke is pending. |
+| cutout | pass | Protected drawer and v31 style paths were not changed. |
+| android-auto | pass | The car dependency and paused-UI sorting gate remain. Runtime DHU/device smoke is pending. |
+| maps-live-location | pass | Map manifests and placeholder-based key injection were not changed. |
+| places-index | pass | Geo extraction and navigation paths were not changed. |
+| db-preview | pass | No database file or migration changed; `LAST_DB_VERSION` remains 179 and released Foldogram steps remain frozen. |
+| browser-iv | pass | Browser Instant View paths were not changed. |
+| identity | conflict resolved | Accepted `12.10.1` / `7038` and SDK 36; retained `APP_PACKAGE=com.rbnkv.foldogram`, app-module `APP_PACKAGE` wiring, and `RESOLVED_APP_VERSION_NAME`. |
+| share-shortcuts | pass | Share ranker and shortcut paths were not changed. |
+| ci-release | pass | Workflows were not changed. Existing CI and internal-release checkouts already initialize submodules recursively. |
+| secrets-policy | conflict resolved | Dropped upstream dummy signing passwords and retained local/env-based signing and Google-services generation. Secrets policy passes. |
+| duress-passcode | pass | Emergency passcode paths were not changed and all registry anchors remain. Runtime hidden-chat smoke is pending. |
+
+## Conflicts
+
+Conflicts resolved:
+
+- `TMessagesProj_App/build.gradle` (`identity`, `secrets-policy`): accepted SDK
+  36 and retained the Foldogram release-time version override and Google-services
+  generator.
+- `gradle.properties` (`identity`, `secrets-policy`): accepted upstream version
+  `12.10.1` / `7038` and Gradle heap settings; retained the Foldogram package,
+  local signing policy, and removed upstream dummy passwords.
+- `buildSrc/.../GenerateSchemeTask.kt` and `buildSrc/.../Rules.kt`
+  (build tooling): accepted upstream's `RulesHolder` extraction so codegen has a
+  single rules definition.
+- `settings.gradle` (build tooling): accepted upstream's equivalent jlatexmath
+  project mapping.
+
+Registry anchors changed: none.
+
+Threshold/min_count changes: none.
+
+Database migration changes: none. The upstream range does not touch
+`MessagesStorage`, `DatabaseMigrationHelper`, or external preview storage.
+
+Secrets/config files classified: `.gitmodules` adds reviewed HTTPS gitlinks for
+`libyuv` and `openh264`. No generated Google-services file, local signing file,
+credential, `local.properties`, or local note is included.
+
+## DB Upgrade Trace
+
+No new migration executes for a released Foldogram user. Users parked at 174,
+175, or 176 still traverse the already accepted frozen/appended chain through
+179 exactly as documented in the 12.10.0 report. A user already at 179 remains
+at 179. Fresh creation still records version 179 and creates the same upstream
+and external-preview schemas. The required install-over-existing-user device
+test remains pending even though the migration graph is unchanged.
+
+## Submodule and Build Audit
+
+All ten submodules initialize recursively at the recorded gitlinks. New links:
+
+- `libyuv`: `28ce69c2744a6aafdb58564e7b884aec3f66be5f`
+- `openh264`: `652bdb7719f30b52b08e506645a7322ff1b2cc6f`
+
+The full native build and ABI/media runtime checks are pending.
+
+## Device Baseline
+
+Connected device: OPPO CPH2671 (`220a0b5c`), Android 16 / API 36.
+
+Installed existing-user baseline: `com.rbnkv.foldogram`, version `12.10.1`,
+version code `120100019`, target SDK 35, installed from Google Play. The app was
+running when inspected. No merge-candidate APK has been built or installed.
+
+## Residual Risk
+
+Known residual risks: the prebuilt OpenH264/libyuv transition is not covered by
+Java compilation; target SDK 36 changes predictive-back and large-screen runtime
+behavior; Billing 8 changes product detail responses; and upstream
+`ReportBottomSheet` currently contains an unconditional `|| true` in the typed
+report response branch, which may report network errors as success.
+
+Manual device smoke needed: build and install the current merge commit over the
+verified Play baseline, verify installed version/commit, startup, and unchanged
+DB version, then test fold/unfold, split layout, predictive-back cancellation,
+external previews, emergency hidden chats/notifications, Android Auto, billing,
+rich/ephemeral messages, reporting, and representative video-call H264 paths.
+A fresh install of the same candidate is also required.
+
+Owner decisions needed: authorize the deferred Gradle gates/build and candidate
+installation. Do not merge back to `foldogram` or push before current-build
+device acceptance.
