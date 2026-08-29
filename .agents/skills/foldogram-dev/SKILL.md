@@ -13,7 +13,9 @@ skill instead.
 
 1. Branch from `foldogram`.
 2. Keep Java source compatible with Java 8.
-3. Run Gradle with Java 17.
+3. Run Android builds and installs with Java 17. Run Robolectric unit-test and
+   fork-anchor gates with Java 21 when the app targets SDK 36; Robolectric 4.16
+   requires it. Do not pin tests to an older SDK to bypass a toolchain mismatch.
 4. Use `TMessagesProj_AppHockeyApp` and
    `:TMessagesProj_AppHockeyApp:installAfatHA_private` for local/device installs.
    The installed package must be `com.rbnkv.foldogram.beta`. Never install a

@@ -22,11 +22,17 @@ For upstream merges, do not duplicate the procedure here. Use
 ## Java And Gradle
 
 - Source compatibility is Java 8.
-- Use Java 17 to run Gradle:
+- Use Java 17 for Android builds, installs, and release artifacts:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17)
 ```
+
+- Use Java 21 for Robolectric unit tests and the fork-anchor wrapper. Foldogram
+  targets SDK 36, and Robolectric 4.16 requires Java 21 when tests follow that
+  target. Set `JDK21_HOME` to a local JDK 21 installation; the JBR bundled with a
+  current Android Studio is acceptable. Do not pin tests to an older Android SDK
+  to work around a test-toolchain mismatch.
 
 - Prefer explicit module tasks over broad Gradle invocations when validating a
   focused change.
@@ -123,15 +129,15 @@ No output is the expected result.
 Run the merge canary before accepting a merge-sensitive change:
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest --tests '*MergeRegressionCanaryTest'
+JAVA_HOME="$JDK21_HOME" ./gradlew :TMessagesProj:testHA_privateUnitTest --tests '*MergeRegressionCanaryTest'
 ```
 
 Run the four CI gates before merging into `foldogram` or preparing a release:
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest
+JAVA_HOME="$JDK21_HOME" ./gradlew :TMessagesProj:testHA_privateUnitTest
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
-JAVA_HOME=$(/usr/libexec/java_home -v 17) sh scripts/check-fork-anchors.sh
+JAVA_HOME="$JDK21_HOME" sh scripts/check-fork-anchors.sh
 sh scripts/check-secrets-policy.sh
 ```
 

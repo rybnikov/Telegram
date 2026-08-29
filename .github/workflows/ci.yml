@@ -24,11 +24,11 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Set up Java 17
+      - name: Set up Java 21 for Robolectric
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
@@ -43,11 +43,17 @@ jobs:
       - name: Full unit tests
         run: ./gradlew :TMessagesProj:testHA_privateUnitTest
 
-      - name: Compile HA private Java
-        run: ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
-
       - name: Check fork anchors
         run: scripts/check-fork-anchors.sh
+
+      - name: Set up Java 17 for Android compilation
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Compile HA private Java
+        run: ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
 
       - name: Check secrets policy
         run: scripts/check-secrets-policy.sh

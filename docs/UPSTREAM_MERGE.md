@@ -139,11 +139,15 @@ Legacy `FOLDOGRAM-EXT-PREVIEW` markers map to `ext-preview`.
 Before a merge branch can be accepted, all gates must pass:
 
 ```bash
-scripts/check-fork-anchors.sh docs/FORK_FEATURES.md
+JAVA_HOME="$JDK21_HOME" scripts/check-fork-anchors.sh docs/FORK_FEATURES.md
 scripts/check-secrets-policy.sh
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
+JAVA_HOME="$JDK21_HOME" ./gradlew :TMessagesProj:testHA_privateUnitTest
+JAVA_HOME="$JDK17_HOME" ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
 ```
+
+Set `JDK21_HOME` and `JDK17_HOME` to local JDK installations. Android builds use
+Java 17. Robolectric 4.16 needs Java 21 when the tests follow Foldogram's target
+SDK 36. Do not pin tests to an older SDK to bypass that requirement.
 
 If a required script is missing or not executable, the gate failed. Restore the
 script from this runbook/registry work before accepting the merge.

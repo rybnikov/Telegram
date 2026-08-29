@@ -63,12 +63,16 @@ which migrations run, which ones are skipped, and why the upgrade is safe.
 ## Gates
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
-JAVA_HOME=$(/usr/libexec/java_home -v 17) sh scripts/check-fork-anchors.sh
+JAVA_HOME="$JDK21_HOME" ./gradlew :TMessagesProj:testHA_privateUnitTest
+JAVA_HOME="$JDK17_HOME" ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
+JAVA_HOME="$JDK21_HOME" sh scripts/check-fork-anchors.sh
 sh scripts/check-secrets-policy.sh
 scripts/merge-delta-audit.sh <old-upstream-base> <new-upstream-base> <pre-merge-foldogram-tip>
 ```
+
+Set `JDK21_HOME` and `JDK17_HOME` to local JDK installations. Robolectric 4.16
+needs Java 21 to follow target SDK 36; never make the gate green by pinning tests
+to an older Android SDK.
 
 The delta-audit third argument is the pre-merge `foldogram` tip, not merge
 `HEAD`. The script is an advisory pre-merge collision-lister, not a post-merge
