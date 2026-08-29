@@ -71,7 +71,7 @@ Existing-user beta baseline:
 
 Upgrade-in-place result and installed beta version:
 
-Fresh beta install result and test environment:
+Optional additional device environments explicitly requested by owner:
 
 Production `com.rbnkv.foldogram` preservation:
 

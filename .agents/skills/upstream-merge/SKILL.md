@@ -29,13 +29,19 @@ Use this skill only for upstream DrKLO/Telegram sync work.
 8. Before merging back to `foldogram`, perform the required device test from
    `docs/UPSTREAM_MERGE.md` using only `com.rbnkv.foldogram.beta` from
    `:TMessagesProj_AppHockeyApp:installAfatHA_private`. Upgrade existing beta
-   data in place, then test a fresh beta install in an isolated profile/emulator
-   or after explicit approval to clear beta data. Verify package/version and
-   candidate provenance before owner acceptance. Never install over, clear, or
-   uninstall the Google Play package `com.rbnkv.foldogram`.
+   data in place, verify package/version and candidate provenance, launch it,
+   give the owner a merge-specific manual checklist, and wait for the result.
+   The owner's confirmation that the checklist passes is device acceptance.
+   Never install over, clear, or uninstall the Google Play package
+   `com.rbnkv.foldogram`.
 9. Do not push an upstream merge to `fork/foldogram` before device acceptance.
    Pushes to `foldogram` trigger Foldogram CI, so pushing is part of the
    post-acceptance release boundary.
+10. After device acceptance, do not add another install, emulator, profile, or
+    device check unless the owner explicitly requests it or application/build
+    inputs changed. A disconnected device after verified acceptance is not a
+    blocker. Documentation-only merge-report or skill changes do not invalidate
+    acceptance; record them, but do not reinstall the unchanged application.
 
 ## Database Migration Rule
 
@@ -56,9 +62,11 @@ which migrations run, which ones are skipped, and why the upgrade is safe.
 - Missing fork feature invariant: stop and ask for review.
 - A local/device artifact resolves to `com.rbnkv.foldogram` instead of
   `com.rbnkv.foldogram.beta`: stop before installing it.
-- Device acceptance is stale or unverified: install the current build, verify
-  the beta package/version and candidate provenance, and wait for fresh owner
-  acceptance before pushing `fork/foldogram` or starting release.
+- Device acceptance is stale or unverified because application/build inputs
+  changed or the recorded package/version/provenance is wrong: install the
+  current build, verify it, and wait for fresh owner acceptance before pushing
+  `fork/foldogram` or starting release. Do not treat a later device disconnect
+  or documentation-only change as stale acceptance.
 
 ## Gates
 

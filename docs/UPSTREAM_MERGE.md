@@ -185,24 +185,29 @@ The key scenario is the existing-user beta database upgrade path:
    installed package, version name, and version code match the candidate. Record
    the candidate commit and build/install command in the merge report to preserve
    commit provenance.
-5. Launch beta and verify there is no startup crash, the database migration ran,
-   and new upstream runtime features work. Owner acceptance applies only after
-   this current candidate is installed and verified.
+5. Launch beta and verify there is no startup crash and no database migration or
+   native-library failure.
+6. Give the owner a concise manual checklist focused on the upstream delta and
+   the residual risks recorded in the merge report.
+7. Wait for the owner to test that installed beta. A response that the checklist
+   passes, including an instruction such as "everything works, release it", is
+   final device acceptance for the candidate.
 
-Also verify a fresh beta install. Prefer an emulator or isolated Android profile
-so the existing-user beta database is retained. On a shared physical device,
-clearing or uninstalling `com.rbnkv.foldogram.beta` requires explicit owner
-approval because it destroys beta data. It never authorizes touching
-`com.rbnkv.foldogram`.
+This is the complete required device sequence. Do not add a fresh-install pass,
+launch or create an emulator, create an isolated profile, or look for another
+device unless the owner explicitly requests additional testing. Do not clear or
+uninstall `com.rbnkv.foldogram.beta` without explicit owner approval. None of
+these rules ever authorizes touching `com.rbnkv.foldogram`.
 
 Static gates and the merge canary do not execute native SQLite upgrade paths or
 full application runtime startup. Device testing covers that gap.
 
-Owner acceptance must happen after the current merged build is installed and the
-installed version/commit is verified. If the agent later discovers that the
-tested device build was absent, disconnected during install, or from a different
-version, any earlier merge/release approval is stale; install the current build
-and wait for fresh owner acceptance.
+Owner acceptance must happen after the current merged application candidate is
+installed and its package/version/provenance is verified. It becomes stale only
+if application or build inputs change afterward, or if the recorded verification
+is proven wrong. Documentation-only changes to merge reports, skills, or runbooks
+do not invalidate acceptance. A device disconnect after verified acceptance is
+not a blocker and must not trigger another install or an emulator.
 
 ## Stop Rules
 

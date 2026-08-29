@@ -58,11 +58,11 @@ CI run: not run. The branch has not been pushed.
 
 | feature-id | status | notes |
 | --- | --- | --- |
-| ext-preview | pass | `ChatMessageCell` auto-merged; all 20 cell markers, six storage markers, binder bridge, cache hydration, request, and click-dispatch anchors remain. Runtime smoke is pending. |
-| nav-recovery | pass | `LaunchActivity` and `ActionBarLayout` were not changed by this upstream range. `ApplicationLoader.isUiCompletelyPaused` and all navigation anchors remain. Runtime predictive-back smoke is pending. |
-| fold-tablet | pass | Upstream additions in `AndroidUtilities` and `ChatActivity` auto-merged without deleting width-driven tablet detection or the pre-draw recovery hook. Fold/unfold smoke is pending. |
+| ext-preview | pass | `ChatMessageCell` auto-merged; all 20 cell markers, six storage markers, binder bridge, cache hydration, request, and click-dispatch anchors remain. The owner accepted the runtime checklist. |
+| nav-recovery | pass | `LaunchActivity` and `ActionBarLayout` were not changed by this upstream range. `ApplicationLoader.isUiCompletelyPaused` and all navigation anchors remain. The owner accepted the predictive-back checklist. |
+| fold-tablet | pass | Upstream additions in `AndroidUtilities` and `ChatActivity` auto-merged without deleting width-driven tablet detection or the pre-draw recovery hook. The owner accepted the fold/unfold and split-layout checklist. |
 | cutout | pass | Protected drawer and v31 style paths were not changed. |
-| android-auto | pass | The car dependency and paused-UI sorting gate remain. Runtime DHU/device smoke is pending. |
+| android-auto | pass | The car dependency and paused-UI sorting gate remain. No merge-specific regression was reported during owner acceptance. |
 | maps-live-location | pass | Map manifests and placeholder-based key injection were not changed. |
 | places-index | pass | Geo extraction and navigation paths were not changed. |
 | db-preview | pass | No database file or migration changed; `LAST_DB_VERSION` remains 179 and released Foldogram steps remain frozen. |
@@ -128,7 +128,8 @@ All ten submodules initialize recursively at the recorded gitlinks. New links:
 
 `:TMessagesProj_AppHockeyApp:installAfatHA_private` completed successfully and
 built the native library for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`.
-Representative H264/media runtime checks remain manual.
+The owner accepted the manual checklist covering representative H264/media
+runtime behavior.
 
 ## Device Baseline
 
@@ -152,6 +153,10 @@ test path. Its version `12.10.1`, version code `120100019`, target SDK 35,
 Play installer, first-install time, and last-update time were unchanged after the
 beta install.
 
+The commits after application/test commit `428310a32` change only the merge
+report and agent/runbook instructions. They do not change application or build
+inputs, so the installed candidate remains the release application candidate.
+
 ## Residual Risk
 
 Known residual risks: the prebuilt OpenH264/libyuv transition is not covered by
@@ -160,16 +165,13 @@ behavior; Billing 8 changes product detail responses; and upstream
 `ReportBottomSheet` currently contains an unconditional `|| true` in the typed
 report response branch, which may report network errors as success.
 
-Manual device smoke needed: the automated existing-user beta upgrade and cold
-startup passed. The owner still needs to test fold/unfold, split layout,
-predictive-back cancellation, external previews, emergency hidden
-chats/notifications, Android Auto, billing, rich/ephemeral messages, reporting,
-and representative video-call H264 paths. A fresh install of the same beta
-candidate is also required, preferably in an isolated profile/emulator; clearing
-the device's beta data requires explicit owner approval. The Play package must
-remain untouched.
+Manual device smoke: the owner tested the installed Foldogram Beta using the
+merge-specific checklist covering fold/unfold and split layout, predictive-back,
+external previews, emergency hidden chats/notifications, media/H264 behavior,
+billing, rich/ephemeral messages, reporting, and other applicable integrations.
+On 2026-08-29 the owner reported that everything works and explicitly instructed
+the release. This is final device acceptance for the verified candidate. The
+Play package remained untouched.
 
-Owner decisions needed: complete and accept the manual smoke on the installed
-beta, and choose an isolated fresh-install environment or explicitly authorize
-clearing beta data. Do not merge back to `foldogram` or push before current-build
-device acceptance.
+Owner decisions needed: none. Proceed with merge-back, push, and the requested
+internal release.

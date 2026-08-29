@@ -62,10 +62,19 @@ stable and beta packages have independent app data; a beta database initialized
 by the previous accepted Foldogram code is the existing-user baseline for local
 migration tests.
 
-Fresh-install testing also targets only `com.rbnkv.foldogram.beta`. Prefer an
-emulator or isolated Android profile so the upgrade-test beta data remains
-available. Clearing or uninstalling beta on a shared device destroys beta data
-and requires explicit owner approval.
+The upstream-merge device handoff has one required sequence:
+
+1. Install the current candidate over the existing Foldogram Beta data.
+2. Verify the beta package, version, and candidate provenance, then launch it.
+3. Give the owner a focused manual checklist for the changed risk areas.
+4. Wait for the owner's result. A confirmation that everything works closes
+   device acceptance and allows the requested release flow to continue.
+
+Do not add a fresh install, launch or create an emulator, create an isolated
+profile, or look for another device after owner acceptance unless the owner
+explicitly requests that extra test. The accepted device being disconnected is
+not a blocker. Clearing or uninstalling beta on a shared device always requires
+explicit owner approval.
 
 The release bundle uses the `TMessagesProj_App` module:
 

@@ -1,6 +1,6 @@
 ---
 name: foldogram-dev
-description: "Use when building, installing, testing, releasing the foldogram fork, or making any code change. Foldogram Beta device-test isolation, branch/build/release flow, secrets policy, and no-AI-traces commit rule."
+description: "Use when building, installing, testing, releasing the foldogram fork, or making any code change. Foldogram Beta device acceptance, branch/build/release flow, secrets policy, and no-AI-traces commit rule."
 ---
 
 # Foldogram Development Skill
@@ -27,15 +27,20 @@ skill instead.
 8. After every upstream merge, run the required device test from
    `docs/UPSTREAM_MERGE.md` before merging back to `foldogram`. Upgrade the
    existing Foldogram Beta data in place, verify the installed beta package and
-   candidate provenance, then get owner acceptance. Fresh-install testing also
-   targets only the beta package; do not clear or uninstall beta data without
-   owner approval unless an isolated test profile/emulator is used.
+   candidate provenance, launch it, give the owner the relevant manual checklist,
+   then wait. The owner's confirmation that everything works closes device
+   acceptance. Do not add a fresh install, emulator, isolated profile, or second
+   device unless the owner explicitly asks for it. Never clear or uninstall beta
+   data without owner approval.
 9. Treat `git push fork foldogram` as a release-boundary side effect: it triggers
    Foldogram CI. Do not push an upstream merge to `fork/foldogram` until the
    current installed build has passed owner acceptance.
-10. Keep commit messages free of AI traces such as `Claude`, `AI`,
+10. A device disconnect after verified owner acceptance is not a reason to
+    rebuild or reinstall. Repeat the Beta cycle only if application/build inputs
+    changed or package/version/provenance verification was wrong.
+11. Keep commit messages free of AI traces such as `Claude`, `AI`,
    `Co-Authored`, or `Generated`.
-11. Never commit generated Google services files, signing keys,
+12. Never commit generated Google services files, signing keys,
    `local.properties`, credentials, or local notes.
 
 Full reference: `docs/DEVELOPMENT.md`.
