@@ -36,18 +36,21 @@ comparison for bot keyboards.
 merge-delta-audit (advisory): pass, exit 0, no collision rows. Command:
 `scripts/merge-delta-audit.sh 3f03bfc73 62b56a07c 794379d5aa08068e9665e68eaa32ce0c4c062531`
 
-check-fork-anchors: pending; Gradle execution was explicitly deferred.
+check-fork-anchors: pass, exit 0, Robolectric/Gradle run with Java 21.
 
 Static registry audit: pass, all 14 feature blocks and 143 anchors are present
 at or above their configured thresholds.
 
 check-secrets-policy: pass, exit 0.
 
-MergeRegressionCanaryTest: pending; Gradle execution was explicitly deferred.
+MergeRegressionCanaryTest: pass through the targeted task and
+`check-fork-anchors`, 14 feature blocks and 143 anchors.
 
-testHA_privateUnitTest: pending; Gradle execution was explicitly deferred.
+testHA_privateUnitTest: pass, exit 0, Robolectric 4.16.1 on Java 21. The first
+run exposed that Robolectric 4.14.1 only supports through SDK 35; the dependency
+and CI test JDK were updated instead of pinning tests below target SDK 36.
 
-compileHA_privateJavaWithJavac: pending; Gradle execution was explicitly deferred.
+compileHA_privateJavaWithJavac: pass, exit 0, Java 17.
 
 CI run: not run. The branch has not been pushed.
 
@@ -66,7 +69,7 @@ CI run: not run. The branch has not been pushed.
 | browser-iv | pass | Browser Instant View paths were not changed. |
 | identity | conflict resolved | Accepted `12.10.1` / `7038` and SDK 36; retained `APP_PACKAGE=com.rbnkv.foldogram`, app-module `APP_PACKAGE` wiring, `.beta` device identities, and `RESOLVED_APP_VERSION_NAME`. |
 | share-shortcuts | pass | Share ranker and shortcut paths were not changed. |
-| ci-release | pass | Workflows were not changed. Existing CI and internal-release checkouts already initialize submodules recursively. |
+| ci-release | pass | CI now uses Java 21 for Robolectric SDK 36 tests and switches back to Java 17 for Android compilation. Internal release semantics and recursive submodule checkout are unchanged. |
 | secrets-policy | conflict resolved | Dropped upstream dummy signing passwords and retained local/env-based signing and Google-services generation. Secrets policy passes. |
 | duress-passcode | pass | Emergency passcode paths were not changed and all registry anchors remain. Runtime hidden-chat smoke is pending. |
 
@@ -85,6 +88,10 @@ Conflicts resolved:
   single rules definition.
 - `settings.gradle` (build tooling): accepted upstream's equivalent jlatexmath
   project mapping.
+- `TMessagesProj/build.gradle` and `.github/workflows/ci.yml` (test tooling):
+  upgraded Robolectric from 4.14.1 to 4.16.1 for SDK 36 support, ran test/anchor
+  gates on Java 21, and retained Java 17 for Android compilation. No new test
+  SDK pin was added.
 
 Registry anchors changed: added explicit `.beta` suffix anchors for
 `TMessagesProj_App` and `TMessagesProj_AppHockeyApp` after the device-test
@@ -107,8 +114,10 @@ No new migration executes for a released Foldogram user. Users parked at 174,
 175, or 176 still traverse the already accepted frozen/appended chain through
 179 exactly as documented in the 12.10.0 report. A user already at 179 remains
 at 179. Fresh creation still records version 179 and creates the same upstream
-and external-preview schemas. The required install-over-existing-beta device test
-remains pending even though the migration graph is unchanged.
+and external-preview schemas. The merged beta was installed over the existing
+12.10.0 beta data without clearing it and reached `LaunchActivity` on a cold
+start with no SQLite exception or corruption signature. The migration graph is
+unchanged, so no new migration step was expected.
 
 ## Submodule and Build Audit
 
@@ -117,7 +126,9 @@ All ten submodules initialize recursively at the recorded gitlinks. New links:
 - `libyuv`: `28ce69c2744a6aafdb58564e7b884aec3f66be5f`
 - `openh264`: `652bdb7719f30b52b08e506645a7322ff1b2cc6f`
 
-The full native build and ABI/media runtime checks are pending.
+`:TMessagesProj_AppHockeyApp:installAfatHA_private` completed successfully and
+built the native library for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`.
+Representative H264/media runtime checks remain manual.
 
 ## Device Baseline
 
@@ -126,10 +137,20 @@ Connected device: OPPO CPH2671 (`220a0b5c`), Android 16 / API 36.
 Installed existing-user baseline: `com.rbnkv.foldogram.beta`, version `12.10.0`,
 version code `70319`, target SDK 35. It was installed through Android shell,
 has been launched, and retains beta app data suitable for an in-place upgrade
-test. No merge-candidate APK has been built or installed.
+test.
+
+Installed candidate provenance: application/test commit `428310a32`, installed
+with `:TMessagesProj_AppHockeyApp:installAfatHA_private` and Java 17. The update
+completed without uninstalling or clearing beta. Installed metadata is version
+`12.10.1`, version code `70389`, target SDK 36; `firstInstallTime` stayed
+`2026-08-25 21:20:13`, confirming update-in-place. Final cold launch completed
+in 421 ms, the process remained alive after 12 seconds, and its logcat contained
+no fatal, SQLite, missing-native-library, or native-signal signature.
 
 The Google Play package `com.rbnkv.foldogram` is intentionally outside the local
-test path. It must not be replaced, cleared, or uninstalled during this merge.
+test path. Its version `12.10.1`, version code `120100019`, target SDK 35,
+Play installer, first-install time, and last-update time were unchanged after the
+beta install.
 
 ## Residual Risk
 
@@ -139,18 +160,16 @@ behavior; Billing 8 changes product detail responses; and upstream
 `ReportBottomSheet` currently contains an unconditional `|| true` in the typed
 report response branch, which may report network errors as success.
 
-Manual device smoke needed: build
-`:TMessagesProj_AppHockeyApp:installAfatHA_private` from the current merge commit
-and install it over the verified `com.rbnkv.foldogram.beta` 12.10.0 baseline
-without clearing beta data. Verify the installed beta version and candidate
-provenance, startup, and unchanged DB version, then test fold/unfold, split
-layout, predictive-back cancellation, external previews, emergency hidden
+Manual device smoke needed: the automated existing-user beta upgrade and cold
+startup passed. The owner still needs to test fold/unfold, split layout,
+predictive-back cancellation, external previews, emergency hidden
 chats/notifications, Android Auto, billing, rich/ephemeral messages, reporting,
 and representative video-call H264 paths. A fresh install of the same beta
 candidate is also required, preferably in an isolated profile/emulator; clearing
 the device's beta data requires explicit owner approval. The Play package must
 remain untouched.
 
-Owner decisions needed: authorize the deferred Gradle gates/build and candidate
-installation. Do not merge back to `foldogram` or push before current-build
+Owner decisions needed: complete and accept the manual smoke on the installed
+beta, and choose an isolated fresh-install environment or explicitly authorize
+clearing beta data. Do not merge back to `foldogram` or push before current-build
 device acceptance.
