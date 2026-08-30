@@ -139,11 +139,15 @@ Legacy `FOLDOGRAM-EXT-PREVIEW` markers map to `ext-preview`.
 Before a merge branch can be accepted, all gates must pass:
 
 ```bash
-scripts/check-fork-anchors.sh docs/FORK_FEATURES.md
+JAVA_HOME="$JDK21_HOME" scripts/check-fork-anchors.sh docs/FORK_FEATURES.md
 scripts/check-secrets-policy.sh
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
+JAVA_HOME="$JDK21_HOME" ./gradlew :TMessagesProj:testHA_privateUnitTest
+JAVA_HOME="$JDK17_HOME" ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
 ```
+
+Set `JDK21_HOME` and `JDK17_HOME` to local JDK installations. Android builds use
+Java 17. Robolectric 4.16 needs Java 21 when the tests follow Foldogram's target
+SDK 36. Do not pin tests to an older SDK to bypass that requirement.
 
 If a required script is missing or not executable, the gate failed. Restore the
 script from this runbook/registry work before accepting the merge.
@@ -153,25 +157,57 @@ script from this runbook/registry work before accepting the merge.
 A device test is mandatory after every upstream merge and before merging the
 merge branch back into `foldogram`.
 
-The key scenario is the existing-user database upgrade path:
+All local merge testing uses Foldogram Beta:
 
-1. Install the current released Foldogram build.
-2. Launch it once so the released database schema is initialized.
-3. Install the merged build over the same package, with the same signing key.
-4. Verify the installed package version/commit matches the merge candidate.
-5. Launch it and verify there is no startup crash, the database migration ran,
-   and new upstream runtime features work.
+```text
+package: com.rbnkv.foldogram.beta
+module:  TMessagesProj_AppHockeyApp
+task:    :TMessagesProj_AppHockeyApp:installAfatHA_private
+```
 
-Also verify a fresh install of the merged build.
+Never install a local candidate over, clear, or uninstall
+`com.rbnkv.foldogram`. That package belongs to the Google Play release flow and
+must remain untouched during local development.
+
+The key scenario is the existing-user beta database upgrade path:
+
+1. Confirm that `com.rbnkv.foldogram.beta` is installed from the previous
+   accepted Foldogram code and has been launched, so its database represents the
+   previous accepted schema. If it is missing, create the baseline from the
+   previous accepted commit; do not substitute the Play app's data.
+2. Record `git rev-parse HEAD`, require a clean tracked worktree, and build and
+   install `:TMessagesProj_AppHockeyApp:installAfatHA_private` without changing
+   the candidate worktree between build and install.
+3. Install over the existing beta package with the same signing key. Do not
+   clear or uninstall beta first; preserving beta data is what exercises the
+   upgrade path.
+4. Verify with `adb shell dumpsys package com.rbnkv.foldogram.beta` that the
+   installed package, version name, and version code match the candidate. Record
+   the candidate commit and build/install command in the merge report to preserve
+   commit provenance.
+5. Launch beta and verify there is no startup crash and no database migration or
+   native-library failure.
+6. Give the owner a concise manual checklist focused on the upstream delta and
+   the residual risks recorded in the merge report.
+7. Wait for the owner to test that installed beta. A response that the checklist
+   passes, including an instruction such as "everything works, release it", is
+   final device acceptance for the candidate.
+
+This is the complete required device sequence. Do not add a fresh-install pass,
+launch or create an emulator, create an isolated profile, or look for another
+device unless the owner explicitly requests additional testing. Do not clear or
+uninstall `com.rbnkv.foldogram.beta` without explicit owner approval. None of
+these rules ever authorizes touching `com.rbnkv.foldogram`.
 
 Static gates and the merge canary do not execute native SQLite upgrade paths or
 full application runtime startup. Device testing covers that gap.
 
-Owner acceptance must happen after the current merged build is installed and the
-installed version/commit is verified. If the agent later discovers that the
-tested device build was absent, disconnected during install, or from a different
-version, any earlier merge/release approval is stale; install the current build
-and wait for fresh owner acceptance.
+Owner acceptance must happen after the current merged application candidate is
+installed and its package/version/provenance is verified. It becomes stale only
+if application or build inputs change afterward, or if the recorded verification
+is proven wrong. Documentation-only changes to merge reports, skills, or runbooks
+do not invalidate acceptance. A device disconnect after verified acceptance is
+not a blocker and must not trigger another install or an emulator.
 
 ## Stop Rules
 
@@ -187,6 +223,7 @@ upstream touched a registry file but canary stayed green
 secret/config files are added, removed, or changed unexpectedly
 release workflow semantics change
 device acceptance is stale or unverified
+local/device artifact resolves to com.rbnkv.foldogram instead of the beta package
 ```
 
 A green canary is necessary but not sufficient. If upstream changed files listed
@@ -209,7 +246,7 @@ If a threshold must be lowered because upstream now implements the invariant,
 first prove the invariant with code inspection or a test, then update the
 registry in that dedicated commit.
 
-Current canary baseline is intentionally pinned to 13 feature blocks and 111
+Current canary baseline is intentionally pinned to 14 feature blocks and 143
 anchors. TODO: make this count dynamic after the registry/CI flow is stable. Until
 then, update the pinned count only in the same dedicated registry baseline commit.
 
@@ -357,6 +394,9 @@ secrets-policy:
 Conflicts resolved:
 Known residual risks:
 Manual device smoke needed:
+Device test package and baseline:
+Installed beta verification and candidate provenance:
+Production Play package preservation:
 ```
 
 Do not merge the branch into `foldogram` and do not push it until the owner

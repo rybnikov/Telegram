@@ -219,18 +219,25 @@ because it looks like a small helper.
 
 Human explanation: Foldogram is published as `com.rbnkv.foldogram`, not the
 upstream Telegram package. App modules derive their application id from
-`APP_PACKAGE`, and release metadata and Play URLs must stay Foldogram-specific.
+`APP_PACKAGE`, local/device builds use the independent
+`com.rbnkv.foldogram.beta` identity, and release metadata and Play URLs must stay
+Foldogram-specific.
 
-Invariant: All app variants use the Foldogram package identity, beta variants add
-their suffixes on top of it, and release metadata points to the Foldogram Play
-listing.
+Invariant: Release variants use the Foldogram package identity, beta variants add
+`.beta` on top of it, and release metadata points to the Foldogram Play listing.
+Local development and device testing target beta, never the Play-installed
+stable package. The canary intentionally counts separate `.beta` suffix anchors
+in both application modules so an upstream Gradle rewrite cannot silently point
+local installation back at stable.
 
 Conflict policy: If upstream changes Gradle packaging or manifests, preserve
-`APP_PACKAGE=com.rbnkv.foldogram` as the source of truth. Do not hardcode the
-upstream package into app modules or Play release workflow.
+`APP_PACKAGE=com.rbnkv.foldogram` as the source of truth and preserve `.beta` on
+local/device variants. Do not hardcode the upstream package into app modules or
+Play release workflow, and stop before installing any local artifact that
+resolves to the stable Foldogram package.
 
 ```json
-{"id":"identity","criticality":"high","anchors":[{"path":"gradle.properties","contains":"APP_PACKAGE=com.rbnkv.foldogram"},{"path":"TMessagesProj_App/build.gradle","contains":"defaultConfig.applicationId = APP_PACKAGE"},{"path":"TMessagesProj_AppHockeyApp/build.gradle","contains":"defaultConfig.applicationId = APP_PACKAGE"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java","contains":"https://play.google.com/store/apps/details?id=com.rbnkv.foldogram"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":"${applicationId}.provider"}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"identity","criticality":"high","anchors":[{"path":"gradle.properties","contains":"APP_PACKAGE=com.rbnkv.foldogram"},{"path":"TMessagesProj_App/build.gradle","contains":"defaultConfig.applicationId = APP_PACKAGE"},{"path":"TMessagesProj_App/build.gradle","contains":"applicationIdSuffix \".beta\""},{"path":"TMessagesProj_AppHockeyApp/build.gradle","contains":"defaultConfig.applicationId = APP_PACKAGE"},{"path":"TMessagesProj_AppHockeyApp/build.gradle","contains":"applicationIdSuffix \".beta\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java","contains":"https://play.google.com/store/apps/details?id=com.rbnkv.foldogram"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":"${applicationId}.provider"}],"tests":["MergeRegressionCanaryTest"]}
 ```
 
 ## share-shortcuts

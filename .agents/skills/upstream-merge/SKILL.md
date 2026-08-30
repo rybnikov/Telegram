@@ -1,6 +1,6 @@
 ---
 name: upstream-merge
-description: "Use when merging upstream DrKLO/Telegram into the foldogram fork. Branch strategy, per-conflict feature-id to invariant resolution, DB migration freeze/append/idempotency rule, CI gates and merge report. Do NOT use for normal feature work."
+description: "Use when merging upstream DrKLO/Telegram into the foldogram fork. Branch strategy, beta-only device acceptance, per-conflict feature-id resolution, DB migration rules, CI gates, and merge report. Do NOT use for normal feature work."
 ---
 
 # Upstream Merge Skill
@@ -27,12 +27,21 @@ Use this skill only for upstream DrKLO/Telegram sync work.
    measure-driven through `updateDisplaySizeFromRootMeasure`,
    `scheduleWindowWidthChanged`, and `onWindowWidthChanged`.
 8. Before merging back to `foldogram`, perform the required device test from
-   `docs/UPSTREAM_MERGE.md`, including the existing-user DB upgrade path and a
-   fresh install. Verify the installed package version/commit and get owner
-   acceptance after that verification.
+   `docs/UPSTREAM_MERGE.md` using only `com.rbnkv.foldogram.beta` from
+   `:TMessagesProj_AppHockeyApp:installAfatHA_private`. Upgrade existing beta
+   data in place, verify package/version and candidate provenance, launch it,
+   give the owner a merge-specific manual checklist, and wait for the result.
+   The owner's confirmation that the checklist passes is device acceptance.
+   Never install over, clear, or uninstall the Google Play package
+   `com.rbnkv.foldogram`.
 9. Do not push an upstream merge to `fork/foldogram` before device acceptance.
    Pushes to `foldogram` trigger Foldogram CI, so pushing is part of the
    post-acceptance release boundary.
+10. After device acceptance, do not add another install, emulator, profile, or
+    device check unless the owner explicitly requests it or application/build
+    inputs changed. A disconnected device after verified acceptance is not a
+    blocker. Documentation-only merge-report or skill changes do not invalidate
+    acceptance; record them, but do not reinstall the unchanged application.
 
 ## Database Migration Rule
 
@@ -51,19 +60,27 @@ which migrations run, which ones are skipped, and why the upgrade is safe.
   continuing.
 - Secret-like file staged: unstage it and fix the source.
 - Missing fork feature invariant: stop and ask for review.
-- Device acceptance is stale or unverified: install the current build, verify
-  the package version/commit, and wait for fresh owner acceptance before pushing
-  `fork/foldogram` or starting release.
+- A local/device artifact resolves to `com.rbnkv.foldogram` instead of
+  `com.rbnkv.foldogram.beta`: stop before installing it.
+- Device acceptance is stale or unverified because application/build inputs
+  changed or the recorded package/version/provenance is wrong: install the
+  current build, verify it, and wait for fresh owner acceptance before pushing
+  `fork/foldogram` or starting release. Do not treat a later device disconnect
+  or documentation-only change as stale acceptance.
 
 ## Gates
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
-JAVA_HOME=$(/usr/libexec/java_home -v 17) sh scripts/check-fork-anchors.sh
+JAVA_HOME="$JDK21_HOME" ./gradlew :TMessagesProj:testHA_privateUnitTest
+JAVA_HOME="$JDK17_HOME" ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
+JAVA_HOME="$JDK21_HOME" sh scripts/check-fork-anchors.sh
 sh scripts/check-secrets-policy.sh
 scripts/merge-delta-audit.sh <old-upstream-base> <new-upstream-base> <pre-merge-foldogram-tip>
 ```
+
+Set `JDK21_HOME` and `JDK17_HOME` to local JDK installations. Robolectric 4.16
+needs Java 21 to follow target SDK 36; never make the gate green by pinning tests
+to an older Android SDK.
 
 The delta-audit third argument is the pre-merge `foldogram` tip, not merge
 `HEAD`. The script is an advisory pre-merge collision-lister, not a post-merge

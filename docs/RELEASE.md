@@ -8,12 +8,19 @@ pushes the tag itself**; you never create or push a release tag by hand.
 ## Prerequisites
 
 - The code to release is on `foldogram`.
-- The mandatory device test has passed on the exact build being released (see
-  "Required Device Test" in `docs/UPSTREAM_MERGE.md`). Every upstream merge must
-  be device-tested before it is released.
-- The owner has accepted that installed build after the package version/commit
-  was verified. If testing was later found to have used a missing, disconnected,
-  or different-version build, any earlier release approval is stale.
+- The mandatory device test has passed from the application candidate being
+  released via `com.rbnkv.foldogram.beta` (see "Required Device Test" in
+  `docs/UPSTREAM_MERGE.md`). Every upstream merge must be beta-tested before it
+  is released. Documentation-only report/skill/runbook commits after that test
+  do not invalidate acceptance; application or build-input changes do. The
+  Play-installed `com.rbnkv.foldogram` must not be replaced, cleared, or
+  uninstalled for local testing.
+- The owner has accepted that installed beta after its package, version, and
+  candidate provenance were verified and after receiving the manual test
+  checklist. A response such as "everything works, release it" is final device
+  acceptance. It is stale only if that verification is proven wrong or
+  application/build inputs change afterward; a later device disconnect is not a
+  blocker.
 - `foldogram` is pushed to the `fork` remote (`rybnikov/Telegram`) and up to
   date, but only after the device-test acceptance above. A push to this branch
   triggers Foldogram CI, so it is part of the post-acceptance release boundary.
@@ -65,6 +72,10 @@ re-trigger. Do **not** edit `gradle.properties` to work around it.
     git show foldogram:gradle.properties | grep APP_VERSION
     git ls-remote --tags fork 'v*' | sed 's#.*refs/tags/##' | sort -V | tail -1
 
+Once verified Beta testing has owner acceptance, proceed directly to this
+pre-flight. Do not insert a fresh-install check, emulator, isolated profile,
+second device, or another Beta install unless the owner explicitly requests it.
+
 ## Trigger
 
     gh workflow run internal-release.yml \
@@ -100,6 +111,8 @@ Builds `:TMessagesProj_App:bundleAfatRelease`, uploads the `.aab` to the Google
 Play **internal** track (draft), optionally promotes it, generates checksums,
 then creates and pushes the `v<X.Y.Z>` tag and publishes the GitHub release.
 Published package is `com.rbnkv.foldogram` (not `com.rbnkv.foldogram.beta`).
+CI and Google Play own this stable-package transition; do not locally install
+the release artifact over the Play app as part of pre-release testing.
 
 ## Secrets
 
@@ -115,7 +128,8 @@ repository. If a secret-like file appears in `git diff --cached`, unstage it.
    highest `v*` tag. After merging upstream `X.Y.Z`, the first release is
    `vX.Y.(Z+1)`.
 3. `git push fork foldogram` triggers Foldogram CI. Do not push or release an
-   upstream merge until the current installed build has fresh owner acceptance.
+   upstream merge until the current installed application candidate has owner
+   acceptance. Documentation-only follow-up commits preserve that acceptance.
 4. CI creates and pushes the tag — never create or push it manually; it must not
    pre-exist.
 5. Verify with `gh run view --json conclusion` plus tag/release existence; do not

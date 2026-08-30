@@ -22,29 +22,68 @@ For upstream merges, do not duplicate the procedure here. Use
 ## Java And Gradle
 
 - Source compatibility is Java 8.
-- Use Java 17 to run Gradle:
+- Use Java 17 for Android builds, installs, and release artifacts:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17)
 ```
+
+- Use Java 21 for Robolectric unit tests and the fork-anchor wrapper. Foldogram
+  targets SDK 36, and Robolectric 4.16 requires Java 21 when tests follow that
+  target. Set `JDK21_HOME` to a local JDK 21 installation; the JBR bundled with a
+  current Android Studio is acceptable. Do not pin tests to an older Android SDK
+  to work around a test-toolchain mismatch.
 
 - Prefer explicit module tasks over broad Gradle invocations when validating a
   focused change.
 
 ## Build And Install
 
-The beta/device-test build uses the `TMessagesProj_AppHockeyApp` module:
+The beta/device-test build uses the `TMessagesProj_AppHockeyApp` module and the
+package `com.rbnkv.foldogram.beta`:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj_AppHockeyApp:compileAfatHA_privateJavaWithJavac
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj_AppHockeyApp:installAfatHA_private
 ```
 
+`installAfatHA_private` is the canonical physical-device task. When the signing
+key matches, it upgrades the existing Foldogram Beta installation in place and
+preserves its database. Before and after installing, verify that the target is
+the beta package:
+
+```bash
+adb shell dumpsys package com.rbnkv.foldogram.beta
+```
+
+Local development and device smoke tests must never install over, clear, or
+uninstall `com.rbnkv.foldogram`, which is the Google Play installation. The
+stable and beta packages have independent app data; a beta database initialized
+by the previous accepted Foldogram code is the existing-user baseline for local
+migration tests.
+
+The upstream-merge device handoff has one required sequence:
+
+1. Install the current candidate over the existing Foldogram Beta data.
+2. Verify the beta package, version, and candidate provenance, then launch it.
+3. Give the owner a focused manual checklist for the changed risk areas.
+4. Wait for the owner's result. A confirmation that everything works closes
+   device acceptance and allows the requested release flow to continue.
+
+Do not add a fresh install, launch or create an emulator, create an isolated
+profile, or look for another device after owner acceptance unless the owner
+explicitly requests that extra test. The accepted device being disconnected is
+not a blocker. Clearing or uninstalling beta on a shared device always requires
+explicit owner approval.
+
 The release bundle uses the `TMessagesProj_App` module:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj_App:bundleAfatRelease
 ```
+
+This release artifact is for the Google Play workflow, not for local device
+installation over the stable app.
 
 Release version and signing overrides must come from environment variables,
 GitHub secrets, or `local.properties`; never hardcode them in tracked files.
@@ -99,15 +138,15 @@ No output is the expected result.
 Run the merge canary before accepting a merge-sensitive change:
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest --tests '*MergeRegressionCanaryTest'
+JAVA_HOME="$JDK21_HOME" ./gradlew :TMessagesProj:testHA_privateUnitTest --tests '*MergeRegressionCanaryTest'
 ```
 
 Run the four CI gates before merging into `foldogram` or preparing a release:
 
 ```bash
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:testHA_privateUnitTest
+JAVA_HOME="$JDK21_HOME" ./gradlew :TMessagesProj:testHA_privateUnitTest
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :TMessagesProj:compileHA_privateJavaWithJavac
-JAVA_HOME=$(/usr/libexec/java_home -v 17) sh scripts/check-fork-anchors.sh
+JAVA_HOME="$JDK21_HOME" sh scripts/check-fork-anchors.sh
 sh scripts/check-secrets-policy.sh
 ```
 
