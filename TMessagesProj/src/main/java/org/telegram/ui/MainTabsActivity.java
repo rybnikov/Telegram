@@ -937,9 +937,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             }
         }
         {
-            int bottomMargin = isUpdateLayoutVisible ? (navigationBarHeight + updateLayoutHeight) : 0;
+            int bottomMargin = isUpdateLayoutVisible ? updateLayoutHeight : 0;
             if (tabletLayout) {
-                bottomMargin = Math.max(bottomMargin, navigationBarHeight + dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS));
+                bottomMargin = Math.max(bottomMargin, dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS));
             }
             lp = (ViewGroup.MarginLayoutParams) viewPager.getLayoutParams();
             if (lp.bottomMargin != bottomMargin || lp.leftMargin != systemInsets.left || lp.rightMargin != systemInsets.right) {
@@ -952,13 +952,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         tabsViewWrapper.setPadding(systemInsets.left, 0, systemInsets.right, navigationBarHeight);
 
-        final WindowInsetsCompat consumed = isUpdateLayoutVisible ?
-            insets.inset(0, 0, 0, navigationBarHeight) : insets;
-
         checkUi_tabsPosition();
         checkUi_fadeView();
 
-        return super.onApplyWindowInsets(v, consumed);
+        return super.onApplyWindowInsets(v, insets);
     }
 
     @Override

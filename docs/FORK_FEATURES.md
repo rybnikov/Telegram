@@ -112,6 +112,32 @@ hardcoded device-specific dimensions.
 {"id":"cutout","criticality":"med","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"DisplayCutoutCompat"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"private boolean hasCutout"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"insets.getDisplayCutout()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"getBoundingRects().isEmpty()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"if (hasCutout)"},{"path":"TMessagesProj/src/main/res/values-v31/styles.xml","contains":"android:windowLayoutInDisplayCutoutMode\">shortEdges","min_count":2}],"tests":["MergeRegressionCanaryTest"]}
 ```
 
+## gesture-edge-to-edge
+
+Human explanation: Foldogram keeps screen and scrolling backgrounds visible
+behind the transparent gesture-navigation handle while preserving the existing
+safe position of controls. Opaque app-side protection is reserved for tappable
+system navigation such as three-button navigation and taskbars; IME insets are
+handled independently and real window insets continue to reach child screens.
+
+Invariant: `DrawerLayoutContainer` must never paint a navigation or keyboard
+scrim over child content in transparent gesture mode. Navigation containers do
+not shorten legacy content for a gesture-only inset, `UniversalFragment` lists
+use bottom padding with unclipped scrolling, main-tab pages retain the original
+insets, and attached sheet windows reach the bottom edge. Three-button
+navigation and taskbars retain opaque protection based only on system-provided
+insets. No device-specific dimensions may be used.
+
+Conflict policy: If upstream changes edge-to-edge or inset dispatch, preserve
+the distinction between `navigationBars`, `tappableElement`, and `ime`. Do not
+replace it with a navigation-bar height heuristic. Keep the rendering test: a
+contrasting child pixel at the bottom must survive the root draw in gesture
+mode, while tappable navigation must still receive protection.
+
+```json
+{"id":"gesture-edge-to-edge","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/ui/Components/inset/EdgeToEdgeInsets.java","contains":"WindowInsetsCompat.Type.tappableElement()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/Components/inset/EdgeToEdgeInsets.java","contains":"public static int getLegacyBottomInset"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"EdgeToEdgeInsets.getNavigationBarProtection(insets)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"navigationBarProtection.bottom"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java","contains":"EdgeToEdgeInsets.getLegacyBottomInset(insets)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java","contains":"insets.getTappableElementInsets().bottom"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java","contains":"drawNavigationBar(canvas, (drawDoubleNavigationBar ? 0.7f * navigationBarAlpha : 1f), true)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalFragment.java","contains":"listView.setClipToPadding(false)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java","contains":"return super.onApplyWindowInsets(v, insets);"},{"path":"TMessagesProj/src/test/java/org/telegram/ui/ActionBar/DrawerLayoutContainerEdgeToEdgeTest.java","contains":"gestureContentRemainsVisibleAfterRootDrawEvenWithImeInsets"}],"tests":["MergeRegressionCanaryTest","DrawerLayoutContainerEdgeToEdgeTest"]}
+```
+
 ## android-auto
 
 Human explanation: Foldogram has an Android Auto messaging surface with chat

@@ -26,6 +26,7 @@ import androidx.core.view.WindowInsetsCompat;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
+import org.telegram.ui.Components.inset.EdgeToEdgeInsets;
 
 public class DrawerLayoutContainer extends FrameLayout {
 
@@ -148,10 +149,37 @@ public class DrawerLayoutContainer extends FrameLayout {
 
         super.dispatchDraw(canvas);
 
-        if (systemAndCutoutAndImeInsets.bottom > 0) {
+        if (navigationBarProtection.left > 0) {
             canvas.drawRect(
                 0,
-                getMeasuredHeight() - systemAndCutoutAndImeInsets.bottom,
+                0,
+                navigationBarProtection.left,
+                getMeasuredHeight(),
+                internalNavbarPaint
+            );
+        }
+        if (navigationBarProtection.top > 0) {
+            canvas.drawRect(
+                0,
+                0,
+                getMeasuredWidth(),
+                navigationBarProtection.top,
+                internalNavbarPaint
+            );
+        }
+        if (navigationBarProtection.right > 0) {
+            canvas.drawRect(
+                getMeasuredWidth() - navigationBarProtection.right,
+                0,
+                getMeasuredWidth(),
+                getMeasuredHeight(),
+                internalNavbarPaint
+            );
+        }
+        if (navigationBarProtection.bottom > 0) {
+            canvas.drawRect(
+                0,
+                getMeasuredHeight() - navigationBarProtection.bottom,
                 getMeasuredWidth(),
                 getMeasuredHeight(),
                 internalNavbarPaint
@@ -203,7 +231,8 @@ public class DrawerLayoutContainer extends FrameLayout {
 
     private @Nullable WindowInsetsCompat lastWindowInsetsCompat;
     private @NonNull Insets systemAndCutoutInsets = Insets.NONE;
-    private @NonNull Insets systemAndCutoutAndImeInsets = Insets.NONE;
+    private @NonNull Insets imeInsets = Insets.NONE;
+    private @NonNull Insets navigationBarProtection = Insets.NONE;
 
     private void dispatchApplyWindowInsetsInternal(View child, WindowInsetsCompat insets) {
         boolean canApplyInsets = child instanceof ActionBarLayout || child.getTag() == null;
@@ -213,21 +242,25 @@ public class DrawerLayoutContainer extends FrameLayout {
     }
 
     @NonNull
-    private WindowInsetsCompat onApplyWindowInsets(@NonNull View ignoredV, @NonNull WindowInsetsCompat insets) {
+    WindowInsetsCompat onApplyWindowInsets(@NonNull View ignoredV, @NonNull WindowInsetsCompat insets) {
         lastWindowInsetsCompat = insets;
 
         final DisplayCutoutCompat displayCutout = insets.getDisplayCutout();
         hasCutout = displayCutout != null && !displayCutout.getBoundingRects().isEmpty();
 
         final Insets systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
-        final Insets systemAndImeInsets = AndroidUtilities.getDefaultWindowInsets(insets, true);
+        final Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
+        final Insets navigationBarProtection = EdgeToEdgeInsets.getNavigationBarProtection(insets);
 
-        if (!systemAndCutoutInsets.equals(systemInsets) || !systemAndCutoutAndImeInsets.equals(systemAndImeInsets)) {
+        if (!systemAndCutoutInsets.equals(systemInsets)
+            || !this.imeInsets.equals(imeInsets)
+            || !this.navigationBarProtection.equals(navigationBarProtection)) {
             AndroidUtilities.statusBarHeight = systemInsets.top;
             AndroidUtilities.navigationBarHeight = systemInsets.bottom;
 
             systemAndCutoutInsets = systemInsets;
-            systemAndCutoutAndImeInsets = systemAndImeInsets;
+            this.imeInsets = imeInsets;
+            this.navigationBarProtection = navigationBarProtection;
             requestLayout();
         }
 

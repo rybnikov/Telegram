@@ -122,6 +122,7 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
     private boolean bigTitle;
     private boolean multipleLinesTitle;
     private int bottomInset;
+    private int navigationBarProtectionInset;
     private int leftInset;
     private int rightInset;
     protected boolean fullWidth;
@@ -836,8 +837,10 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
             } else {
                 backgroundPaint.setColor(0xff000000);
             }
-            if (drawDoubleNavigationBar && !shouldOverlayCameraViewOverNavBar()) {
-                drawNavigationBar(canvas, 1f);
+            if (drawNavigationBar && !shouldOverlayCameraViewOverNavBar()) {
+                // The sheet owns the gesture area. Paint its background first so
+                // extended child content can replace it during the normal draw.
+                drawNavigationBar(canvas, 1f, false);
             }
             if (backgroundPaint.getAlpha() < 255 && drawNavigationBar) {
                 float translation = 0;
@@ -845,7 +848,7 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
                     float dist = containerView.getMeasuredHeight() - containerView.getTranslationY();
                     translation = Math.max(0, getBottomInset() - dist);
                 }
-                int navBarHeight = drawNavigationBar ? getBottomInset() : 0;
+                int navBarHeight = drawNavigationBar ? getNavigationBarProtectionInset() : 0;
                 canvas.save();
                 canvas.clipRect(containerView.getLeft() + backgroundPaddingLeft, getMeasuredHeight() - navBarHeight + translation - currentPanTranslationY, containerView.getRight() - backgroundPaddingLeft, getMeasuredHeight() + translation, Region.Op.DIFFERENCE);
                 super.dispatchDraw(canvas);
@@ -856,7 +859,7 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
 
             if (!doNotOverlayNavigationBar) {
                 if (!shouldOverlayCameraViewOverNavBar()) {
-                    drawNavigationBar(canvas, (drawDoubleNavigationBar ? 0.7f * navigationBarAlpha : 1f));
+                    drawNavigationBar(canvas, (drawDoubleNavigationBar ? 0.7f * navigationBarAlpha : 1f), true);
                 }
                 if (drawNavigationBar && rightInset != 0 && rightInset > leftInset && fullWidth && AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y) {
                     canvas.drawRect(containerView.getRight() - backgroundPaddingLeft, containerView.getTranslationY(), containerView.getRight() + rightInset, getMeasuredHeight(), backgroundPaint);
@@ -865,7 +868,7 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
                 if (drawNavigationBar && leftInset != 0 && leftInset > rightInset && fullWidth && AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y) {
                     canvas.drawRect(0, containerView.getTranslationY(), containerView.getLeft() + backgroundPaddingLeft, getMeasuredHeight(), backgroundPaint);
                 }
-                if (containerView.getY() + containerView.getMeasuredHeight() < getMeasuredHeight()) {
+                if (keyboardHeight != 0 && containerView.getY() + containerView.getMeasuredHeight() < getMeasuredHeight()) {
                     backgroundPaint.setColor(behindKeyboardColorKey >= 0 ? getThemedColor(behindKeyboardColorKey) : behindKeyboardColor);
                     canvas.drawRect(containerView.getLeft() + backgroundPaddingLeft, containerView.getY() + containerView.getMeasuredHeight(), containerView.getRight() - backgroundPaddingLeft, getMeasuredHeight(), backgroundPaint);
                 }
@@ -881,7 +884,7 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
         protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
             if (child instanceof CameraView) {
                 if (shouldOverlayCameraViewOverNavBar()) {
-                    drawNavigationBar(canvas, 1f);
+                    drawNavigationBar(canvas, 1f, false);
                 }
                 return super.drawChild(canvas, child, drawingTime);
             }
@@ -897,7 +900,7 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
                     float dist = containerView.getMeasuredHeight() - containerView.getTranslationY();
                     translation = Math.max(0, getBottomInset() - dist);
                 }
-                int navBarHeight = drawNavigationBar ? getBottomInset() : 0;
+                int navBarHeight = drawNavigationBar ? getNavigationBarProtectionInset() : 0;
                 canvas.save();
                 canvas.clipRect(containerView.getLeft() + backgroundPaddingLeft, getMeasuredHeight() - navBarHeight + translation - currentPanTranslationY, containerView.getRight() - backgroundPaddingLeft, getMeasuredHeight() + translation, Region.Op.DIFFERENCE);
                 restore = true;
@@ -913,7 +916,7 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
             }
         }
 
-        public void drawNavigationBar(Canvas canvas, float alpha) {
+        public void drawNavigationBar(Canvas canvas, float alpha, boolean protectionOnly) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (navBarColorKey >= 0) {
                     backgroundPaint.setColor(getThemedColor(navBarColorKey));
@@ -926,15 +929,16 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
             if (transitionFromRight && containerView.getVisibility() != View.VISIBLE) {
                 return;
             }
-            if ((drawNavigationBar && bottomInset != 0) || currentPanTranslationY != 0) {
+            final int navigationBarInset = protectionOnly ? getNavigationBarProtectionInset() : getBottomInset();
+            if ((drawNavigationBar && navigationBarInset != 0) || currentPanTranslationY != 0) {
                 float translation = 0;
-                int navBarHeight = drawNavigationBar ? getBottomInset() : 0;
+                int navBarHeight = drawNavigationBar ? navigationBarInset : 0;
                 if (scrollNavBar || Build.VERSION.SDK_INT >= 29 && getAdditionalMandatoryOffsets() > 0) {
                     if (drawDoubleNavigationBar) {
                         translation = Math.max(0, Math.min(navBarHeight - currentPanTranslationY, containerView.getTranslationY()));
                     } else {
                         float dist = containerView.getMeasuredHeight() - containerView.getTranslationY();
-                        translation = Math.max(0, getBottomInset() - dist);
+                        translation = Math.max(0, navigationBarInset - dist);
                     }
                 }
                 int wasAlpha = backgroundPaint.getAlpha();
@@ -1288,6 +1292,13 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
             statusBarHeight = newTopInset;
         }
         lastInsets = insets;
+        navigationBarProtectionInset = insets.getSystemWindowInsetBottom();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            navigationBarProtectionInset = Math.min(
+                navigationBarProtectionInset,
+                insets.getTappableElementInsets().bottom
+            );
+        }
         container.requestLayout();
         onInsetsChanged();
     }
@@ -2353,6 +2364,10 @@ public class BottomSheet extends Dialog implements BaseFragment.AttachedSheet {
 
     public int getBottomInset() {
         return (int) (bottomInset * (1f - hideSystemVerticalInsetsProgress));
+    }
+
+    private int getNavigationBarProtectionInset() {
+        return (int) (navigationBarProtectionInset * (1f - hideSystemVerticalInsetsProgress));
     }
 
     public void onConfigurationChanged(android.content.res.Configuration newConfig) {

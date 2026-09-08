@@ -87,6 +87,7 @@ import org.telegram.ui.Components.FloatingDebug.FloatingDebugController;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugProvider;
 import org.telegram.ui.Components.GroupCallPip;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.inset.EdgeToEdgeInsets;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.Stories.StoryViewer;
 
@@ -343,7 +344,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
                 View child = getChildAt(a);
                 if (!(child instanceof ActionBar)) {
                     if (child instanceof BaseFragment.AttachedSheetWindow) {
-                        measureChildWithMargins(child, widthMeasureSpec, 0, heightMeasureSpec, getBottomTabsHeight(false) > 0 || !isSupportEdgeToEdge ? 0 : systemAndDisplayInsets.bottom);
+                        // Attached sheets own the pixels below their controls. Keep the
+                        // window full-height and let its real insets position controls.
+                        measureChildWithMargins(child, widthMeasureSpec, 0, heightMeasureSpec, 0);
                     } else if (child.getTag(R.id.sheet_attached_to_fragment_tag) != null || child.getFitsSystemWindows()) {
                         int addHeight = isSupportEdgeToEdge ? systemAndDisplayInsets.bottom : 0;
                         measureChildWithMargins(child, widthMeasureSpec, 0, heightMeasureSpec, addHeight);
@@ -3868,7 +3871,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             final int consumedBottom;
 
             if (layoutContainer.edgeToEdgeSupportMode == EdgeToEdgeSupportMode.NONE) {
-                paddingBottom = Math.max(tabsInset, systemWithImeInsets.bottom);
+                paddingBottom = Math.max(tabsInset, EdgeToEdgeInsets.getLegacyBottomInset(insets));
                 consumedBottom = paddingBottom;
 
                 ViewCompat.dispatchApplyWindowInsets(child, WindowInsetsCompat.CONSUMED);
