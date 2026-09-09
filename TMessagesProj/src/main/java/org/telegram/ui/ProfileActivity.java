@@ -8078,6 +8078,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             } else {
                 mediaCounterTextView.setText(LocaleController.formatPluralString("Voice", mediaCount[MediaDataController.MEDIA_AUDIO]));
             }
+        } else if (id == SharedMediaLayout.TAB_PLACES) {
+            mediaCounterTextView.setText(getString(R.string.SharedPlacesTab));
         } else if (id == SharedMediaLayout.TAB_LINKS) {
             if (mediaCount[MediaDataController.MEDIA_URL] <= 0) {
                 mediaCounterTextView.setText(LocaleController.getString(R.string.SharedLinks));
@@ -10563,7 +10565,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         visibleChatParticipants.clear();
         visibleSortedUsers.clear();
 
-        boolean hasMedia = false;
+        // Places is available even when the chat has no other shared media.
+        boolean hasMedia = true;
         if (sharedMediaPreloader != null) {
             int[] lastMediaCount = sharedMediaPreloader.getLastMediaCount();
             for (int a = 0; a < lastMediaCount.length; a++) {

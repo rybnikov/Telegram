@@ -263,4 +263,9 @@
     <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
     <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
     <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
+    <string name="SharedPlacesTab">Места</string>
+    <string name="NoPlaces">Здесь пока нет мест</string>
+    <string name="PlacesNoResult">Места не найдены</string>
+    <string name="PlacesSearching">Поиск мест…</string>
+    <string name="PlacesLoadError">Не удалось загрузить места. Нажмите, чтобы повторить.</string>
 </resources>

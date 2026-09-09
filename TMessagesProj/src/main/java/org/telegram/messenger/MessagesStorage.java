@@ -120,7 +120,7 @@ public class MessagesStorage extends BaseController {
         }
     }
 
-    public final static int LAST_DB_VERSION = 179;
+    public final static int LAST_DB_VERSION = 180;
     private boolean databaseMigrationInProgress;
     public boolean showClearDatabaseAlert;
 
@@ -540,8 +540,14 @@ public class MessagesStorage extends BaseController {
             "ephemeral_messages",
             "welcome_messages",
             // FOLDOGRAM-EXT-PREVIEW: external preview cache table.
-            ExternalPreviewStorage.TABLE_NAME
+            ExternalPreviewStorage.TABLE_NAME,
             // END FOLDOGRAM-EXT-PREVIEW
+            "places_v1",
+            "places_pending_v1",
+            "places_local_v1",
+            "places_state_v1",
+            "places_meta_v1",
+            "places_epoch_v1"
     };
 
     public static void createTables(SQLiteDatabase database) throws SQLiteException {
@@ -783,6 +789,8 @@ public class MessagesStorage extends BaseController {
 
         database.executeFast("CREATE TABLE ephemeral_messages (id INTEGER, dialog_id INTEGER, topic_id INTEGER, date INTEGER, data BLOB, PRIMARY KEY(dialog_id, id));").stepThis().dispose();
         database.executeFast("CREATE INDEX IF NOT EXISTS ephemeral_messages_date_idx ON ephemeral_messages(date);").stepThis().dispose();
+
+        org.telegram.messenger.places.PlacesStorage.createSchema(database);
 
         database.executeFast("PRAGMA user_version = " + MessagesStorage.LAST_DB_VERSION).stepThis().dispose();
 
@@ -2174,6 +2182,9 @@ public class MessagesStorage extends BaseController {
     public void removeTopic(long dialogId, long topicId) {
         storageQueue.postRunnable(() -> {
             try {
+                org.telegram.messenger.places.PlacesStorage.invalidate(database,
+                        "uid=" + dialogId + " AND topic=" + topicId,
+                        "uid=" + dialogId + " AND topic=" + topicId);
                 database.executeFast(String.format(Locale.US, "DELETE FROM topics WHERE did = %d AND topic_id = %d", dialogId, topicId)).stepThis().dispose();
                 database.executeFast(String.format(Locale.US,
                     "DELETE FROM messages_v2 WHERE uid = %d AND mid IN (" +
@@ -2191,6 +2202,9 @@ public class MessagesStorage extends BaseController {
         storageQueue.postRunnable(() -> {
             try {
                 String topics = TextUtils.join(", ", topicIds);
+                org.telegram.messenger.places.PlacesStorage.invalidate(database,
+                        "uid=" + dialogId + " AND topic IN (" + topics + ")",
+                        "uid=" + dialogId + " AND topic IN (" + topics + ")");
                 database.executeFast(String.format(Locale.US, "DELETE FROM topics WHERE did = %d AND topic_id IN (%s)", dialogId, topics)).stepThis().dispose();
                 try {
                     database.executeFast(String.format(Locale.US,
@@ -4430,6 +4444,7 @@ public class MessagesStorage extends BaseController {
                         return;
                     }
                 }
+                org.telegram.messenger.places.PlacesStorage.invalidateDialog(database, did);
                 if (DialogObject.isEncryptedDialog(did) || messagesOnly == 2) {
                     cursor = database.queryFinalized("SELECT data FROM messages_v2 WHERE uid = " + did);
                     ArrayList<File> filesToDelete = new ArrayList<>();
@@ -4637,6 +4652,7 @@ public class MessagesStorage extends BaseController {
                 database.executeFast("DELETE FROM chat_pinned_count WHERE uid IN " + ids).stepThis().dispose();
                 database.executeFast("DELETE FROM chat_pinned_v2 WHERE uid IN " + ids).stepThis().dispose();
                 database.executeFast("DELETE FROM dialogs WHERE did IN " + ids).stepThis().dispose();
+                org.telegram.messenger.places.PlacesStorage.invalidate(database, "uid IN " + ids, "uid IN " + ids);
                 database.executeFast("DELETE FROM messages_v2 WHERE uid IN " + ids).stepThis().dispose();
                 database.executeFast("DELETE FROM polls_v2 WHERE 1").stepThis().dispose();
                 database.executeFast("DELETE FROM bot_keyboard WHERE uid IN " + ids).stepThis().dispose();
@@ -11806,6 +11822,7 @@ public class MessagesStorage extends BaseController {
 
                 database.executeFast("DELETE FROM chat_pinned_count WHERE uid = " + did).stepThis().dispose();
                 database.executeFast("DELETE FROM chat_pinned_v2 WHERE uid = " + did).stepThis().dispose();
+                org.telegram.messenger.places.PlacesStorage.invalidate(database, "uid=" + did, "uid=" + did);
                 database.executeFast("DELETE FROM messages_v2 WHERE uid = " + did).stepThis().dispose();
                 database.executeFast("DELETE FROM bot_keyboard WHERE uid = " + did).stepThis().dispose();
                 database.executeFast("DELETE FROM bot_keyboard_topics WHERE uid = " + did).stepThis().dispose();
@@ -14902,6 +14919,12 @@ public class MessagesStorage extends BaseController {
         SQLiteCursor cursor = null;
         SQLitePreparedStatement state = null;
         try {
+            if (mode == ChatActivity.MODE_DEFAULT && !messages.isEmpty()) {
+                org.telegram.messenger.places.PlacesStorage.invalidate(database,
+                    (dialogId == 0 ? "channel=0 AND " : "uid=" + dialogId + " AND ")
+                    + "mid IN (" + TextUtils.join(",", messages) + ")", null);
+            }
+
             if (getUserConfig().getClientUserId() == dialogId) {
                 database.executeFast(String.format(Locale.US, "DELETE FROM tag_message_id WHERE mid IN(%s)", TextUtils.join(",", messages))).stepThis().dispose();
             }
@@ -15712,6 +15735,9 @@ public class MessagesStorage extends BaseController {
         SQLiteCursor cursor = null;
         SQLitePreparedStatement state = null;
         try {
+            org.telegram.messenger.places.PlacesStorage.invalidate(database,
+                    "uid=" + (-channelId) + " AND mid<=" + mid, null);
+
             ArrayList<Long> dialogsIds = new ArrayList<>();
             LongSparseArray<Integer[]> dialogsToUpdate = new LongSparseArray<>();
 

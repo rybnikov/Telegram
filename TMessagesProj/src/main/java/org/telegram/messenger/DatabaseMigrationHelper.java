@@ -1701,6 +1701,12 @@ public class DatabaseMigrationHelper {
             version = 179;
         }
 
+        if (version == 179) {
+            org.telegram.messenger.places.PlacesStorage.createSchema(database);
+            database.executeFast("PRAGMA user_version = 180").stepThis().dispose();
+            version = 180;
+        }
+
         return version;
     }
 

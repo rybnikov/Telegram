@@ -179,22 +179,31 @@ rendering before removing these anchors. Never commit a real Maps API key.
 
 ## places-index
 
-Human explanation: Foldogram extracts geo destinations from recent messages and
-map links so Android Auto can offer navigation without picking up the phone. In
-the current code this lives in `org.telegram.messenger.auto.GeoExtractor`, not in
-a standalone `GeoLocationExtractor`.
+Human explanation: Places is an always-available local profile tab beside Links.
+The account database indexes source messages with Telegram geo/venue/live media
+and Google Maps, Apple Maps, Yandex Maps and Waze links. UI and future navigation
+clients share the `messenger.places` model; existing Android Auto remains intact.
 
-Invariant: Recent dialog messages can be scanned for Telegram geo media, live
-location, and supported map links; Auto repositories can surface a destination
-and open navigation through `google.navigation:q=lat,lng`.
+Invariant: TAB_PLACES never reaches server media filters or ProfileTab settings.
+One row retains its original message for selection, forwarding, deletion and jump;
+map presentation/opening cannot use an unrelated preview in a mixed message.
+URL and geo searches have independent persistent cursors, including migrated
+history, topics and Saved Messages. Empty filtered pages keep advancing. Only
+explicit points/destinations are navigation coordinates; map centers are not.
+Secret chats remain local and never automatically enrich links. Account-scoped
+storage and readers respect emergency-hidden dialogs. Message writes and deletes
+invalidate in-flight responses; edits and live location updates reindex locally.
 
-Conflict policy: If upstream changes message media structures, link preview
-parsing, or Auto repositories, keep the extraction invariant rather than the
-current class shape. If the feature moves out of Auto into shared media indexing,
-update the anchors and tests in the same commit.
+Conflict policy: Preserve the 179 -> 180 migration and idempotent Places DDL.
+Once version 180 ships, do not renumber it. Keep lazy dialog backfill,
+message/topic write triggers, deletion call-outs for search-only rows, and the
+revision check before accepting a search page. If upstream changes media, profile
+tabs, history searches or message storage, run Places tests and the canary. Do not
+remove the older Auto extraction/navigation anchors until Auto explicitly migrates
+to the shared repository.
 
 ```json
-{"id":"places-index","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/GeoExtractor.java","contains":"public class GeoExtractor"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/GeoExtractor.java","contains":"extractFromMessages"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoGeoRepository.java","contains":"GeoExtractor.extractFromMessages"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoConversationItemFactory.java","contains":"google.navigation:q="},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/maps/MapsLinkParser.java","contains":"maps.app.goo.gl"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/maps/MapsMediaResolver.java","contains":"MapsLinkParser.parse"}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"places-index","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/GeoExtractor.java","contains":"public class GeoExtractor"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/GeoExtractor.java","contains":"extractFromMessages"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoGeoRepository.java","contains":"GeoExtractor.extractFromMessages"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoConversationItemFactory.java","contains":"google.navigation:q="},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/maps/MapsLinkParser.java","contains":"maps.app.goo.gl"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/browser/maps/MapsMediaResolver.java","contains":"MapsLinkParser.parse"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java","contains":"LAST_DB_VERSION = 180"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/places/PlacesStorage.java","contains":"CREATE TABLE IF NOT EXISTS places_v1"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/places/PlacesStorage.java","contains":"CREATE TABLE IF NOT EXISTS places_local_v1"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/places/PlacesStorage.java","contains":"CREATE TRIGGER IF NOT EXISTS places_"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/DatabaseMigrationHelper.java","contains":"if (version == 179)"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/DatabaseMigrationHelper.java","contains":"PRAGMA user_version = 180"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/places/PlacesRepository.java","contains":"epoch == PlacesStorage.epoch(db)"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/Components/SharedMediaLayout.java","contains":"TAB_PLACES = 16"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/Cells/SharedPlaceCell.java","contains":"MessageObject getMessage()"}],"tests":["MergeRegressionCanaryTest","PlaceExtractorTest","PlacesHistoryTest","PlacesResolverTest","PlacesStorageTest"]}
 ```
 
 ## db-preview
