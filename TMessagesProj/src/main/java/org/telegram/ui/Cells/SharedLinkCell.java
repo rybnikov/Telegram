@@ -323,7 +323,7 @@ public class SharedLinkCell extends FrameLayout {
                 message.generateThumbs(true);
             }
             hasPhoto = webPage.photo != null && message.photoThumbs != null;
-            if (!hasPhoto && !TextUtils.isEmpty(webPage.embed_url) && ExternalLinkRouter.isExternalPreviewSite(webPage.site_name)) {
+            if (!hasPhoto && !TextUtils.isEmpty(webPage.embed_url) && (this instanceof SharedPlaceCell || ExternalLinkRouter.isExternalPreviewSite(webPage.site_name))) {
                 hasPhoto = true;
             }
             title = webPage.title;
@@ -411,7 +411,7 @@ public class SharedLinkCell extends FrameLayout {
                             if (e instanceof TLRPC.TL_messageEntitySpoiler && start <= se && end >= ss) {
                                 TextStyleSpan.TextStyleRun run = new TextStyleSpan.TextStyleRun();
                                 run.flags |= TextStyleSpan.FLAG_STYLE_SPOILER;
-                                sb.setSpan(new TextStyleSpan(run), Math.max(start, ss), Math.min(end, se) + offset, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                sb.setSpan(new TextStyleSpan(run), Math.max(0, ss - start) + offset, Math.min(entity.length, se - start) + offset, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
                             }
                         }
                         links.add(sb);
@@ -575,7 +575,7 @@ public class SharedLinkCell extends FrameLayout {
                 }
                 String thumbFilter = String.format(Locale.US, "%d_%d_b", maxPhotoWidth, maxPhotoWidth);
                 linkImageView.setImage(ImageLocation.getForObject(currentPhotoObject, message.photoThumbsObject), filter, ImageLocation.getForObject(currentPhotoObjectThumb, message.photoThumbsObject), thumbFilter, 0, null, message, 0);
-            } else if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && ExternalLinkRouter.isExternalPreviewSite(webPage.site_name)) {
+            } else if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && (this instanceof SharedPlaceCell || ExternalLinkRouter.isExternalPreviewSite(webPage.site_name))) {
                 linkImageView.setImage(ImageLocation.getForPath(webPage.embed_url), filter, null, null, 0, null, message, 0);
             }
             drawLinkImageView = true;
@@ -712,8 +712,8 @@ public class SharedLinkCell extends FrameLayout {
                                 }
                             } else if (linkPreviewPressed) {
                                 try {
-                                    TLRPC.WebPage webPage = pressedLinkIndex == 0 && message.messageOwner.media != null ? message.messageOwner.media.webpage : null;
-                                    if (webPage != null && ExternalLinkRouter.isExternalPreviewSite(webPage.site_name) && !TextUtils.isEmpty(webPage.url)) {
+                                    TLRPC.WebPage webPage = !(this instanceof SharedPlaceCell) && pressedLinkIndex == 0 && message.messageOwner.media != null ? message.messageOwner.media.webpage : null;
+                                    if (webPage != null && (this instanceof SharedPlaceCell || ExternalLinkRouter.isExternalPreviewSite(webPage.site_name)) && !TextUtils.isEmpty(webPage.url)) {
                                         delegate.onLinkPress(webPage.url, false);
                                     } else if (webPage != null && webPage.embed_url != null && webPage.embed_url.length() != 0) {
                                         delegate.needOpenWebView(webPage, message);
@@ -782,6 +782,7 @@ public class SharedLinkCell extends FrameLayout {
         SpoilerEffect eff = spoilerPressed;
         eff.setOnRippleEndCallback(() -> post(() -> {
             message.isSpoilersRevealed = true;
+            if (this instanceof SharedPlaceCell && getMessage() != null) getMessage().isSpoilersRevealed = true;
             linkSpoilers.clear();
             descriptionLayoutSpoilers.clear();
             descriptionLayout2Spoilers.clear();

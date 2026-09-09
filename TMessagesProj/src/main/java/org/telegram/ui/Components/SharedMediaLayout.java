@@ -132,6 +132,12 @@ import org.telegram.ui.Cells.ProfileSearchCell;
 import org.telegram.ui.Cells.SharedAudioCell;
 import org.telegram.ui.Cells.SharedDocumentCell;
 import org.telegram.ui.Cells.SharedLinkCell;
+import org.telegram.ui.Cells.SharedPlaceCell;
+import org.telegram.ui.LocationActivity;
+import org.telegram.messenger.places.Place;
+import org.telegram.messenger.places.PlaceEntry;
+import org.telegram.messenger.places.PlacesRepository;
+import org.telegram.messenger.places.PlacesResolver;
 import org.telegram.ui.Cells.SharedMediaSectionCell;
 import org.telegram.ui.Cells.SharedPhotoVideoCell;
 import org.telegram.ui.Cells.SharedPhotoVideoCell2;
@@ -198,6 +204,8 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
     public static final int TAB_BOT_PREVIEWS = 13;
     public static final int TAB_GIFTS = 14;
     public static final int TAB_POLL = 15;
+    // Local only: never a MediaDataController type or a server ProfileTab.
+    public static final int TAB_PLACES = 16;
     private static final int TAB_STORIES_ALBUM_PREFIX = 0x00010000;
     private static final int TAB_STORIES_ALBUM_MASK = 0x0000FFFF;
 
@@ -661,6 +669,27 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
     private SharedPhotoVideoAdapter photoVideoAdapter;
     private SharedPhotoVideoAdapter animationSupportingPhotoVideoAdapter;
     private SharedLinksAdapter linksAdapter;
+    private SharedLinksAdapter placesAdapter;
+    private SharedMediaData placesData = new SharedMediaData();
+    private PlacesRepository placesRepository;
+    private PlacesResolver placesResolver;
+    private Runnable placesSearchRunnable;
+
+    private void updatePlaces() {
+        placesData = new SharedMediaData();
+        for (PlaceEntry entry : placesRepository.entries) {
+            placesData.addMessage(entry.message, entry.message.getDialogId() == dialog_id ? 0 : 1, false, DialogObject.isEncryptedDialog(dialog_id));
+        }
+        placesData.loading = placesRepository.state == PlacesRepository.State.LOADING;
+        boolean finished = placesRepository.state == PlacesRepository.State.END || placesRepository.state == PlacesRepository.State.EMPTY;
+        placesData.endReached[0] = placesData.endReached[1] = finished;
+        if (placesAdapter != null) placesAdapter.notifyDataSetChanged();
+    }
+
+    private void searchPlaces(String text) {
+        if (placesSearchRunnable != null) AndroidUtilities.cancelRunOnUIThread(placesSearchRunnable);
+        AndroidUtilities.runOnUIThread(placesSearchRunnable = () -> placesRepository.search(text), 300);
+    }
     private SharedDocumentsAdapter documentsAdapter;
     private SharedDocumentsAdapter voiceAdapter;
     private SharedDocumentsAdapter audioAdapter;
@@ -1795,6 +1824,8 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     searchItem.setVisibility(View.VISIBLE);
                     documentsSearchAdapter.search(null, true);
                     linksSearchAdapter.search(null, true);
+                    if (placesSearchRunnable != null) AndroidUtilities.cancelRunOnUIThread(placesSearchRunnable);
+                    if (placesRepository != null && placesRepository.hasQuery()) placesRepository.search(null);
                     audioSearchAdapter.search(null, true);
                     groupUsersSearchAdapter.search(null, true);
                     if (savedMessagesSearchAdapter != null) {
@@ -1828,6 +1859,8 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                             return;
                         }
                         documentsSearchAdapter.search(text, true);
+                    } else if (mediaPages[0].selectedType == TAB_PLACES) {
+                        searchPlaces(text);
                     } else if (mediaPages[0].selectedType == TAB_LINKS) {
                         if (linksSearchAdapter == null) {
                             return;
@@ -2432,6 +2465,9 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         };
         animationSupportingArchivedStoriesAdapter = new StoriesAdapter(context, true);
         linksAdapter = new SharedLinksAdapter(context);
+        placesAdapter = new SharedLinksAdapter(context, true);
+        placesResolver = new PlacesResolver(profileActivity.getCurrentAccount());
+        placesRepository = new PlacesRepository(profileActivity.getCurrentAccount(), dialog_id, topicId, mergeDialogId, this::updatePlaces);
         if (isBot()) {
             botPreviewsContainer = new BotPreviewsEditContainer(context, profileActivity, dialog_id) {
                 @Override
@@ -3229,9 +3265,11 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     } else {
                         profileActivity.presentFragment(new ChatActivity(args));
                     }
+                } else if (mediaPage.selectedType == TAB_PLACES && !(view instanceof SharedLinkCell)) {
+                    placesRepository.retry();
                 } else if (mediaPage.selectedType == TAB_FILES && view instanceof SharedDocumentCell) {
                     onItemClick(position, view, ((SharedDocumentCell) view).getMessage(), 0, mediaPage.selectedType);
-                } else if (mediaPage.selectedType == TAB_LINKS && view instanceof SharedLinkCell) {
+                } else if ((mediaPage.selectedType == TAB_LINKS || mediaPage.selectedType == TAB_PLACES) && view instanceof SharedLinkCell) {
                     onItemClick(position, view, ((SharedLinkCell) view).getMessage(), 0, mediaPage.selectedType);
                 } else if ((mediaPage.selectedType == TAB_VOICE || mediaPage.selectedType == TAB_AUDIO) && view instanceof SharedAudioCell) {
                     onItemClick(position, view, ((SharedAudioCell) view).getMessage(), 0, mediaPage.selectedType);
@@ -3505,6 +3543,8 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     scrolling = newState != RecyclerView.SCROLL_STATE_IDLE;
                     if (mediaPage.selectedType == TAB_LINKS) {
                         promoteVisibleLinkPreviews((RecyclerListView) recyclerView);
+                    } else if (mediaPage.selectedType == TAB_PLACES) {
+                        promoteVisiblePlaces();
                     }
                 }
 
@@ -3523,6 +3563,8 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     }
                     if (mediaPage.selectedType == TAB_LINKS) {
                         promoteVisibleLinkPreviews((RecyclerListView) recyclerView);
+                    } else if (mediaPage.selectedType == TAB_PLACES) {
+                        promoteVisiblePlaces();
                     }
                     invalidateBlur();
                 }
@@ -3564,7 +3606,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                         return onMemberClick(participant, true, view);
                     } else if (mediaPage.selectedType == TAB_FILES && view instanceof SharedDocumentCell) {
                         return onItemLongClick(((SharedDocumentCell) view).getMessage(), view, 0);
-                    } else if (mediaPage.selectedType == TAB_LINKS && view instanceof SharedLinkCell) {
+                    } else if ((mediaPage.selectedType == TAB_LINKS || mediaPage.selectedType == TAB_PLACES) && view instanceof SharedLinkCell) {
                         return onItemLongClick(((SharedLinkCell) view).getMessage(), view, 0);
                     } else if ((mediaPage.selectedType == TAB_VOICE || mediaPage.selectedType == TAB_AUDIO) && view instanceof SharedAudioCell) {
                         return onItemLongClick(((SharedAudioCell) view).getMessage(), view, 0);
@@ -4772,6 +4814,11 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             return;
         }
         mediaPage.lastCheckScrollTime = currentTime;
+        if (mediaPage.selectedType == TAB_PLACES) {
+            if (layoutManager.findLastVisibleItemPosition() >= placesAdapter.getItemCount() - 6
+                    && placesRepository.state != PlacesRepository.State.ERROR) placesRepository.loadMore();
+            return;
+        }
         if (searching && searchWas && mediaPage.selectedType != TAB_SAVED_DIALOGS || mediaPage.selectedType == TAB_GROUPUSERS) {
             return;
         }
@@ -5034,6 +5081,10 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
     }
 
     public void onDestroy() {
+        AndroidUtilities.cancelRunOnUIThread(promotePlacesRunnable);
+        if (placesSearchRunnable != null) AndroidUtilities.cancelRunOnUIThread(placesSearchRunnable);
+        if (placesRepository != null) placesRepository.close();
+        if (placesResolver != null) placesResolver.close();
         observersGroup.removeAllObservers();
 
         if (storiesAdapter != null && storiesAdapter.storiesList != null) {
@@ -6759,6 +6810,9 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         if (linksAdapter != null) {
             linksAdapter.notifyDataSetChanged();
         }
+        if (placesAdapter != null) {
+            placesAdapter.notifyDataSetChanged();
+        }
         for (int a = 0; a < mediaPages.length; a++) {
             fixLayoutInternal(a);
         }
@@ -6895,6 +6949,9 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
     public void setMergeDialogId(long did) {
         mergeDialogId = did;
+        if (placesRepository != null) {
+            placesRepository.setMergedDialog(did);
+        }
     }
 
     private long giftsLastHash;
@@ -6916,7 +6973,8 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         boolean hasStories = (DialogObject.isUserDialog(dialog_id) || DialogObject.isChatDialog(dialog_id)) && !DialogObject.isEncryptedDialog(dialog_id) && (userInfo != null && userInfo.stories_pinned_available || info != null && info.stories_pinned_available || isStoriesView()) && includeStories();
         boolean hasGifts = giftsContainer != null && (userInfo != null && userInfo.stargifts_count > 0 || info != null && info.stargifts_count > 0);
         final TLRPC.ProfileTab main_tab = info != null ? info.main_tab : userInfo != null ? userInfo.main_tab : null;
-        int changed = 0;
+        boolean shouldHavePlaces = !isStoriesView();
+        int changed = shouldHavePlaces != scrollSlidingTextTabStrip.hasTab(TAB_PLACES) ? 1 : 0;
         if (wasReordering != scrollSlidingTextTabStrip.isReordering()) {
             changed++;
         }
@@ -7070,6 +7128,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     if (hasMedia[3] > 0) {
                         tabs.add(new Pair(TAB_LINKS, getString(R.string.SharedLinksTab2)));
                     }
+                    tabs.add(new Pair(TAB_PLACES, getString(R.string.SharedPlacesTab)));
                     if (hasMedia[4] > 0) {
                         tabs.add(new Pair(TAB_AUDIO, getString(R.string.SharedMusicTab2)));
                     }
@@ -7077,6 +7136,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                         tabs.add(new Pair(TAB_POLL, getString(R.string.SharedPollTab)));
                     }
                 } else {
+                    tabs.add(new Pair(TAB_PLACES, getString(R.string.SharedPlacesTab)));
                     if (hasMedia[4] > 0) {
                         tabs.add(new Pair(TAB_AUDIO, getString(R.string.SharedMusicTab2)));
                     }
@@ -7182,7 +7242,36 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             storiesReorder.attachToRecyclerView(null);
         }
         RecyclerView.RecycledViewPool viewPool = null;
-        if (searching && searchWas) {
+        if (mediaPages[a].selectedType == TAB_PLACES) {
+            sections = true;
+            if (mediaPages[a].viewPool == null) mediaPages[a].viewPool = new RecyclerView.RecycledViewPool();
+            viewPool = mediaPages[a].viewPool;
+            if (currentAdapter != placesAdapter) {
+                recycleAdapter(currentAdapter);
+                mediaPages[a].listView.setAdapter(placesAdapter);
+            }
+            mediaPages[a].listView.setSections(false);
+            mediaPages[a].listView.setPinnedHeaderShadowDrawable(null);
+            mediaPages[a].listView.setItemAnimator(null);
+            mediaPages[a].listView.setPadding(0, getPagePaddingTop(TAB_PLACES), 0, getPagePaddingBottom(false));
+            mediaPages[a].listView.setVisibility(View.VISIBLE);
+            mediaPages[a].emptyView.setVisibility(View.GONE);
+            mediaPages[a].progressView.setVisibility(View.GONE);
+            mediaPages[a].setClipToOutline(false);
+            mediaPages[a].setBackground(null);
+            if (savedMessagesContainer != null && savedMessagesContainer.getParent() == mediaPages[a]) {
+                savedMessagesContainer.chatActivity.onRemoveFromParent();
+                mediaPages[a].removeView(savedMessagesContainer);
+            }
+            if (botPreviewsContainer != null && botPreviewsContainer.getParent() == mediaPages[a]) mediaPages[a].removeView(botPreviewsContainer);
+            if (giftsContainer != null && giftsContainer.getParent() == mediaPages[a]) mediaPages[a].removeView(giftsContainer);
+            if (searching && searchWas) searchPlaces(searchItem.getSearchField().getText().toString());
+            else placesRepository.start();
+            searchItemState = 0;
+            searchAlpha = 1f;
+            if (searchItem != null) searchItem.setVisibility(View.VISIBLE);
+            updateOptionsSearch();
+        } else if (searching && searchWas) {
             if (mediaPages[a].searchViewPool == null) {
                 mediaPages[a].searchViewPool = new RecyclerView.RecycledViewPool();
             }
@@ -7849,7 +7938,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                 selectedMessagesCountTextView.setNumber(selectedFiles[0].size() + selectedFiles[1].size(), true);
                 deleteItem.setVisibility(cantDeleteMessagesCount == 0 ? View.VISIBLE : View.GONE);
                 if (gotoItem != null) {
-                    gotoItem.setVisibility(getClosestTab() != TAB_STORIES && getClosestTab() != TAB_BOT_PREVIEWS && getClosestTab() != TAB_GIFTS && selectedFiles[0].size() == 1 ? View.VISIBLE : View.GONE);
+                    gotoItem.setVisibility(getClosestTab() != TAB_STORIES && getClosestTab() != TAB_BOT_PREVIEWS && getClosestTab() != TAB_GIFTS && selectedFiles[0].size() + selectedFiles[1].size() == 1 ? View.VISIBLE : View.GONE);
                 }
                 if (forwardItem != null) {
                     forwardItem.setVisibility(getClosestTab() != TAB_STORIES && getClosestTab() != TAB_BOT_PREVIEWS && getClosestTab() != TAB_GIFTS ? View.VISIBLE : View.GONE);
@@ -7919,6 +8008,18 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                         cell.updateFileExistIcon(true);
                     }
                 }
+            } else if (selectedMode == TAB_PLACES && view instanceof SharedPlaceCell) {
+                PlaceEntry entry = ((SharedPlaceCell) view).getEntry();
+                if (entry == null || entry.places.isEmpty()) return;
+                Place place = entry.places.get(0);
+                if (place.spoiler && !message.isSpoilersRevealed) return;
+                if (place.provider == Place.Provider.TELEGRAM) {
+                    if (!AndroidUtilities.isMapsInstalled(profileActivity)) return;
+                    LocationActivity location = new LocationActivity(message.isLiveLocation() ? LocationActivity.LOCATION_TYPE_LIVE_VIEW : 3);
+                    location.setResourceProvider(resourcesProvider);
+                    location.setMessageObject(message);
+                    profileActivity.presentFragment(location);
+                } else openUrl(place.originalUrl);
             } else if (selectedMode == TAB_LINKS) {
                 try {
                     ExternalPreviewManager.applyCachedPreviewIfAvailable(message);
@@ -8073,24 +8174,59 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         }
     };
 
+    private final Runnable promotePlacesRunnable = this::promoteVisiblePlaces;
+    private void promoteVisiblePlaces() {
+        if (placesResolver == null || mediaPages == null) return;
+        ArrayList<PlaceEntry> visible = new ArrayList<>();
+        for (MediaPage page : mediaPages) {
+            if (page == null || page.selectedType != TAB_PLACES || page.getVisibility() != View.VISIBLE) continue;
+            int last = -1;
+            for (int i = 0; i < page.listView.getChildCount(); i++) {
+                View child = page.listView.getChildAt(i);
+                if (child instanceof SharedPlaceCell) {
+                    PlaceEntry entry = ((SharedPlaceCell) child).getEntry();
+                    if (entry != null) {
+                        visible.add(entry);
+                        last = Math.max(last, placesRepository.entries.indexOf(findPlaceEntry(entry.message)));
+                    }
+                }
+            }
+            for (int n = last + 1; last >= 0 && n < Math.min(last + 4, placesRepository.entries.size()); n++) visible.add(placesRepository.entries.get(n));
+        }
+        placesResolver.setVisible(visible, () -> placesAdapter.notifyDataSetChanged());
+    }
+
+    private PlaceEntry findPlaceEntry(MessageObject message) {
+        for (PlaceEntry entry : placesRepository.entries) if (entry.message == message) return entry;
+        return null;
+    }
+
     private class SharedLinksAdapter extends RecyclerListView.SectionsAdapter {
 
         private Context mContext;
+        private final boolean places;
+        private SharedMediaData data() { return places ? placesData : sharedMediaData[TAB_LINKS]; }
+
 
         public SharedLinksAdapter(Context context) {
+            this(context, false);
+        }
+
+        SharedLinksAdapter(Context context, boolean places) {
+            this.places = places;
             mContext = context;
         }
 
         @Override
         public Object getItem(int section, int position) {
-            if (sharedMediaData[3].sections.size() == 0 && !sharedMediaData[3].loading) {
+            if (data().sections.size() == 0 && !data().loading) {
                 return null;
             }
-            if (section >= sharedMediaData[3].sections.size()) {
+            if (section >= data().sections.size()) {
                 return null;
             }
-            String name = sharedMediaData[3].sections.get(section);
-            ArrayList<MessageObject> messageObjects = sharedMediaData[3].sectionArrays.get(name);
+            String name = data().sections.get(section);
+            ArrayList<MessageObject> messageObjects = data().sectionArrays.get(name);
             if (messageObjects == null) {
                 return null;
             }
@@ -8105,7 +8241,8 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder, int section, int row) {
-            if (sharedMediaData[3].sections.size() == 0 && !sharedMediaData[3].loading) {
+            if (places && placesRepository.state == PlacesRepository.State.ERROR) return true;
+            if (data().sections.size() == 0 && !data().loading) {
                 return false;
             }
             return section == 0 || row != 0;
@@ -8113,19 +8250,20 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
         @Override
         public int getSectionCount() {
-            if (sharedMediaData[3].sections.size() == 0 && !sharedMediaData[3].loading) {
+            if (data().sections.size() == 0 && !data().loading) {
                 return 1;
             }
-            return sharedMediaData[3].sections.size() + (sharedMediaData[3].sections.isEmpty() || sharedMediaData[3].endReached[0] && sharedMediaData[3].endReached[1] ? 0 : 1);
+            if (places && data().sections.isEmpty()) return 1;
+            return data().sections.size() + (data().sections.isEmpty() || data().endReached[0] && data().endReached[1] ? 0 : 1);
         }
 
         @Override
         public int getCountForSection(int section) {
-            if (sharedMediaData[3].sections.size() == 0 && !sharedMediaData[3].loading) {
+            if (data().sections.size() == 0 && !data().loading) {
                 return 1;
             }
-            if (section < sharedMediaData[3].sections.size()) {
-                return sharedMediaData[3].sectionArrays.get(sharedMediaData[3].sections.get(section)).size() + (section != 0 ? 1 : 0);
+            if (section < data().sections.size()) {
+                return data().sectionArrays.get(data().sections.get(section)).size() + (section != 0 ? 1 : 0);
             }
             return 1;
         }
@@ -8138,10 +8276,10 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             }
             if (section == 0) {
                 view.setAlpha(0.0f);
-            } else if (section < sharedMediaData[3].sections.size()) {
+            } else if (section < data().sections.size()) {
                 view.setAlpha(1.0f);
-                String name = sharedMediaData[3].sections.get(section);
-                ArrayList<MessageObject> messageObjects = sharedMediaData[3].sectionArrays.get(name);
+                String name = data().sections.get(section);
+                ArrayList<MessageObject> messageObjects = data().sectionArrays.get(name);
                 MessageObject messageObject = messageObjects.get(0);
                 ((GraySectionCell) view).setText(LocaleController.formatSectionDate(messageObject.messageOwner.date));
             }
@@ -8157,15 +8295,37 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 //                    ((GraySectionCell) view).setNoBackground(true);
                     break;
                 case VIEW_TYPE_LINK:
-                    view = new SharedLinkCell(mContext, SharedLinkCell.VIEW_TYPE_DEFAULT, resourcesProvider);
-                    ((SharedLinkCell) view).setDelegate(sharedLinkCellDelegate);
+                    view = places ? new SharedPlaceCell(mContext, resourcesProvider) : new SharedLinkCell(mContext, SharedLinkCell.VIEW_TYPE_DEFAULT, resourcesProvider);
+                    SharedLinkCell linkCell = (SharedLinkCell) view;
+                    linkCell.setDelegate(!places ? sharedLinkCellDelegate : new SharedLinkCell.SharedLinkCellDelegate() {
+                        public boolean canPerformActions() { return !isActionModeShowed; }
+                        public void needOpenWebView(TLRPC.WebPage page, MessageObject message) { openUrl(page.url); }
+                        public void onLinkPress(String url, boolean longPress) {
+                            MessageObject source = linkCell.getMessage();
+                            if (longPress && source != null && (source.messageOwner.noforwards
+                                    || profileActivity.getMessagesController().isPeerNoForwards(source.getDialogId()))) {
+                                BottomSheet.Builder builder = new BottomSheet.Builder(profileActivity.getParentActivity());
+                                builder.setTitle(url);
+                                builder.setItems(new CharSequence[]{getString(R.string.Open)}, (dialog, which) -> openUrl(url));
+                                profileActivity.showDialog(builder.create());
+                            } else sharedLinkCellDelegate.onLinkPress(url, longPress);
+                        }
+                    });
                     break;
                 case VIEW_TYPE_LINK_EMPTY:
-                    View emptyStubView = createEmptyStubView(mContext, 3, dialog_id, resourcesProvider);
+                    View emptyStubView = createEmptyStubView(mContext, places ? TAB_PLACES : TAB_LINKS, dialog_id, resourcesProvider);
                     emptyStubView.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                     return new RecyclerListView.Holder(emptyStubView);
                 case VIEW_TYPE_LINK_LOADING:
                 default:
+                    if (places) {
+                        TextView status = new TextView(mContext);
+                        status.setGravity(Gravity.CENTER);
+                        status.setPadding(dp(24), dp(24), dp(24), dp(24));
+                        status.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
+                        view = status;
+                        break;
+                    }
                     FlickerLoadingView flickerLoadingView = new FlickerLoadingView(mContext, resourcesProvider);
                     flickerLoadingView.setIsSingleCell(true);
                     flickerLoadingView.showDate(false);
@@ -8179,9 +8339,17 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
         @Override
         public void onBindViewHolder(int section, int position, RecyclerView.ViewHolder holder) {
+            if (places && holder.itemView instanceof TextView) {
+                ((TextView) holder.itemView).setText(getString(placesRepository.state == PlacesRepository.State.ERROR ? R.string.PlacesLoadError : R.string.PlacesSearching));
+            }
+            if (places && holder.itemView instanceof EmptyStubView) {
+                int text = placesRepository.state == PlacesRepository.State.ERROR ? R.string.PlacesLoadError
+                        : placesRepository.hasQuery() ? R.string.PlacesNoResult : R.string.NoPlaces;
+                ((EmptyStubView) holder.itemView).emptyTextView.setText(getString(text));
+            }
             if (holder.getItemViewType() != VIEW_TYPE_LINK_LOADING && holder.getItemViewType() != VIEW_TYPE_LINK_EMPTY) {
-                String name = sharedMediaData[3].sections.get(section);
-                ArrayList<MessageObject> messageObjects = sharedMediaData[3].sectionArrays.get(name);
+                String name = data().sections.get(section);
+                ArrayList<MessageObject> messageObjects = data().sectionArrays.get(name);
                 switch (holder.getItemViewType()) {
                     case VIEW_TYPE_LINK_DATE: {
                         MessageObject messageObject = messageObjects.get(0);
@@ -8199,8 +8367,18 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                         }
                         SharedLinkCell sharedLinkCell = (SharedLinkCell) holder.itemView;
                         MessageObject messageObject = messageObjects.get(position);
-                        ExternalPreviewManager.applyCachedPreviewIfAvailable(messageObject);
-                        sharedLinkCell.setLink(messageObject, position != messageObjects.size() - 1 || section == sharedMediaData[3].sections.size() - 1 && sharedMediaData[3].loading);
+                        boolean divider = position != messageObjects.size() - 1 || section == data().sections.size() - 1 && data().loading;
+                        if (places) {
+                            PlaceEntry entry = findPlaceEntry(messageObject);
+                            if (entry == null) entry = new PlaceEntry(messageObject);
+                            placesResolver.apply(entry);
+                            ((SharedPlaceCell) sharedLinkCell).setPlace(entry, divider);
+                            AndroidUtilities.cancelRunOnUIThread(promotePlacesRunnable);
+                            AndroidUtilities.runOnUIThread(promotePlacesRunnable);
+                        } else {
+                            ExternalPreviewManager.applyCachedPreviewIfAvailable(messageObject);
+                            sharedLinkCell.setLink(messageObject, divider);
+                        }
                         if (isActionModeShowed) {
                             sharedLinkCell.setChecked(selectedFiles[messageObject.getDialogId() == dialog_id ? 0 : 1].indexOfKey(messageObject.getId()) >= 0, !scrolling);
                         } else {
@@ -8214,10 +8392,10 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
         @Override
         public int getItemViewType(int section, int position) {
-            if (sharedMediaData[3].sections.size() == 0 && !sharedMediaData[3].loading) {
+            if (data().sections.size() == 0 && !data().loading) {
                 return VIEW_TYPE_LINK_EMPTY;
             }
-            if (section < sharedMediaData[3].sections.size()) {
+            if (section < data().sections.size()) {
                 if (section != 0 && position == 0) {
                     return VIEW_TYPE_LINK_DATE;
                 } else {
@@ -8452,7 +8630,9 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
     public static View createEmptyStubView(Context context, int currentType, long dialog_id, Theme.ResourcesProvider resourcesProvider) {
         EmptyStubView emptyStubView = new EmptyStubView(context, resourcesProvider);
-        if (currentType == 0) {
+        if (currentType == TAB_PLACES) {
+            emptyStubView.emptyTextView.setText(getString(R.string.NoPlaces));
+        } else if (currentType == 0) {
             if (DialogObject.isEncryptedDialog(dialog_id)) {
                 emptyStubView.emptyTextView.setText(getString(R.string.NoMediaSecret));
             } else {
@@ -12673,6 +12853,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             case TAB_AUDIO:      return getString(R.string.SharedMusicTab2);
             case TAB_VOICE:      return getString(R.string.SharedVoiceTab2);
             case TAB_LINKS:      return getString(R.string.SharedLinksTab2);
+            case TAB_PLACES:     return getString(R.string.SharedPlacesTab);
             case TAB_FILES:      return getString(R.string.SharedFilesTab2);
             case TAB_GIF:        return getString(R.string.SharedGIFsTab2);
         }

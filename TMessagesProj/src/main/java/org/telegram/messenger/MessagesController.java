@@ -11505,6 +11505,10 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
+    public void removeDeletedMessagesFromPlacesSearch(final long dialogId, ArrayList<TLRPC.Message> messages) {
+        removeDeletedMessagesFromArray(dialogId, messages);
+    }
+
     public final static int LOAD_BACKWARD = 0;
     public final static int LOAD_FORWARD = 1;
     public final static int LOAD_FROM_UNREAD = 2;

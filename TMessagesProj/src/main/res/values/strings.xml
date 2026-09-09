@@ -11235,4 +11235,9 @@
     <string name="UnsupportedMessageTitle">Unsupported Message</string>
     <string name="UnsupportedMessageMessage">Update Telegram to view this message</string>
     <string name="UnsupportedUpdate">Update</string>
+    <string name="SharedPlacesTab">Places</string>
+    <string name="NoPlaces">No places yet</string>
+    <string name="PlacesNoResult">No places found</string>
+    <string name="PlacesSearching">Searching for places…</string>
+    <string name="PlacesLoadError">Could not load places. Tap to retry.</string>
 </resources>
