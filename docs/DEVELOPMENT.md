@@ -88,6 +88,11 @@ installation over the stable app.
 Release version and signing overrides must come from environment variables,
 GitHub secrets, or `local.properties`; never hardcode them in tracked files.
 
+## Android Auto DHU
+
+For Android Auto Desktop Head Unit debugging, use the USB workflow in
+`.agents/skills/dhu-debug/SKILL.md`.
+
 ## Local Configuration
 
 Use `local.properties` or environment variables for local-only configuration:

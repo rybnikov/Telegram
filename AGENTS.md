@@ -7,6 +7,8 @@ Detailed procedures live in tracked docs; this file only routes.
 
 - Development, builds, installs, tests, and normal code changes:
   `docs/DEVELOPMENT.md`.
+- Android Auto DHU debugging:
+  `.agents/skills/dhu-debug/SKILL.md`.
 - Internal Google Play release: `docs/RELEASE.md`.
 - Upstream DrKLO/Telegram merges: `docs/UPSTREAM_MERGE.md`.
 - Fork feature invariants and merge anchors: `docs/FORK_FEATURES.md`.

@@ -9,6 +9,8 @@ Use this skill for normal code changes, builds, installs, tests, and releases.
 Do not use it for upstream DrKLO/Telegram merges; use the `upstream-merge`
 skill instead.
 
+For Android Auto Desktop Head Unit startup/debugging, use `dhu-debug`.
+
 ## Checklist
 
 1. Branch from `foldogram`.
