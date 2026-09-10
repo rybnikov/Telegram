@@ -1707,6 +1707,30 @@ public class DatabaseMigrationHelper {
             version = 180;
         }
 
+        if (version == 180) {
+            // Preserve the local index, but restart history discovery after the
+            // first pagination correction.
+            database.executeFast("DELETE FROM places_state_v1").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 181").stepThis().dispose();
+            version = 181;
+        }
+
+        if (version == 181) {
+            // Metadata is optional cache data. Drop failed legacy fetches so they retry.
+            database.executeFast("DELETE FROM places_meta_v1").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 182").stepThis().dispose();
+            version = 182;
+        }
+
+        if (version == 182) {
+            // Version 182 combined offset_id and max_id at the same boundary,
+            // which could terminate URL history early. Preserve indexed places
+            // and restart only the resumable search cursors.
+            database.executeFast("DELETE FROM places_state_v1").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 183").stepThis().dispose();
+            version = 183;
+        }
+
         return version;
     }
 

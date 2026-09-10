@@ -12,12 +12,17 @@ import org.telegram.messenger.browser.external.ExternalHtmlUtils;
 import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.duress.EmergencyPasscode;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 
 /** Bounded, visible-row enrichment; failure never hides or disables a source link. */
 public final class PlacesResolver {
     private static final DispatchQueue QUEUE = new DispatchQueue("places-metadata");
+    // Google Maps only reliably returns a complete Open Graph card to crawler UAs.
+    // Keep this aligned with MapsMediaResolver, which handles the same provider.
+    private static final Map<String, String> GOOGLE_METADATA_HEADERS = Collections.singletonMap("User-Agent", "TelegramBot (like TwitterBot)");
     private final int account;
     private final HashMap<String, JSONObject> cache = new HashMap<>();
     private final HashSet<String> pending = new HashSet<>();
@@ -90,7 +95,7 @@ public final class PlacesResolver {
             }
             JSONObject json = new JSONObject();
             try {
-                ExternalHtmlUtils.FetchResult result = ExternalHttpClient.fetchHtmlWithFinalUrl(url, null, "</head>", 96 * 1024);
+                ExternalHtmlUtils.FetchResult result = ExternalHttpClient.fetchHtmlWithFinalUrl(url, null, "</head>", 96 * 1024, metadataHeaders(url));
                 json = parseMetadata(url, result);
             } catch (Exception ignored) { /* Original destination remains usable offline. */ }
             if (closed) return;
@@ -99,14 +104,25 @@ public final class PlacesResolver {
             storage.getStorageQueue().postRunnable(() -> {
                 if (closed) return;
                 try {
-                    SQLitePreparedStatement s = storage.getDatabase().executeFast("REPLACE INTO places_meta_v1 VALUES(?,?,?)");
-                    try { s.bindString(1, url); s.bindString(2, metadata.toString()); s.bindLong(3, System.currentTimeMillis() / 1000); s.step(); }
-                    finally { s.dispose(); }
+                    if (isCacheable(metadata)) {
+                        SQLitePreparedStatement s = storage.getDatabase().executeFast("REPLACE INTO places_meta_v1 VALUES(?,?,?)");
+                        try { s.bindString(1, url); s.bindString(2, metadata.toString()); s.bindLong(3, System.currentTimeMillis() / 1000); s.step(); }
+                        finally { s.dispose(); }
+                    }
                     storage.getDatabase().executeFast("DELETE FROM places_meta_v1 WHERE time < " + (System.currentTimeMillis() / 1000 - 604800)).stepThis().dispose();
                 } catch (Exception e) { storage.checkSQLException(e); }
             });
             AndroidUtilities.runOnUIThread(() -> finish(url, metadata, changed));
         });
+    }
+
+    static Map<String, String> metadataHeaders(String url) {
+        Place place = PlaceExtractor.parse(url);
+        return place != null && place.provider == Place.Provider.GOOGLE ? GOOGLE_METADATA_HEADERS : null;
+    }
+
+    static boolean isCacheable(JSONObject metadata) {
+        return metadata != null && metadata.length() > 0;
     }
 
     static JSONObject parseMetadata(String url, ExternalHtmlUtils.FetchResult result) throws Exception {

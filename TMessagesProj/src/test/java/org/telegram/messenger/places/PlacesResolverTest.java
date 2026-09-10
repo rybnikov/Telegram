@@ -36,6 +36,14 @@ public class PlacesResolverTest {
         assertNull(p.latitude); assertEquals(Place.Confidence.UNKNOWN, p.confidence);
         assertNotNull(p.resolvedUrl);
     }
+    @Test public void googleMapsUsesTheCrawlerProfileNeededForMetadata() {
+        assertEquals("TelegramBot (like TwitterBot)", PlacesResolver.metadataHeaders("https://maps.app.goo.gl/abc").get("User-Agent"));
+        assertNull(PlacesResolver.metadataHeaders("https://maps.apple.com/?q=Cafe"));
+    }
+    @Test public void failedMetadataIsNotCachedForAWeek() throws Exception {
+        assertFalse(PlacesResolver.isCacheable(new org.json.JSONObject()));
+        assertTrue(PlacesResolver.isCacheable(new org.json.JSONObject().put("title", "Cafe")));
+    }
     @Test public void topicsAndSavedDialogsUseSeparateApiScopeFields() {
         TLRPC.TL_messages_search topic = new TLRPC.TL_messages_search();
         PlacesRepository.applyScope(topic, -10, 77, 100, null);
@@ -46,5 +54,13 @@ public class PlacesResolverTest {
         assertEquals(4, saved.flags); assertSame(peer, saved.saved_peer_id); assertEquals(0, saved.top_msg_id);
         TLRPC.TL_messages_search all = new TLRPC.TL_messages_search();
         PlacesRepository.applyScope(all, 100, 0, 100, null); assertEquals(0, all.flags);
+    }
+    @Test public void resumedHistoryMatchesSharedLinksPagination() {
+        TLRPC.TL_messages_search first = new TLRPC.TL_messages_search();
+        PlacesRepository.applyOffset(first, 0);
+        assertEquals(0, first.offset_id); assertEquals(0, first.max_id);
+        TLRPC.TL_messages_search next = new TLRPC.TL_messages_search();
+        PlacesRepository.applyOffset(next, 123);
+        assertEquals(123, next.offset_id); assertEquals(0, next.max_id);
     }
 }

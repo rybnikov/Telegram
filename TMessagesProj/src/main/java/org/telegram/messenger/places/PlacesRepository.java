@@ -234,11 +234,17 @@ public final class PlacesRepository implements NotificationCenter.NotificationCe
         req.peer = MessagesController.getInstance(account).getInputPeer(dialog);
         req.q = query;
         req.limit = PAGE;
-        req.offset_id = offset;
+        applyOffset(req, offset);
         req.filter = kind == 0 ? new TLRPC.TL_inputMessagesFilterUrl() : new TLRPC.TL_inputMessagesFilterGeo();
         long self = UserConfig.getInstance(account).getClientUserId();
         applyScope(req, dialog, topic, self, topic != 0 && dialog == self ? MessagesController.getInstance(account).getInputPeer(topic) : null);
         return req;
+    }
+
+    static void applyOffset(TLRPC.TL_messages_search req, int offset) {
+        // Match Shared Links pagination. Combining offset_id and max_id at the
+        // same boundary can make messages.search return an empty URL page.
+        req.offset_id = offset;
     }
 
     static void applyScope(TLRPC.TL_messages_search req, long dialog, long topic, long self, TLRPC.InputPeer savedPeer) {

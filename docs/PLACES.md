@@ -19,8 +19,11 @@ page ends a stream. Topics use `top_msg_id`; Saved Message dialogs use
 `saved_peer_id`. Migrated history uses its original dialog ID. Reopening reads the
 local index, resumes older cursors, and refreshes the head for new messages.
 
-Account SQLite version 180 adds `places_v1`, pending source keys, history cursors,
-metadata and an epoch. The 179 -> 180 migration preserves all earlier migrations.
+Account SQLite version 183 adds `places_v1`, pending source keys, history cursors,
+metadata and an epoch. The 179 -> 180 migration preserves all earlier migrations;
+180 -> 181 resets only Places cursors after the first pagination correction;
+181 -> 182 clears only the optional metadata cache so failed previews retry;
+182 -> 183 resets only Places cursors after removing an invalid `max_id` boundary.
 Idempotent triggers observe message and topic inserts, edits and deletions; local
 backfill is seeded lazily per opened dialog and parsed in batches on the storage
 queue. Deletion call-outs also remove search-only records. Responses started
