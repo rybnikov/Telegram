@@ -129,6 +129,10 @@ If a secret-like file appears in the index, unstage it before committing.
   `Co-Authored`, or `Generated`.
 - Keep commits focused: one logical change per commit.
 - Do not amend or rewrite accepted history unless explicitly asked.
+- Do not commit unless the owner explicitly asks.
+- Planning artifacts such as design specs, implementation prompts, plans, and
+  notes (for example under `docs/superpowers/`) are never committed on an
+  agent's own initiative. They may stay untracked in the working tree.
 
 Check commit messages before reporting completion:
 

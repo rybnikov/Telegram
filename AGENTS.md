@@ -18,6 +18,9 @@ Detailed procedures live in tracked docs; this file only routes.
 
 - Branch normal work from `foldogram`.
 - Do not push unless explicitly asked.
+- Do not commit unless explicitly asked. Planning artifacts such as design
+  specs, implementation prompts, plans, and notes are never committed on an
+  agent's own initiative; they stay untracked in the working tree.
 - Keep commit messages free of AI traces such as `Claude`, `AI`,
   `Co-Authored`, or `Generated`.
 - Never commit local notes, generated Google services files, signing keys,

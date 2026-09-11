@@ -59,6 +59,8 @@ which migrations run, which ones are skipped, and why the upgrade is safe.
 - DB migration ambiguity: stop and produce the user-version trace before
   continuing.
 - Secret-like file staged: unstage it and fix the source.
+- Planning artifact staged (design spec, plan, prompt, notes): unstage it.
+  Such files are never committed on the agent's own initiative.
 - Missing fork feature invariant: stop and ask for review.
 - A local/device artifact resolves to `com.rbnkv.foldogram` instead of
   `com.rbnkv.foldogram.beta`: stop before installing it.

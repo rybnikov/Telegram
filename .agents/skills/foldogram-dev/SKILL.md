@@ -44,5 +44,8 @@ For Android Auto Desktop Head Unit startup/debugging, use `dhu-debug`.
    `Co-Authored`, or `Generated`.
 12. Never commit generated Google services files, signing keys,
    `local.properties`, credentials, or local notes.
+13. Do not commit unless the owner explicitly asks. Planning is not a commit:
+   design specs, implementation prompts, plans, and notes stay untracked in
+   the working tree until the owner asks to commit them.
 
 Full reference: `docs/DEVELOPMENT.md`.
