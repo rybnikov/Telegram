@@ -4,6 +4,7 @@ enum AutoPrimarySection {
     UNREAD("tab_unread", "Unread", AutoDialogsRepository.getUnreadListKey(), AutoListRenderMode.UNREAD_COMPACT),
     PINNED("tab_pinned", "Pinned", AutoDialogsRepository.getPinnedListKey(), AutoListRenderMode.PINNED_COMPACT),
     BOTS("tab_bots", "Bots", AutoDialogsRepository.getBotsListKey(), AutoListRenderMode.BOTS_COMPACT),
+    PLACES("tab_places", "Places", AutoPlacesRepository.LIST_KEY, AutoListRenderMode.PLACES),
     CHANNELS("tab_channels", "Channels", AutoDialogsRepository.getChannelsListKey(), AutoListRenderMode.CHANNELS_COMPACT);
 
     final String tabId;

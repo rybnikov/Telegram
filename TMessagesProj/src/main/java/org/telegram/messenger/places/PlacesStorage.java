@@ -4,6 +4,8 @@ import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLitePreparedStatement;
+import org.telegram.messenger.BuildVars;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.UserConfig;
@@ -13,6 +15,10 @@ import java.util.ArrayList;
 
 /** All methods run on the owning account's storage queue. No separate database or account singleton. */
 public final class PlacesStorage {
+    // Broadcast channels are excluded by the reader, which can tell a channel from a supergroup;
+    // the stored flag is set for both.
+    private static final String READ_RECENT_SQL = "SELECT data, uid, mid FROM places_v1 "
+            + "ORDER BY date DESC, mid DESC, uid DESC LIMIT ? OFFSET ?";
     private PlacesStorage() {}
 
     public interface SchemaExecutor { void execute(String sql) throws SQLiteException; }
@@ -68,6 +74,50 @@ public final class PlacesStorage {
                 db.commitTransaction();
             }
         }
+    }
+
+    /** Auto seeds a recent cache window without marking the phone's full backfill complete. */
+    public static boolean seedRecentDialogsBatch(SQLiteDatabase db) throws Exception {
+        boolean more = false;
+        for (int source = 0; source < 2; source++) {
+            ArrayList<Long> dialogs = new ArrayList<>();
+            SQLiteCursor cursor = db.queryFinalized(recentDialogsSql(), source + 2, 20);
+            try {
+                while (cursor.next()) dialogs.add(cursor.longValue(0));
+            } finally {
+                cursor.dispose();
+            }
+            db.beginTransaction();
+            try {
+                for (long dialog : dialogs) {
+                    SQLitePreparedStatement seed = db.executeFast(recentSeedSql(source));
+                    try {
+                        seed.bindLong(1, dialog);
+                        seed.bindInteger(2, 100);
+                        seed.step();
+                    } finally {
+                        seed.dispose();
+                    }
+                    // 0/1 mean the complete phone backfill; 2/3 mean only Auto's recent window.
+                    db.executeFast("INSERT OR IGNORE INTO places_local_v1 VALUES(" + dialog + "," + (source + 2) + ")").stepThis().dispose();
+                }
+            } finally {
+                db.commitTransaction();
+            }
+            more |= dialogs.size() == 20;
+        }
+        return more;
+    }
+
+    static String recentDialogsSql() {
+        return "SELECT did FROM dialogs WHERE NOT EXISTS (SELECT 1 FROM places_local_v1 "
+                + "WHERE uid=did AND source=?) ORDER BY date DESC LIMIT ?";
+    }
+
+    static String recentSeedSql(int source) {
+        String table = source == 0 ? "messages_v2" : "messages_topics";
+        return "INSERT OR IGNORE INTO places_pending_v1 SELECT uid, mid," + source
+                + " FROM " + table + " WHERE uid=? ORDER BY date DESC, mid DESC LIMIT ?";
     }
 
     public static long epoch(SQLiteDatabase db) throws Exception {
@@ -133,6 +183,65 @@ public final class PlacesStorage {
         }
     }
 
+    /** Processes a bounded account-wide pending batch without triggering any history seed. */
+    public static boolean drainPendingBatch(MessagesStorage storage, int account) throws Exception {
+        SQLiteDatabase db = storage.getDatabase();
+        SQLiteCursor c = db.queryFinalized(pendingBatchSql());
+        ArrayList<TLRPC.Message> batch = new ArrayList<>();
+        ArrayList<Long> dialogs = new ArrayList<>();
+        ArrayList<Integer> mids = new ArrayList<>();
+        ArrayList<Integer> sources = new ArrayList<>();
+        try {
+            while (c.next()) {
+                batch.add(readMessage(c, account));
+                dialogs.add(c.longValue(1));
+                mids.add(c.intValue(2));
+                sources.add(c.intValue(3));
+            }
+        } finally {
+            c.dispose();
+        }
+        db.beginTransaction();
+        try {
+            for (int i = 0; i < batch.size(); i++) {
+                TLRPC.Message message = batch.get(i);
+                if (message != null) {
+                    long dialog = dialogs.get(i);
+                    long topic = MessageObject.getTopicId(account, message, storage.getForumTypeFlags(dialog));
+                    put(db, message, topic);
+                }
+                db.executeFast("DELETE FROM places_pending_v1 WHERE uid=" + dialogs.get(i)
+                        + " AND mid=" + mids.get(i) + " AND source=" + sources.get(i)).stepThis().dispose();
+            }
+        } finally {
+            db.commitTransaction();
+        }
+        SQLiteCursor remaining = db.queryFinalized("SELECT 1 FROM places_pending_v1 LIMIT 1");
+        try {
+            boolean more = remaining.next();
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("[AutoPlacesDiag] drained batch=" + batch.size() + " more=" + more
+                        + " indexed=" + countIndexed(db));
+            }
+            return more;
+        } finally {
+            remaining.dispose();
+        }
+    }
+
+    static long countIndexed(SQLiteDatabase db) {
+        try {
+            SQLiteCursor c = db.queryFinalized("SELECT count(*) FROM places_v1");
+            try {
+                return c.next() ? c.longValue(0) : -1;
+            } finally {
+                c.dispose();
+            }
+        } catch (Exception e) {
+            return -2;
+        }
+    }
+
     public static TLRPC.Message readMessage(SQLiteCursor cursor, int account) throws Exception {
         NativeByteBuffer buffer = cursor.byteBufferValue(0);
         if (buffer == null) return null;
@@ -194,6 +303,69 @@ public final class PlacesStorage {
             }
         } finally { c.dispose(); }
         return result;
+    }
+
+    public static ArrayList<TLRPC.Message> readRecent(SQLiteDatabase db, int account, int limit) throws Exception {
+        return readRecent(db, account, limit, 0);
+    }
+
+    public static ArrayList<TLRPC.Message> readRecent(SQLiteDatabase db, int account, int limit, int offset) throws Exception {
+        int safeLimit = Math.max(0, limit);
+        SQLiteCursor c = db.queryFinalized(recentSql(), safeLimit, Math.max(0, offset));
+        ArrayList<TLRPC.Message> result = new ArrayList<>();
+        try {
+            while (c.next()) {
+                TLRPC.Message message = readMessage(c, account);
+                if (message != null) result.add(message);
+            }
+        } finally {
+            c.dispose();
+        }
+        return result;
+    }
+
+    static String pendingBatchSql() {
+        return "SELECT CASE WHEN p.source=0 THEN (SELECT data FROM messages_v2 WHERE uid=p.uid AND mid=p.mid) "
+                + "ELSE (SELECT data FROM messages_topics WHERE uid=p.uid AND mid=p.mid LIMIT 1) END, p.uid, p.mid, p.source "
+                + "FROM places_pending_v1 p LIMIT 200";
+    }
+
+    static String recentSql() {
+        return READ_RECENT_SQL;
+    }
+
+    /** Diagnostic: what the index actually holds, per dialog, newest first. */
+    public static String describeIndex(SQLiteDatabase db, int limit) {
+        StringBuilder out = new StringBuilder();
+        try {
+            SQLiteCursor c = db.queryFinalized("SELECT uid, count(*), max(date), max(channel) FROM places_v1 "
+                    + "GROUP BY uid ORDER BY max(date) DESC LIMIT " + limit);
+            try {
+                while (c.next()) {
+                    out.append(c.longValue(0)).append(":n=").append(c.intValue(1))
+                            .append(",newest=").append(c.intValue(2))
+                            .append(c.intValue(3) == 1 ? ",ch" : "").append(' ');
+                }
+            } finally {
+                c.dispose();
+            }
+        } catch (Exception e) {
+            return "error " + e;
+        }
+        return out.toString();
+    }
+
+    static long countPending(SQLiteDatabase db) {
+        try {
+            SQLiteCursor c = db.queryFinalized("SELECT count(*) FROM places_pending_v1");
+            try {
+                return c.next() ? c.longValue(0) : -1;
+            } finally {
+                c.dispose();
+            }
+        } catch (Exception e) {
+            return -2;
+        }
     }
 
     public static void saveCursor(SQLiteDatabase db, long dialog, long topic, int stream, int offset, int date, boolean done, int head) throws Exception {

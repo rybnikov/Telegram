@@ -5,5 +5,6 @@ enum AutoListRenderMode {
     PINNED_COMPACT,
     BOTS_COMPACT,
     CHANNELS_COMPACT,
+    PLACES,
     FILTER_STANDARD
 }

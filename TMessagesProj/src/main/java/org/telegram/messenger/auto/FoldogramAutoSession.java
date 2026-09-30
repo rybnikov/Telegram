@@ -10,6 +10,7 @@ import androidx.lifecycle.LifecycleOwner;
 
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.places.PlaceDetailsResolver;
 
 public class FoldogramAutoSession extends Session {
 
@@ -21,6 +22,9 @@ public class FoldogramAutoSession extends Session {
     private AutoMessagePreviewRepository messagePreviewRepository;
     private AutoDialogsRepository dialogsRepository;
     private AutoVoiceRecorderController voiceRecorderController;
+    private AutoSpeechController speechController;
+    private AutoPlacesRepository placesRepository;
+    private AutoPlaceItemFactory placeItemFactory;
     private AutoConversationItemFactory conversationItemFactory;
     private boolean initialized;
 
@@ -38,21 +42,31 @@ public class FoldogramAutoSession extends Session {
             geoRepository.setOnStateChanged(() -> dialogsRepository.scheduleRebuild(0L));
             messagePreviewRepository.setOnStateChanged(() -> dialogsRepository.scheduleRebuild(0L));
             voiceRecorderController = new AutoVoiceRecorderController(getCarContext(), currentAccount);
+            speechController = new AutoSpeechController(getCarContext(), voiceRecorderController);
+            PlaceDetailsResolver placeDetailsResolver = new PlaceDetailsResolver(
+                    getCarContext().getApplicationContext(), currentAccount);
+            placesRepository = new AutoPlacesRepository(
+                    currentAccount, accountInstance, avatarProvider, placeDetailsResolver);
+            placeItemFactory = new AutoPlaceItemFactory(getCarContext(), avatarProvider, speechController);
             conversationItemFactory = new AutoConversationItemFactory(
                     getCarContext(), currentAccount, accountInstance, avatarProvider, geoRepository,
                     messagePreviewRepository, voiceRecorderController);
             connectionLease.acquire();
             dialogsRepository.start();
+            placesRepository.start();
             getLifecycle().addObserver(new DefaultLifecycleObserver() {
                 @Override
                 public void onDestroy(@NonNull LifecycleOwner owner) {
                     voiceRecorderController.destroy();
+                    speechController.destroy();
+                    placesRepository.destroy();
                     dialogsRepository.destroy();
                     connectionLease.release();
                 }
             });
         }
         return new ChatListScreen(getCarContext(), currentAccount, accountInstance,
-                dialogsRepository, conversationItemFactory, voiceRecorderController, avatarProvider);
+                dialogsRepository, conversationItemFactory, voiceRecorderController, avatarProvider,
+                placesRepository, placeItemFactory, speechController);
     }
 }

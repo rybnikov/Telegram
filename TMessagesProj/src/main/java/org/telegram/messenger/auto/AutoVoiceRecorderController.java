@@ -68,6 +68,10 @@ final class AutoVoiceRecorderController {
         return activeDialogId == dialogId && (state == State.RECORDING || state == State.STOPPING || state == State.SENDING);
     }
 
+    boolean isRecording() {
+        return state != State.IDLE && state != State.ERROR;
+    }
+
     void setOnRecordingSentCallback(long dialogId, @Nullable Runnable callback) {
         onRecordingSentDialogId = callback != null ? dialogId : 0;
         onRecordingSentCallback = callback;

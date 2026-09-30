@@ -38,7 +38,7 @@ public class PlacesResolverTest {
     }
     @Test public void googleMapsUsesTheCrawlerProfileNeededForMetadata() {
         assertEquals("TelegramBot (like TwitterBot)", PlacesResolver.metadataHeaders("https://maps.app.goo.gl/abc").get("User-Agent"));
-        assertNull(PlacesResolver.metadataHeaders("https://maps.apple.com/?q=Cafe"));
+        assertNotNull(PlacesResolver.metadataHeaders("https://maps.apple.com/?q=Cafe").get("Accept-Language"));
     }
     @Test public void failedMetadataIsNotCachedForAWeek() throws Exception {
         assertFalse(PlacesResolver.isCacheable(new org.json.JSONObject()));

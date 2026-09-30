@@ -1,6 +1,12 @@
 package org.telegram.messenger.browser.external;
 
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -30,6 +36,53 @@ public final class ExternalHttpClient {
 
     public static ExternalHtmlUtils.FetchResult fetchHtmlWithFinalUrl(String url, String startMarker, String endMarker, int maxChars, Map<String, String> overrideHeaders) throws IOException {
         return ExternalHtmlUtils.fetchHtmlWithFinalUrl(url, startMarker, endMarker, maxChars, buildHeaders(overrideHeaders));
+    }
+
+    public static String postForm(String url, String body, Map<String, String> headers,
+                                  int maxBytes, int timeoutMs) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setConnectTimeout(timeoutMs);
+        connection.setReadTimeout(timeoutMs);
+        connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        if (headers != null) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    connection.setRequestProperty(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        byte[] encoded = body.getBytes(StandardCharsets.UTF_8);
+        connection.setFixedLengthStreamingMode(encoded.length);
+        try {
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(encoded);
+            }
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) throw new HttpStatusException(status);
+            try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int read;
+                int cap = Math.max(0, maxBytes);
+                while ((read = input.read(buffer)) != -1) {
+                    if (output.size() + read > cap) throw new IOException("HTTP response exceeds limit");
+                    output.write(buffer, 0, read);
+                }
+                return output.toString(StandardCharsets.UTF_8.name());
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    public static final class HttpStatusException extends IOException {
+        public final int statusCode;
+
+        HttpStatusException(int statusCode) {
+            super("HTTP " + statusCode);
+            this.statusCode = statusCode;
+        }
     }
 
     static Map<String, String> buildHeaders(Map<String, String> overrideHeaders) {

@@ -141,13 +141,21 @@ mode, while tappable navigation must still receive protection.
 ## android-auto
 
 Human explanation: Foldogram has an Android Auto messaging surface with chat
-tabs, compose/dictation flows, voice recording, and dialog repositories. It also
-depends on the paused-UI sort gate so Auto sessions can still update dialogs when
-the phone UI is paused.
+tabs, compose/dictation flows, voice recording, and dialog repositories. Its
+Places tab lists the latest Telegram locations and map links from every dialog,
+including own sent places and new messages received with phone chats unopened, navigates with
+one tap, and reads free-data summaries through session-scoped speech and
+enrichment controllers. It
+also depends on the paused-UI sort gate so Auto sessions can still update dialogs
+when the phone UI is paused.
 
 Invariant: Android Auto remains declared in the manifest, the car app service
-creates a Foldogram session, tabbed chat lists remain available, and dialog
-sorting continues to work while the phone UI is fully paused.
+creates a Foldogram session, tabbed chat lists and the recent Places tab remain
+available, and dialog sorting continues to work while the phone UI is fully
+paused. Places must keep hidden/spoiler filtering, broadcast-channel
+exclusion, the account-wide recent index seed and independent global URL/geo
+pagination, edit/delete response barriers, short-link resolution, key-free details, single-action
+navigation rows, and session-scoped speech teardown.
 
 Conflict policy: If upstream changes manifests, dependencies, or dialog sorting,
 keep Android Auto declarations and the paused-UI sorting invariant. If upstream
@@ -156,7 +164,7 @@ removing local classes. Do not delete Auto classes as unused without checking
 manifest and DHU behavior.
 
 ```json
-{"id":"android-auto","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramCarAppService.java","contains":"public class FoldogramCarAppService extends CarAppService"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramAutoSession.java","contains":"public class FoldogramAutoSession extends Session"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/ChatListScreen.java","contains":"builder.addTab(buildTab(AutoPrimarySection.UNREAD"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPrimarySection.java","contains":"BOTS(\"tab_bots\""},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":".auto.FoldogramCarAppService"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":"androidx.car.app.CarAppService"},{"path":"TMessagesProj/build.gradle","contains":"androidx.car.app:app:1.7.0"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java","contains":"if (chatsDict == null && ApplicationLoader.isUiCompletelyPaused())"}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"android-auto","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramCarAppService.java","contains":"public class FoldogramCarAppService extends CarAppService"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramAutoSession.java","contains":"public class FoldogramAutoSession extends Session"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/ChatListScreen.java","contains":"builder.addTab(buildTab(AutoPrimarySection.UNREAD"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPrimarySection.java","contains":"BOTS(\"tab_bots\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPrimarySection.java","contains":"PLACES(\"tab_places\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/ChatListScreen.java","contains":"buildTab(AutoPrimarySection.PLACES"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesRepository.java","contains":"epoch == PlacesStorage.epoch(db)"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesRepository.java","contains":"PlacesStorage.seedRecentDialogsBatch"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesHistory.java","contains":"offset_peer = offsetDialog == 0"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":".auto.FoldogramCarAppService"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":"androidx.car.app.CarAppService"},{"path":"TMessagesProj/build.gradle","contains":"androidx.car.app:app:1.7.0"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java","contains":"if (chatsDict == null && ApplicationLoader.isUiCompletelyPaused())"}],"tests":["MergeRegressionCanaryTest","AutoPlaceItemTest","AutoPlacesHistoryTest","PlacesStorageTest","PlaceDetailsResolverTest","AutoPlaceSummaryBuilderTest","AutoSpeechControllerTest"]}
 ```
 
 ## maps-live-location
