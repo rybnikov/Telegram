@@ -89,6 +89,15 @@ second device, or another Beta install unless the owner explicitly requests it.
   `HTTP 404: workflow internal-release.yml not found`.
 - `promote_release=true` promotes the Play internal draft to completed (it
   tolerates a draft-app rejection and stays draft). `false` leaves it as a draft.
+- `include_x86_abis` defaults to `false`: the bundle ships only `armeabi-v7a`
+  and `arm64-v8a`. Pass `-f include_x86_abis=true` to also build `x86` and
+  `x86_64`, which roughly doubles native build time. Locally the same switch is
+  the `RELEASE_INCLUDE_X86_ABIS=true` environment variable.
+- Native objects are cached by ccache in the GitHub Actions cache. The
+  `Native Cache Keepalive` workflow restores that cache daily so the 7-day
+  eviction does not drop it between releases. The run summary of each release
+  prints ccache hits and misses; a release with almost no hits compiled from
+  scratch.
 
 ## Monitor and verify
 

@@ -332,14 +332,18 @@ credential rotation failures.
 Invariant: Internal release remains manual via `workflow_dispatch`, restricted to
 the `foldogram` branch and owner, uses Foldogram package name, uploads as draft,
 and treats automatic Play promote failure as non-fatal when Google Play still
-requires manual promotion.
+requires manual promotion. Native code goes through ccache via
+`CMAKE_<LANG>_COMPILER_LAUNCHER`, and `native-cache-keepalive.yml` keeps the
+release ccache from expiring between releases. `x86`/`x86_64` native builds are
+opt-in through `RELEASE_INCLUDE_X86_ABIS` in `TMessagesProj` and the `afat`
+flavor.
 
 Conflict policy: If upstream changes workflows, do not replace the Foldogram
 internal release flow with upstream release automation. Keep release secrets out
 of logs and keep promote optional unless Google Play behavior is revalidated.
 
 ```json
-{"id":"ci-release","criticality":"high","anchors":[{"path":".github/workflows/internal-release.yml","contains":"workflow_dispatch:"},{"path":".github/workflows/internal-release.yml","contains":"github.actor == 'rybnikov' && github.ref == 'refs/heads/foldogram'"},{"path":".github/workflows/internal-release.yml","contains":"GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}"},{"path":".github/workflows/internal-release.yml","contains":"packageName: com.rbnkv.foldogram"},{"path":".github/workflows/internal-release.yml","contains":"status: draft"},{"path":".github/workflows/internal-release.yml","contains":"Promote Google Play internal release"},{"path":".github/workflows/internal-release.yml","contains":"Automatic Play promote failed; continuing"}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"ci-release","criticality":"high","anchors":[{"path":".github/workflows/internal-release.yml","contains":"workflow_dispatch:"},{"path":".github/workflows/internal-release.yml","contains":"github.actor == 'rybnikov' && github.ref == 'refs/heads/foldogram'"},{"path":".github/workflows/internal-release.yml","contains":"GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}"},{"path":".github/workflows/internal-release.yml","contains":"packageName: com.rbnkv.foldogram"},{"path":".github/workflows/internal-release.yml","contains":"status: draft"},{"path":".github/workflows/internal-release.yml","contains":"Promote Google Play internal release"},{"path":".github/workflows/internal-release.yml","contains":"Automatic Play promote failed; continuing"},{"path":".github/workflows/internal-release.yml","contains":"CMAKE_CXX_COMPILER_LAUNCHER=ccache"},{"path":".github/workflows/native-cache-keepalive.yml","contains":"ndk-ccache-v2-r27c-afatRelease-"},{"path":"TMessagesProj/build.gradle","contains":"RELEASE_INCLUDE_X86_ABIS"},{"path":"TMessagesProj_App/build.gradle","contains":"RELEASE_INCLUDE_X86_ABIS"}],"tests":["MergeRegressionCanaryTest"]}
 ```
 
 ## secrets-policy

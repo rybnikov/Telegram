@@ -12,6 +12,11 @@ on:
         required: true
         default: true
         type: boolean
+      include_x86_abis:
+        description: "Also build x86/x86_64 native libraries (roughly doubles native build time)"
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: android-internal-release
@@ -35,6 +40,7 @@ jobs:
       RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
       RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      RELEASE_INCLUDE_X86_ABIS: ${{ inputs.include_x86_abis }}
 
     steps:
       - name: Checkout
@@ -50,10 +56,13 @@ jobs:
           echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> "$GITHUB_ENV"
           echo "CCACHE_COMPRESS=true" >> "$GITHUB_ENV"
           echo "CCACHE_COMPRESSLEVEL=6" >> "$GITHUB_ENV"
-          echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=3G" >> "$GITHUB_ENV"
           echo "CCACHE_SLOPPINESS=time_macros" >> "$GITHUB_ENV"
-          echo "CCACHE_BASEDIR=${{ github.workspace }}" >> "$GITHUB_ENV"
-          echo "ANDROID_CCACHE=ccache" >> "$GITHUB_ENV"
+          # The NDK is reinstalled on every run, so its mtime cannot identify the compiler.
+          echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
+          # AGP runs CMake with this environment; CMake >= 3.17 reads these as compiler launchers.
+          echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
 
       - name: Resolve release version from input tag
         shell: bash
@@ -145,9 +154,9 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-ndk-ccache-r27c-afatRelease-${{ hashFiles('build.gradle', 'settings.gradle', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'TMessagesProj/jni/**/CMakeLists.txt', 'TMessagesProj/jni/**/*.cmake', 'TMessagesProj/jni/**/*.c', 'TMessagesProj/jni/**/*.cc', 'TMessagesProj/jni/**/*.cpp', 'TMessagesProj/jni/**/*.cxx', 'TMessagesProj/jni/**/*.h', 'TMessagesProj/jni/**/*.hpp') }}
+          key: ${{ runner.os }}-ndk-ccache-v2-r27c-afatRelease-${{ hashFiles('build.gradle', 'settings.gradle', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'TMessagesProj/jni/**/CMakeLists.txt', 'TMessagesProj/jni/**/*.cmake', 'TMessagesProj/jni/**/*.c', 'TMessagesProj/jni/**/*.cc', 'TMessagesProj/jni/**/*.cpp', 'TMessagesProj/jni/**/*.cxx', 'TMessagesProj/jni/**/*.h', 'TMessagesProj/jni/**/*.hpp') }}
           restore-keys: |
-            ${{ runner.os }}-ndk-ccache-r27c-afatRelease-
+            ${{ runner.os }}-ndk-ccache-v2-r27c-afatRelease-
 
       - name: Restore release keystore
         shell: bash
@@ -195,7 +204,15 @@ jobs:
       - name: Show ccache stats
         if: ${{ !cancelled() && steps.install-ccache.outcome == 'success' }}
         shell: bash
-        run: ccache -s
+        run: |
+          ccache -s
+          stat() { ccache --print-stats | awk -v k="$1" '$1 == k { print $2 }'; }
+          HITS=$(( $(stat direct_cache_hit) + $(stat preprocessed_cache_hit) ))
+          MISSES=$(stat cache_miss)
+          echo "Native ccache: ${HITS} hits, ${MISSES} misses (restored key: ${{ steps.restore-native-ccache.outputs.cache-matched-key || 'none' }})" >> "$GITHUB_STEP_SUMMARY"
+          if (( HITS + MISSES == 0 )); then
+            echo "::error::ccache saw no compiler calls; the native build is not going through ccache."
+          fi
 
       - name: Save native ccache state
         if: ${{ !cancelled() && steps.build-release-bundle.outcome == 'success' && steps.restore-native-ccache.outputs.cache-hit != 'true' }}

@@ -1,6 +1,8 @@
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 
 def resolvedAppVersionName = System.getenv('RELEASE_VERSION_NAME') ?: APP_VERSION_NAME
+// Foldogram: x86/x86_64 native builds are opt-in; they double native build time.
+def includeX86Abis = (System.getenv('RELEASE_INCLUDE_X86_ABIS') ?: 'false').toBoolean()
 
 apply plugin: 'com.android.library'
 apply plugin: 'org.telegram.build-plugin'
@@ -159,6 +161,13 @@ android {
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
 
         multiDexEnabled true
+
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a"
+            if (includeX86Abis) {
+                abiFilters "x86", "x86_64"
+            }
+        }
 
         externalNativeBuild {
             cmake {

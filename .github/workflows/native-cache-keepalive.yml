@@ -1,0 +1,45 @@
+name: Native Cache Keepalive
+
+# GitHub evicts cache entries that are not accessed for 7 days, and least recently
+# accessed entries first once the repository passes its 10 GB limit. Releases are
+# often weeks apart, so restore the release ccache daily to keep it alive.
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: native-cache-keepalive
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  touch-native-ccache:
+    if: ${{ github.ref == 'refs/heads/foldogram' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Restore latest native ccache
+        id: restore-native-ccache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          # Must resolve to the same path as CCACHE_DIR in internal-release.yml,
+          # otherwise the cache version differs and nothing matches.
+          path: ${{ github.workspace }}/.ccache
+          # Keep the prefix in sync with the restore key in internal-release.yml.
+          key: ${{ runner.os }}-ndk-ccache-v2-r27c-afatRelease-keepalive
+          restore-keys: |
+            ${{ runner.os }}-ndk-ccache-v2-r27c-afatRelease-
+
+      - name: Report native ccache
+        shell: bash
+        run: |
+          MATCHED="${{ steps.restore-native-ccache.outputs.cache-matched-key }}"
+          if [[ -z "$MATCHED" ]]; then
+            echo "::warning::No release native ccache found; the next internal release will compile native code from scratch."
+            exit 0
+          fi
+          echo "Kept alive: ${MATCHED} ($(du -sh "${{ github.workspace }}/.ccache" | cut -f1))" | tee -a "$GITHUB_STEP_SUMMARY"
