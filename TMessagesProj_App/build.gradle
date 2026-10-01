@@ -202,7 +202,8 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion 21
+        // FOLDOGRAM: Play automatic protection requires minSdk 24.
+        minSdkVersion 24
         targetSdkVersion 36
         versionName RESOLVED_APP_VERSION_NAME
         ndkVersion "27.2.12479018"
