@@ -1731,6 +1731,20 @@ public class DatabaseMigrationHelper {
             version = 183;
         }
 
+        // Upstream 12.10.6 migrations 177 -> 178 and 178 -> 179, appended above
+        // the released Foldogram floor because 178/179 are already taken.
+        if (version == 183) {
+            database.executeFast("CREATE INDEX IF NOT EXISTS media_v4_music_browse_idx ON media_v4(uid, date DESC, mid DESC) WHERE type = 4 AND mid > 0 AND uid != 0;").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 184").stepThis().dispose();
+            version = 184;
+        }
+
+        if (version == 184) {
+            database.executeFast("DELETE FROM downloading_documents").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 185").stepThis().dispose();
+            version = 185;
+        }
+
         return version;
     }
 
