@@ -119,6 +119,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'platform-tools'
 
       - name: Install Android SDK components
         run: |
@@ -130,6 +132,7 @@ jobs:
             "ndk;27.2.12479018"
 
       - name: Install ccache
+        id: install-ccache
         shell: bash
         run: |
           sudo apt-get update
@@ -190,7 +193,7 @@ jobs:
         run: ./gradlew :TMessagesProj_App:bundleAfatRelease
 
       - name: Show ccache stats
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install-ccache.outcome == 'success' }}
         shell: bash
         run: ccache -s
 
