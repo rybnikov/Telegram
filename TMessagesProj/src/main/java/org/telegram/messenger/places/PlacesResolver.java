@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Bounded, visible-row enrichment; failure never hides or disables a source link. */
 public final class PlacesResolver {
     private static final DispatchQueue QUEUE = new DispatchQueue("places-metadata");
+    private static final String FALLBACK_KEY = "fallback";
     private static final DispatchQueue RECENT_QUEUE = new DispatchQueue("places-recent-metadata");
     // Google Maps only reliably returns a complete Open Graph card to crawler UAs.
     // Keep this aligned with MapsMediaResolver, which handles the same provider.
@@ -88,8 +89,13 @@ public final class PlacesResolver {
         priorityUrls = urls;
     }
 
+    /** A fetched result replaces the fallback unless it is empty while the fallback is not. */
+    static boolean keepsFetched(JSONObject fetched, JSONObject fallback) {
+        return isCacheable(fetched) || !isCacheable(fallback);
+    }
+
     public void retryFailed() {
-        cache.entrySet().removeIf(entry -> !isCacheable(entry.getValue()));
+        cache.entrySet().removeIf(entry -> !isCacheable(entry.getValue()) || entry.getValue().optBoolean(FALLBACK_KEY));
     }
 
     private boolean networkAllowed(PlaceEntry entry) {
@@ -157,20 +163,33 @@ public final class PlacesResolver {
             return;
         }
         JSONObject json = fallback;
+        boolean fetched = false;
         try {
             ExternalHtmlUtils.FetchResult result = ExternalHttpClient.fetchHtmlWithFinalUrl(url, null, "</head>", 96 * 1024, metadataHeaders(url));
-            json = parseMetadata(url, result);
+            JSONObject parsed = parseMetadata(url, result);
+            // A captcha or consent page answers 200 but is not the map: it says nothing about the
+            // place, so it must not replace a known preview.
+            fetched = keepsFetched(parsed, fallback);
+            if (fetched) json = parsed;
         } catch (Exception ignored) { /* Original destination remains usable offline. */ }
         if (!networkAllowed(entry)) {
             AndroidUtilities.runOnUIThread(() -> cancelPending(url, changed));
             return;
+        }
+        // A failed fetch keeps the preview fallback in memory only, marked so retryFailed() drops
+        // it: persisting it for a week would stop a short link from ever being resolved.
+        boolean persist = fetched;
+        if (!fetched) {
+            try {
+                json = new JSONObject(json.toString()).put(FALLBACK_KEY, true);
+            } catch (Exception ignored) { /* Keep the unmarked fallback. */ }
         }
         JSONObject metadata = json;
         MessagesStorage storage = MessagesStorage.getInstance(account);
         storage.getStorageQueue().postRunnable(() -> {
             if (closed) return;
             try {
-                if (isCacheable(metadata)) {
+                if (persist && isCacheable(metadata)) {
                     SQLitePreparedStatement s = storage.getDatabase().executeFast("REPLACE INTO places_meta_v1 VALUES(?,?,?)");
                     try { s.bindString(1, url); s.bindString(2, metadata.toString()); s.bindLong(3, System.currentTimeMillis() / 1000); s.step(); }
                     finally { s.dispose(); }

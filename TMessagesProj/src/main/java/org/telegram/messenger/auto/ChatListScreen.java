@@ -19,7 +19,6 @@ import androidx.lifecycle.LifecycleOwner;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 
-import android.speech.tts.TextToSpeech;
 
 public class ChatListScreen extends Screen {
     private final AutoDialogsRepository dialogsRepository;
@@ -57,14 +56,14 @@ public class ChatListScreen extends Screen {
         this.viewportListener = new AutoConversationItemFactory.ViewportListener() {
             @Override
             public void onVisibleRangeChanged(@NonNull String listKey, int startIndex, int endIndex) {
-                if (AutoPlacesRepository.LIST_KEY.equals(listKey)) placesRepository.prefetchVisible();
-                else dialogsRepository.onVisibleRangeChanged(listKey, startIndex, endIndex);
+                if (!AutoPlacesRepository.LIST_KEY.equals(listKey)) {
+                    dialogsRepository.onVisibleRangeChanged(listKey, startIndex, endIndex);
+                }
             }
 
             @Override
             public void onListHidden(@NonNull String listKey) {
-                if (AutoPlacesRepository.LIST_KEY.equals(listKey)) placesRepository.onListHidden();
-                else dialogsRepository.onListHidden(listKey);
+                if (!AutoPlacesRepository.LIST_KEY.equals(listKey)) dialogsRepository.onListHidden(listKey);
             }
         };
         this.templateController = new AutoTemplateController(
@@ -87,16 +86,10 @@ public class ChatListScreen extends Screen {
                 templateController.onVisibleModelChanged(AutoPlacesRepository.LIST_KEY, getActiveTemplateVersion());
             }
         };
-        AutoSpeechController.Listener speechListener = () -> {
-            if (getActiveSection() == AutoPrimarySection.PLACES) {
-                templateController.onVisibleModelChanged(AutoPlacesRepository.LIST_KEY, getActiveTemplateVersion());
-            }
-        };
 
         dialogsRepository.addListener(repositoryListener);
         voiceRecorderController.addListener(recorderListener);
         placesRepository.addListener(placesListener);
-        speechController.addListener(speechListener);
         templateController.onForceRebuild(getActiveSection().listKey, getActiveTemplateVersion());
         getLifecycle().addObserver(new DefaultLifecycleObserver() {
             @Override
@@ -114,7 +107,6 @@ public class ChatListScreen extends Screen {
                 dialogsRepository.removeListener(repositoryListener);
                 voiceRecorderController.removeListener(recorderListener);
                 placesRepository.removeListener(placesListener);
-                speechController.removeListener(speechListener);
                 templateController.destroy();
             }
         });
@@ -155,10 +147,17 @@ public class ChatListScreen extends Screen {
             @Override
             public void onTabSelected(@NonNull String tabId) {
                 AutoPrimarySection previous = getActiveSection();
+                // The host re-reports the active tab when a pushed screen (the place card) pops.
+                // A forced new template scrolls the list to the top, so a same-tab report only
+                // retries failed Places searches; an unchanged list does not publish at all.
+                if (AutoPrimarySection.fromTabId(tabId) == previous) {
+                    if (previous == AutoPrimarySection.PLACES) placesRepository.retrySearch();
+                    return;
+                }
                 activeTabId = AutoPrimarySection.fromTabId(tabId).tabId;
-                if (getActiveSection() == AutoPrimarySection.PLACES) placesRepository.retry();
-                if (previous == AutoPrimarySection.PLACES && getActiveSection() != AutoPrimarySection.PLACES) {
-                    placesRepository.onListHidden();
+                if (getActiveSection() == AutoPrimarySection.PLACES) {
+                    placesRepository.activate();
+                    placesRepository.retry();
                 }
                 templateController.onTabsChanged(getActiveSection().listKey, getActiveTemplateVersion());
             }
@@ -171,11 +170,11 @@ public class ChatListScreen extends Screen {
 
         ListTemplate.Builder contentBuilder = new ListTemplate.Builder();
         if (activeSection == AutoPrimarySection.PLACES) {
+            placesRepository.activate();
             AutoPlacesRepository.Snapshot places = placesRepository.getSnapshot();
             if (forceLoading || places.loading && places.items.isEmpty()) {
                 contentBuilder.setLoading(true);
             } else {
-                placesRepository.prefetchVisible();
                 contentBuilder.setSingleList(placeItemFactory.buildItemList(
                         this, places.items, getEmptyMessage(activeSection), viewportListener, this::onAboutPlace));
             }
@@ -262,8 +261,8 @@ public class ChatListScreen extends Screen {
     private long getActiveTemplateVersion() {
         if (getActiveSection() == AutoPrimarySection.PLACES) {
             long version = placesRepository.getSnapshot().version;
-            version = version * 31 + AutoPrimarySection.PLACES.tabId.hashCode();
-            return version * 31 + speechController.getSignature();
+            // Rows show no reading state (About opens the card), so speech must not rebuild the list.
+            return version * 31 + AutoPrimarySection.PLACES.tabId.hashCode();
         }
         AutoDialogsRepository.AutoListSnapshot snapshot = getActiveSnapshot();
         long version = snapshot.viewModelVersion;
@@ -285,11 +284,7 @@ public class ChatListScreen extends Screen {
     }
 
     private void onAboutPlace(@NonNull AutoPlaceItem item) {
-        if (!speechController.prepare(item.key)) return;
-        placesRepository.awaitDetails(item, 5_000, details -> {
-            String summary = AutoPlaceSummaryBuilder.build(item, details,
-                    System.currentTimeMillis() / 1000, TextToSpeech.getMaxSpeechInputLength() - 1);
-            speechController.speakPrepared(item.key, summary);
-        });
+        getScreenManager().push(new AutoPlaceCardScreen(getCarContext(), item, placesRepository,
+                speechController, avatarProvider));
     }
 }

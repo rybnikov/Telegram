@@ -110,4 +110,60 @@ public class AutoPlacesHistoryTest {
         assertNull(AutoPlacesHistory.next(streams, 0, false, true));
         assertSame(url, AutoPlacesHistory.next(streams, 0, false, false));
     }
+
+    @Test public void walkStopsAfterThePageCap() {
+        AutoPlacesHistory history = new AutoPlacesHistory(0);
+        for (int page = 0; page < AutoPlacesHistory.MAX_PAGES; page++) {
+            assertFalse("page " + page, history.done);
+            TLRPC.TL_messages_messagesSlice response = new TLRPC.TL_messages_messagesSlice();
+            response.messages.add(message(42, 1000 - page, 1000 - page, "https://news.example/" + page));
+            history = history.advance(response);
+        }
+        assertTrue(history.done);
+        assertNull(AutoPlacesHistory.next(new AutoPlacesHistory[]{history}, 0, false));
+    }
+
+    @Test public void floodWaitIsParsed() {
+        assertEquals(17, AutoPlacesHistory.floodWaitSeconds("FLOOD_WAIT_17"));
+        assertEquals(5, AutoPlacesHistory.floodWaitSeconds("FLOOD_PREMIUM_WAIT_5"));
+        assertEquals(30, AutoPlacesHistory.floodWaitSeconds("FLOOD_WAIT_X"));
+        assertEquals(1, AutoPlacesHistory.floodWaitSeconds("FLOOD_WAIT_0"));
+        assertEquals(-1, AutoPlacesHistory.floodWaitSeconds("INPUT_FILTER_INVALID"));
+        assertEquals(-1, AutoPlacesHistory.floodWaitSeconds(null));
+    }
+
+    @Test public void headResetIsThrottledAcrossReconnects() {
+        assertTrue(AutoPlacesHistory.shouldResetHead(5_000, 0));
+        assertFalse(AutoPlacesHistory.shouldResetHead(64_999, 5_000));
+        assertTrue(AutoPlacesHistory.shouldResetHead(65_000, 5_000));
+    }
+
+    @Test public void nextRateIsUsedWithoutRelyingOnFlagBits() {
+        TLRPC.TL_messages_messagesSlice response = new TLRPC.TL_messages_messagesSlice();
+        response.messages.add(message(42, 10, 500, "https://maps.apple.com/?q=Cafe"));
+        response.next_rate = 777;
+        assertEquals(777, new AutoPlacesHistory(0).advance(response).offsetRate);
+    }
+
+    @Test public void repositoryNeverBlocksTheUiThreadOnStorage() throws Exception {
+        java.nio.file.Path current = java.nio.file.Paths.get("").toAbsolutePath();
+        String relative = "TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesRepository.java";
+        while (current != null && !java.nio.file.Files.isRegularFile(current.resolve(relative))) current = current.getParent();
+        assertNotNull(current);
+        String source = new String(java.nio.file.Files.readAllBytes(current.resolve(relative)), java.nio.charset.StandardCharsets.UTF_8);
+        assertFalse("getChatSync blocks the UI thread on the storage queue", source.contains("getChatSync("));
+        assertFalse(source.contains("getUserSync("));
+    }
+
+    @Test public void streamsAreSplitByAudienceAndNeverAskForChannels() {
+        assertEquals(4, AutoPlacesHistory.KINDS);
+        for (int kind = 0; kind < AutoPlacesHistory.KINDS; kind++) {
+            TLRPC.TL_messages_searchGlobal request = new AutoPlacesHistory(kind).request(null);
+            assertEquals((kind & 1) == 0, request.filter instanceof TLRPC.TL_inputMessagesFilterUrl);
+            assertEquals((kind & 1) != 0, request.filter instanceof TLRPC.TL_inputMessagesFilterGeo);
+            assertEquals((kind & 2) == 0, request.users_only);
+            assertEquals((kind & 2) != 0, request.groups_only);
+            assertFalse(request.broadcasts_only);
+        }
+    }
 }

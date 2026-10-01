@@ -14,13 +14,13 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(application = Application.class)
 public class AutoPlaceItemFactoryTest {
-    private static Row row(boolean speaking, Runnable onTap, Runnable onAbout) {
+    private static Row row(Runnable onTap, Runnable onAbout) {
         return AutoPlaceItemFactory.buildRow("Alice · Family", "Cafe", "Main Street",
-                null, null, speaking, onTap, onAbout);
+                null, null, onTap, onAbout);
     }
 
     @Test public void rowStaysInsideListTemplateLimitsWithASingleAction() {
-        Row row = row(false, () -> { }, () -> { });
+        Row row = row(() -> { }, () -> { });
         assertEquals("Alice · Family", row.getTitle().toString());
         assertEquals(2, row.getTexts().size());
         assertEquals("Cafe", row.getTexts().get(0).toString());
@@ -30,9 +30,5 @@ public class AutoPlaceItemFactoryTest {
         // A ListTemplate row renders one secondary action; a second one is dropped by the host.
         assertEquals(1, row.getActions().size());
         assertEquals("About", row.getActions().get(0).getTitle().toString());
-    }
-
-    @Test public void speakingRowOffersStopInstead() {
-        assertEquals("Stop", row(true, () -> { }, () -> { }).getActions().get(0).getTitle().toString());
     }
 }

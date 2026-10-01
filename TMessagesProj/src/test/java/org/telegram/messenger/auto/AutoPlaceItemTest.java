@@ -189,4 +189,42 @@ public class AutoPlaceItemTest {
         for (int i = 0; i < count; i++) builder.append(value);
         return builder.toString();
     }
+
+    @Test public void onlyVenueOrLinkNamesMayReachOverpass() {
+        TLRPC.TL_messageMediaGeo geo = new TLRPC.TL_messageMediaGeo();
+        geo.geo = new TLRPC.TL_geoPoint();
+        geo.geo.lat = 52;
+        geo.geo._long = 4;
+        AutoPlaceItem captioned = map(message("pick me up at the back door", geo), 42, "Wife", null, false);
+        assertEquals("pick me up at the back door", captioned.title);
+        assertNull(captioned.placeName);
+
+        TLRPC.TL_messageMediaVenue venue = new TLRPC.TL_messageMediaVenue();
+        venue.title = "Cafe North";
+        venue.geo = new TLRPC.TL_geoPoint();
+        venue.geo.lat = 52;
+        venue.geo._long = 4;
+        assertEquals("Cafe North", map(message("private words", venue), 42, "Wife", null, false).placeName);
+    }
+
+    @Test public void spoilerCaptionAndBareLinkNeverBecomeTheTitle() {
+        TLRPC.TL_messageMediaGeo geo = new TLRPC.TL_messageMediaGeo();
+        geo.geo = new TLRPC.TL_geoPoint();
+        geo.geo.lat = 52;
+        geo.geo._long = 4;
+        TLRPC.TL_message hidden = message("secret", geo);
+        TLRPC.TL_messageEntitySpoiler spoiler = new TLRPC.TL_messageEntitySpoiler();
+        spoiler.length = 6;
+        hidden.entities.add(spoiler);
+        AutoPlaceItem item = map(hidden, 42, "Wife", null, false);
+        assertEquals("Location", item.title);
+        assertNull(item.messageText);
+        assertEquals(AutoPlaceItem.fromMessage(hidden, -10, 7, PlaceExtractor.extract(hidden), 42, "Wife", null, false).key, item.key);
+
+        TLRPC.TL_message link = message("https://maps.google.com/?q=52.1,4.2", null);
+        AutoPlaceItem linkItem = map(link, 42, "Wife", null, false);
+        assertNotNull(linkItem);
+        assertFalse(linkItem.title, linkItem.title.contains("http"));
+        assertNull(linkItem.messageText);
+    }
 }

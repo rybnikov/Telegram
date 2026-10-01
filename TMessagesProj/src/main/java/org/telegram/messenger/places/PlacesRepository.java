@@ -144,7 +144,9 @@ public final class PlacesRepository implements NotificationCenter.NotificationCe
                     messages.addAll(PlacesStorage.read(db, account, did, topic));
                 }
                 if (SharedConfig.extendedPreviews && !DialogObject.isEncryptedDialog(dialog)) {
-                    SQLiteCursor c = db.queryFinalized("SELECT url,data FROM places_meta_v1 WHERE time>" + (System.currentTimeMillis() / 1000 - 604800));
+                    // Place-details entries share the table under "details" keys; only link previews are wanted here.
+                    SQLiteCursor c = db.queryFinalized("SELECT url,data FROM places_meta_v1 WHERE time>" + (System.currentTimeMillis() / 1000 - 604800)
+                            + " AND url NOT LIKE 'details%'");
                     try { while (c.next()) metadata.put(c.stringValue(0), new JSONObject(c.stringValue(1))); }
                     finally { c.dispose(); }
                 }

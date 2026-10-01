@@ -400,7 +400,6 @@ final class AutoDialogsRepository implements NotificationCenter.NotificationCent
             AutoListSnapshot previousMainSnapshot = mainSnapshot;
             AutoListSnapshot previousUnreadSnapshot = unreadSnapshot;
             AutoListSnapshot previousPinnedSnapshot = pinnedSnapshot;
-            AutoListSnapshot previousChannelsSnapshot = channelsSnapshot;
             AutoListSnapshot previousBotsSnapshot = botsSnapshot;
             ArrayList<MessagesController.DialogFilter> allFilters = messagesController.getDialogFilters();
             ArrayList<FilterTabSnapshot> newFilterTabs = new ArrayList<>();
@@ -416,10 +415,8 @@ final class AutoDialogsRepository implements NotificationCenter.NotificationCent
                     getOrCreateSectionState(LIST_KEY_PINNED),
                     getPinnedDialogs(messagesController, dialogSource),
                     loading);
-            channelsSnapshot = updateSectionState(
-                    getOrCreateSectionState(LIST_KEY_CHANNELS),
-                    getChannelsDialogs(messagesController, dialogSource),
-                    loading);
+            // The car tabs are Unread, Pinned, Bots and Places (TabTemplate allows four): the
+            // Channels list is not reachable, so it is not rebuilt on every dialog update.
             botsSnapshot = updateSectionState(
                     getOrCreateSectionState(LIST_KEY_BOTS),
                     getBotDialogs(messagesController, dialogSource),
@@ -447,7 +444,6 @@ final class AutoDialogsRepository implements NotificationCenter.NotificationCent
             notifyIfChanged(LIST_KEY_MAIN, previousMainSnapshot, mainSnapshot);
             notifyIfChanged(LIST_KEY_UNREAD, previousUnreadSnapshot, unreadSnapshot);
             notifyIfChanged(LIST_KEY_PINNED, previousPinnedSnapshot, pinnedSnapshot);
-            notifyIfChanged(LIST_KEY_CHANNELS, previousChannelsSnapshot, channelsSnapshot);
             notifyIfChanged(LIST_KEY_BOTS, previousBotsSnapshot, botsSnapshot);
             for (int i = 0; i < newFilterTabs.size(); i++) {
                 int filterIndex = newFilterTabs.get(i).filterIndex;
@@ -774,30 +770,6 @@ final class AutoDialogsRepository implements NotificationCenter.NotificationCent
         ArrayList<TLRPC.Dialog> result = new ArrayList<>(userDialogs.size() + groupDialogs.size());
         result.addAll(userDialogs);
         result.addAll(groupDialogs);
-        return result;
-    }
-
-    @NonNull
-    private ArrayList<TLRPC.Dialog> getChannelsDialogs(@NonNull MessagesController messagesController,
-                                                       @NonNull ArrayList<TLRPC.Dialog> dialogs) {
-        ArrayList<TLRPC.Dialog> unreadChannels = new ArrayList<>();
-        ArrayList<TLRPC.Dialog> readChannels = new ArrayList<>();
-        for (int i = 0; i < dialogs.size(); i++) {
-            TLRPC.Dialog dialog = dialogs.get(i);
-            if (!isSupportedDriverDialog(dialog) || !isChannelDialog(messagesController, dialog)) {
-                continue;
-            }
-            if (isUnreadDialog(messagesController, dialog)) {
-                unreadChannels.add(dialog);
-            } else {
-                readChannels.add(dialog);
-            }
-        }
-        sortUserDialogs(unreadChannels);
-        sortUserDialogs(readChannels);
-        ArrayList<TLRPC.Dialog> result = new ArrayList<>(unreadChannels.size() + readChannels.size());
-        result.addAll(unreadChannels);
-        result.addAll(readChannels);
         return result;
     }
 

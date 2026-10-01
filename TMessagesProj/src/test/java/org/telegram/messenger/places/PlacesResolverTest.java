@@ -63,4 +63,12 @@ public class PlacesResolverTest {
         PlacesRepository.applyOffset(next, 123);
         assertEquals(123, next.offset_id); assertEquals(0, next.max_id);
     }
+
+    @Test public void emptyFetchNeverReplacesAKnownPreview() throws Exception {
+        org.json.JSONObject preview = new org.json.JSONObject().put("title", "Cafe").put("address", "Main Street");
+        org.json.JSONObject captcha = new org.json.JSONObject();
+        assertFalse("A captcha/consent page must not wipe the preview", PlacesResolver.keepsFetched(captcha, preview));
+        assertTrue(PlacesResolver.keepsFetched(new org.json.JSONObject().put("resolved", "https://maps.google.com/?q=52,4"), preview));
+        assertTrue("Nothing known either way", PlacesResolver.keepsFetched(captcha, new org.json.JSONObject()));
+    }
 }

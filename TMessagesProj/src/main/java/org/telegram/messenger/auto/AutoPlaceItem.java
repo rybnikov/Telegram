@@ -28,8 +28,13 @@ final class AutoPlaceItem {
     final String query;
     final Place.Provider provider;
     final int date;
+    /** Caption without links or spoilers; see {@link AutoPlaceText}. */
     final String messageText;
     final boolean isLive;
+    /** Venue or map-link name; unlike {@link #title} it never falls back to message text. */
+    final String placeName;
+    /** Restricted message: like a live location, nothing about it may leave the device. */
+    boolean restricted;
 
     AutoPlaceItem(@NonNull String key, long dialogId, int messageId, long senderId,
                   @Nullable String senderName, @Nullable String chatTitle, boolean isGroup,
@@ -37,6 +42,16 @@ final class AutoPlaceItem {
                   @Nullable Double latitude, @Nullable Double longitude, @Nullable String query,
                   @NonNull Place.Provider provider, int date, @Nullable String messageText,
                   boolean isLive) {
+        this(key, dialogId, messageId, senderId, senderName, chatTitle, isGroup, title, subtitle,
+                latitude, longitude, query, provider, date, messageText, isLive, null);
+    }
+
+    AutoPlaceItem(@NonNull String key, long dialogId, int messageId, long senderId,
+                  @Nullable String senderName, @Nullable String chatTitle, boolean isGroup,
+                  @Nullable String title, @Nullable String subtitle,
+                  @Nullable Double latitude, @Nullable Double longitude, @Nullable String query,
+                  @NonNull Place.Provider provider, int date, @Nullable String messageText,
+                  boolean isLive, @Nullable String placeName) {
         this.key = key;
         this.dialogId = dialogId;
         this.messageId = messageId;
@@ -53,14 +68,22 @@ final class AutoPlaceItem {
         this.date = date;
         this.messageText = emptyToNull(compact(messageText, 200));
         this.isLive = isLive;
+        this.placeName = emptyToNull(compact(placeName, 80));
     }
 
     @Nullable
     static AutoPlaceItem fromEntry(@NonNull PlaceEntry entry, long senderId,
                                    @Nullable String senderName, @Nullable String chatTitle,
                                    boolean isGroup) {
-        return fromMessage(entry.message.messageOwner, entry.message.getDialogId(), entry.message.getId(),
+        AutoPlaceItem item = fromMessage(entry.message.messageOwner, entry.message.getDialogId(), entry.message.getId(),
                 entry.places, senderId, senderName, chatTitle, isGroup);
+        if (item != null) item.restricted = entry.message.isRestrictedMessage;
+        return item;
+    }
+
+    /** Live locations and restricted messages never reach external services. */
+    boolean isLocalOnly() {
+        return isLive || restricted;
     }
 
     @Nullable
@@ -72,11 +95,11 @@ final class AutoPlaceItem {
         if (chosen == null || chosen.spoiler) {
             return null;
         }
-        String messageText = compact(message.message, 200);
+        String messageText = compact(AutoPlaceText.note(message), 200);
         boolean live = message.media instanceof TLRPC.TL_messageMediaGeoLive;
         String title = chosen.title;
         if (TextUtils.isEmpty(title)) title = messageText;
-        if (TextUtils.isEmpty(title)) title = live ? "Live location" : "Location";
+        if (TextUtils.isEmpty(title)) title = fallbackTitle(chosen, live);
         String subtitle;
         if (!TextUtils.isEmpty(chosen.address)) {
             subtitle = chosen.address;
@@ -88,7 +111,13 @@ final class AutoPlaceItem {
         return new AutoPlaceItem(dialogId + ":" + messageId, dialogId, messageId, senderId,
                 senderName, chatTitle, isGroup, title, subtitle, chosen.latitude, chosen.longitude,
                 chosen.latitude == null ? navigationQuery(chosen) : null, chosen.provider,
-                message.date, messageText, live);
+                message.date, messageText, live, chosen.title);
+    }
+
+    private static String fallbackTitle(Place place, boolean live) {
+        if (live) return "Live location";
+        if (place.provider == Place.Provider.TELEGRAM) return "Location";
+        return place.providerName() + " place";
     }
 
     /** The place a row navigates to: the first one with coordinates or a usable label. */

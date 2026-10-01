@@ -47,7 +47,7 @@ public class FoldogramAutoSession extends Session {
                     getCarContext().getApplicationContext(), currentAccount);
             placesRepository = new AutoPlacesRepository(
                     currentAccount, accountInstance, avatarProvider, placeDetailsResolver);
-            placeItemFactory = new AutoPlaceItemFactory(getCarContext(), avatarProvider, speechController);
+            placeItemFactory = new AutoPlaceItemFactory(getCarContext(), avatarProvider);
             conversationItemFactory = new AutoConversationItemFactory(
                     getCarContext(), currentAccount, accountInstance, avatarProvider, geoRepository,
                     messagePreviewRepository, voiceRecorderController);

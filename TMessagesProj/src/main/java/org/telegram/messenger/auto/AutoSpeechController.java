@@ -14,6 +14,8 @@ import androidx.car.app.CarToast;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -26,7 +28,8 @@ final class AutoSpeechController {
     interface Engine {
         int setLanguage(Locale locale);
         void setProgress(Progress progress);
-        int speak(String text, String utteranceId);
+        /** {@code flush} starts a new summary; later fragments queue behind it. */
+        int speak(String text, String utteranceId, boolean flush);
         void stop();
         void shutdown();
     }
@@ -46,6 +49,11 @@ final class AutoSpeechController {
     private State state = State.IDLE;
     private String activeKey;
     private String activeUtteranceId;
+    private String activeBatchPrefix;
+    private Locale engineLocale;
+    private boolean initializing;
+    private String pendingKey;
+    private List<AutoSpeechLanguage.Utterance> pendingText;
     private long lastClickAt = Long.MIN_VALUE;
     private int utteranceCounter;
     private int initAttempts;
@@ -65,8 +73,11 @@ final class AutoSpeechController {
         };
         this.engineFactory = callback -> {
             final TextToSpeech[] holder = new TextToSpeech[1];
-            holder[0] = new TextToSpeech(context, status -> callback.onInit(status,
-                    status == TextToSpeech.SUCCESS ? new AndroidEngine(holder[0]) : null));
+            // TextToSpeech can report a failure from inside its constructor, before holder[0] is set;
+            // posting defers the hand-over until it is. A failed engine is still handed over so its
+            // service binding gets shut down.
+            holder[0] = new TextToSpeech(context, status -> AndroidUtilities.runOnUIThread(() ->
+                    callback.onInit(status, holder[0] == null ? null : new AndroidEngine(holder[0]))));
         };
         this.focus = new Focus() {
             @Override public boolean request() {
@@ -134,6 +145,12 @@ final class AutoSpeechController {
     }
 
     void speakPrepared(String key, String text) {
+        ArrayList<AutoSpeechLanguage.Utterance> single = new ArrayList<>();
+        single.add(new AutoSpeechLanguage.Utterance(text, Locale.getDefault()));
+        speakPrepared(key, single);
+    }
+
+    void speakPrepared(String key, List<AutoSpeechLanguage.Utterance> text) {
         if (destroyed || key == null || !key.equals(activeKey) || state != State.PREPARING) return;
         if (!focus.request()) {
             fail("Can't read aloud now");
@@ -143,30 +160,43 @@ final class AutoSpeechController {
             speakNow(text);
             return;
         }
+        // Whatever the latest request is, it is spoken once the single start-up finishes; a second
+        // engine would never be stopped or shut down.
+        pendingKey = key;
+        pendingText = text;
+        if (initializing) return;
         if (initAttempts >= 2) {
             fail("Can't read aloud");
             return;
         }
         initAttempts++;
+        initializing = true;
         engineFactory.create((status, initializedEngine) -> AndroidUtilities.runOnUIThread(() -> {
-            if (destroyed || key == null || !key.equals(activeKey) || state != State.PREPARING) {
-                if (initializedEngine != null) initializedEngine.shutdown();
-                return;
-            }
+            initializing = false;
+            String waitingKey = pendingKey;
+            List<AutoSpeechLanguage.Utterance> waitingText = pendingText;
+            pendingKey = null;
+            pendingText = null;
+            boolean wanted = !destroyed && waitingKey != null && waitingKey.equals(activeKey) && state == State.PREPARING;
             if (status != TextToSpeech.SUCCESS || initializedEngine == null) {
-                fail("Can't read aloud");
+                if (initializedEngine != null) initializedEngine.shutdown();
+                if (wanted) fail("Can't read aloud");
                 return;
             }
-            engine = initializedEngine;
-            int language = engine.setLanguage(Locale.getDefault());
-            if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) {
-                engine.setLanguage(Locale.ENGLISH);
+            if (destroyed) {
+                initializedEngine.shutdown();
+                return;
             }
+            // A working engine is kept even when the request was cancelled meanwhile, so Stop or
+            // Back during start-up does not use up the init attempts for the session.
+            engine = initializedEngine;
+            initAttempts = 0;
+            engineLocale = null;
             engine.setProgress(new Progress() {
                 @Override public void onDone(String utteranceId) { postFinished(utteranceId, false); }
                 @Override public void onError(String utteranceId) { postFinished(utteranceId, true); }
             });
-            speakNow(text);
+            if (wanted) speakNow(waitingText);
         }));
     }
 
@@ -197,27 +227,50 @@ final class AutoSpeechController {
         return true;
     }
 
-    private void speakNow(String text) {
+    private void speakNow(List<AutoSpeechLanguage.Utterance> utterances) {
         if (engine == null) return;
-        activeUtteranceId = "auto_place_" + (++utteranceCounter);
-        int result = engine.speak(text, activeUtteranceId);
-        if (result == TextToSpeech.ERROR) {
-            fail("Can't read aloud");
-        } else {
-            update(State.SPEAKING);
+        if (utterances.isEmpty()) {
+            stopInternal(true);
+            return;
         }
+        String prefix = "auto_place_" + (++utteranceCounter) + "_";
+        activeBatchPrefix = prefix;
+        for (int i = 0; i < utterances.size(); i++) {
+            AutoSpeechLanguage.Utterance utterance = utterances.get(i);
+            applyLanguage(utterance.locale);
+            String id = prefix + i;
+            if (i == utterances.size() - 1) activeUtteranceId = id;
+            if (engine.speak(utterance.text, id, i == 0) == TextToSpeech.ERROR) {
+                fail("Can't read aloud");
+                return;
+            }
+        }
+        update(State.SPEAKING);
+    }
+
+    /** A voice that is not installed falls back to English rather than failing the summary. */
+    private void applyLanguage(Locale locale) {
+        if (locale.equals(engineLocale)) return;
+        int result = engine.setLanguage(locale);
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            engine.setLanguage(Locale.ENGLISH);
+        }
+        engineLocale = locale;
     }
 
     private void postFinished(String utteranceId, boolean error) {
         AndroidUtilities.runOnUIThread(() -> {
-            if (destroyed || activeUtteranceId == null || !activeUtteranceId.equals(utteranceId)) return;
+            if (destroyed || activeBatchPrefix == null || utteranceId == null
+                    || !utteranceId.startsWith(activeBatchPrefix)) return;
             if (error) fail("Can't read aloud");
-            else stopInternal(true);
+            else if (utteranceId.equals(activeUtteranceId)) stopInternal(true);
         });
     }
 
     private void fail(String text) {
+        if (engine != null) engine.stop();
         activeUtteranceId = null;
+        activeBatchPrefix = null;
         focus.abandon();
         update(State.ERROR);
         toast.show(text);
@@ -227,6 +280,7 @@ final class AutoSpeechController {
         if (engine != null) engine.stop();
         focus.abandon();
         activeUtteranceId = null;
+        activeBatchPrefix = null;
         activeKey = null;
         if (notify || state != State.IDLE) update(State.IDLE);
     }
@@ -254,8 +308,8 @@ final class AutoSpeechController {
                 @Override public void onError(String utteranceId) { progress.onError(utteranceId); }
             });
         }
-        @Override public int speak(String text, String utteranceId) {
-            return tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId);
+        @Override public int speak(String text, String utteranceId, boolean flush) {
+            return tts.speak(text, flush ? TextToSpeech.QUEUE_FLUSH : TextToSpeech.QUEUE_ADD, null, utteranceId);
         }
         @Override public void stop() { tts.stop(); }
         @Override public void shutdown() { tts.shutdown(); }

@@ -12,6 +12,13 @@ public final class PlaceDetails {
     public String openingHours;
     public String website;
     public String phone;
+    /** Short encyclopedic description (Wikipedia summary), in the message language when available. */
+    public String description;
+    /** https image for the place card: Wikipedia photo or the map link preview. */
+    public String imageUrl;
+    /** OSM links to an encyclopedia article, e.g. "en:Rijksmuseum" and "Q190804". */
+    public String wikipedia;
+    public String wikidata;
 
     public PlaceDetails merge(PlaceDetails other) {
         if (other == null) return this;
@@ -22,13 +29,22 @@ public final class PlaceDetails {
         if (TextUtils.isEmpty(openingHours)) openingHours = other.openingHours;
         if (TextUtils.isEmpty(website)) website = other.website;
         if (TextUtils.isEmpty(phone)) phone = other.phone;
+        if (TextUtils.isEmpty(description)) description = other.description;
+        if (TextUtils.isEmpty(imageUrl)) imageUrl = other.imageUrl;
+        if (TextUtils.isEmpty(wikipedia)) wikipedia = other.wikipedia;
+        if (TextUtils.isEmpty(wikidata)) wikidata = other.wikidata;
         return this;
     }
 
     public boolean isEmpty() {
         return TextUtils.isEmpty(title) && TextUtils.isEmpty(category) && stars < 0
                 && TextUtils.isEmpty(address) && TextUtils.isEmpty(openingHours)
-                && TextUtils.isEmpty(website) && TextUtils.isEmpty(phone);
+                && TextUtils.isEmpty(website) && TextUtils.isEmpty(phone)
+                && TextUtils.isEmpty(description) && TextUtils.isEmpty(imageUrl);
+    }
+
+    public PlaceDetails copy() {
+        return new PlaceDetails().merge(this);
     }
 
     JSONObject toJson() throws Exception {
@@ -41,6 +57,10 @@ public final class PlaceDetails {
         put(json, "openingHours", openingHours);
         put(json, "website", website);
         put(json, "phone", phone);
+        put(json, "description", description);
+        put(json, "imageUrl", imageUrl);
+        put(json, "wikipedia", wikipedia);
+        put(json, "wikidata", wikidata);
         return json;
     }
 
@@ -55,6 +75,11 @@ public final class PlaceDetails {
         details.openingHours = opt(json, "openingHours");
         details.website = opt(json, "website");
         details.phone = opt(json, "phone");
+        details.description = opt(json, "description");
+        String image = opt(json, "imageUrl");
+        details.imageUrl = image != null && image.startsWith("https://") ? image : null;
+        details.wikipedia = opt(json, "wikipedia");
+        details.wikidata = opt(json, "wikidata");
         return details;
     }
 

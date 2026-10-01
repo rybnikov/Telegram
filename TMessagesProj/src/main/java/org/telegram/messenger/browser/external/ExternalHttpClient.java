@@ -3,9 +3,9 @@ package org.telegram.messenger.browser.external;
 import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -38,14 +38,17 @@ public final class ExternalHttpClient {
         return ExternalHtmlUtils.fetchHtmlWithFinalUrl(url, startMarker, endMarker, maxChars, buildHeaders(overrideHeaders));
     }
 
-    public static String postForm(String url, String body, Map<String, String> headers,
-                                  int maxBytes, int timeoutMs) throws IOException {
+    /** Plain bounded GET for small JSON APIs; non-2xx answers throw {@link HttpStatusException}. */
+    public static String getText(String url, Map<String, String> headers, int maxBytes, int timeoutMs) throws IOException {
+        return new String(getBytes(url, headers, maxBytes, timeoutMs), StandardCharsets.UTF_8);
+    }
+
+    /** Bounded GET of a small binary body such as a preview image. */
+    public static byte[] getBytes(String url, Map<String, String> headers, int maxBytes, int timeoutMs) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setRequestMethod("POST");
-        connection.setDoOutput(true);
+        connection.setRequestMethod("GET");
         connection.setConnectTimeout(timeoutMs);
         connection.setReadTimeout(timeoutMs);
-        connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
         if (headers != null) {
             for (Map.Entry<String, String> entry : headers.entrySet()) {
                 if (entry.getKey() != null && entry.getValue() != null) {
@@ -53,12 +56,7 @@ public final class ExternalHttpClient {
                 }
             }
         }
-        byte[] encoded = body.getBytes(StandardCharsets.UTF_8);
-        connection.setFixedLengthStreamingMode(encoded.length);
         try {
-            try (OutputStream output = connection.getOutputStream()) {
-                output.write(encoded);
-            }
             int status = connection.getResponseCode();
             if (status < 200 || status >= 300) throw new HttpStatusException(status);
             try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -69,11 +67,24 @@ public final class ExternalHttpClient {
                     if (output.size() + read > cap) throw new IOException("HTTP response exceeds limit");
                     output.write(buffer, 0, read);
                 }
-                return output.toString(StandardCharsets.UTF_8.name());
+                return output.toByteArray();
             }
         } finally {
             connection.disconnect();
         }
+    }
+
+    /** Query-string or form encoding: every name and value is percent-encoded. */
+    public static String encodeForm(Map<String, String> fields) throws IOException {
+        StringBuilder body = new StringBuilder();
+        if (fields == null) return "";
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            if (entry.getKey() == null) continue;
+            if (body.length() > 0) body.append('&');
+            body.append(URLEncoder.encode(entry.getKey(), "UTF-8")).append('=')
+                    .append(URLEncoder.encode(entry.getValue() == null ? "" : entry.getValue(), "UTF-8"));
+        }
+        return body.toString();
     }
 
     public static final class HttpStatusException extends IOException {

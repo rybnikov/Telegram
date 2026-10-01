@@ -13,33 +13,123 @@ final class AutoPlaceSummaryBuilder {
     private AutoPlaceSummaryBuilder() {
     }
 
+    private static final int NOTE_LIMIT = 120;
+
+    /**
+     * One spoken fragment. Fixed wording is English; {@code content} marks names, addresses and the
+     * note, which are spoken in their own language (see {@link AutoSpeechLanguage}).
+     */
+    static final class Part {
+        final String text;
+        final boolean content;
+
+        Part(String text, boolean content) {
+            this.text = text;
+            this.content = content;
+        }
+    }
+
     static String build(AutoPlaceItem item, PlaceDetails details, long nowSeconds, int maxLength) {
-        List<String> sentences = new ArrayList<>();
+        return cap(toText(sentences(item, details, nowSeconds)), Math.max(1, maxLength));
+    }
+
+    /** Sentences that fit in {@code maxLength} characters when joined, for the speech engine. */
+    static List<List<Part>> buildSentences(AutoPlaceItem item, PlaceDetails details, long nowSeconds, int maxLength) {
+        List<List<Part>> all = sentences(item, details, nowSeconds);
+        List<List<Part>> kept = new ArrayList<>();
+        for (List<Part> sentence : all) {
+            kept.add(sentence);
+            if (toText(kept).length() >= Math.max(1, maxLength)) {
+                kept.remove(kept.size() - 1);
+                break;
+            }
+        }
+        return kept;
+    }
+
+    /**
+     * What the place is, then who sent it. Links, coordinates and the raw message are never read;
+     * a cleaned caption is only a trailing note.
+     */
+    private static List<List<Part>> sentences(AutoPlaceItem item, PlaceDetails details, long nowSeconds) {
+        List<List<Part>> sentences = new ArrayList<>();
+        String hours = details == null ? null : AutoOpeningHours.speak(details.openingHours);
         boolean noCoreDetails = details == null || TextUtils.isEmpty(details.title)
                 && TextUtils.isEmpty(details.category) && TextUtils.isEmpty(details.address)
-                && TextUtils.isEmpty(details.openingHours);
+                && TextUtils.isEmpty(hours) && TextUtils.isEmpty(details.description);
+        String spokenName;
         if (noCoreDetails) {
-            sentences.add("No details for this place");
+            // item.title may be the caption itself; the caption is read once, as the note.
+            if (!TextUtils.isEmpty(item.placeName)) {
+                spokenName = item.placeName;
+                sentences.add(parts(content(spokenName), fixed(", no more details")));
+            } else {
+                spokenName = item.isLive ? "Live location" : "Shared location";
+                sentences.add(parts(fixed(spokenName + ", no more details")));
+            }
         } else {
-            if (!TextUtils.isEmpty(details.title)) sentences.add(details.title);
+            spokenName = details.title;
+            if (!TextUtils.isEmpty(details.title)) sentences.add(parts(content(details.title)));
             if (!TextUtils.isEmpty(details.category)) {
-                sentences.add(details.category + (details.stars >= 0 ? ", " + details.stars + " stars" : ""));
+                sentences.add(parts(fixed(details.category + (details.stars >= 0 ? ", " + details.stars + " stars" : ""))));
             }
-            if (!TextUtils.isEmpty(details.address)) sentences.add(details.address);
-            if (!TextUtils.isEmpty(details.openingHours)) {
-                sentences.add("Opening hours: " + details.openingHours.replaceAll(";\\s*", ", "));
-            }
+            if (!TextUtils.isEmpty(details.address)) sentences.add(parts(content(details.address)));
+            if (!TextUtils.isEmpty(details.description)) sentences.add(parts(content(details.description)));
+            if (!TextUtils.isEmpty(hours)) sentences.add(parts(fixed("Opening hours: " + hours)));
         }
-        String senderName = !TextUtils.isEmpty(item.senderName) ? item.senderName
-                : !TextUtils.isEmpty(item.chatTitle) ? item.chatTitle : "Unknown";
-        String sender = "Sent by " + senderName;
+        List<Part> sender = new ArrayList<>();
+        sender.add(fixed("Sent by"));
+        if (!TextUtils.isEmpty(item.senderName)) {
+            sender.add(content(item.senderName));
+        } else if (!TextUtils.isEmpty(item.chatTitle)) {
+            sender.add(content(item.chatTitle));
+        } else {
+            sender.add(fixed("Unknown"));
+        }
+        String senderName = sender.get(1).text;
         if (item.isGroup && !TextUtils.isEmpty(item.chatTitle) && !item.chatTitle.equals(senderName)) {
-            sender += " in " + item.chatTitle;
+            sender.add(fixed("in"));
+            sender.add(content(item.chatTitle));
         }
-        sender += " " + relativeTime(item.date, nowSeconds);
+        String age = relativeTime(item.date, nowSeconds);
+        // Older dates come from the app's localized formatter.
+        sender.add(new Part(age, !age.endsWith("ago") && !age.equals("just now") && !age.equals("yesterday")));
         sentences.add(sender);
-        if (!TextUtils.isEmpty(item.messageText)) sentences.add("Message: " + item.messageText);
-        return cap(join(sentences), Math.max(1, maxLength));
+        if (!TextUtils.isEmpty(item.messageText) && !item.messageText.equalsIgnoreCase(spokenName)) {
+            sentences.add(parts(fixed("Note:"), content(AutoPlaceItem.compact(item.messageText, NOTE_LIMIT))));
+        }
+        return sentences;
+    }
+
+    private static Part fixed(String text) {
+        return new Part(text, false);
+    }
+
+    private static Part content(String text) {
+        return new Part(text, true);
+    }
+
+    private static List<Part> parts(Part... parts) {
+        List<Part> result = new ArrayList<>();
+        for (Part part : parts) result.add(part);
+        return result;
+    }
+
+    static String sentenceText(List<Part> sentence) {
+        StringBuilder text = new StringBuilder();
+        for (Part part : sentence) {
+            String value = part.text.trim();
+            if (value.isEmpty()) continue;
+            if (text.length() > 0 && !value.startsWith(",")) text.append(' ');
+            text.append(value);
+        }
+        return text.toString();
+    }
+
+    private static String toText(List<List<Part>> sentences) {
+        List<String> texts = new ArrayList<>();
+        for (List<Part> sentence : sentences) texts.add(sentenceText(sentence));
+        return join(texts);
     }
 
     static String relativeTime(long dateSeconds, long nowSeconds) {

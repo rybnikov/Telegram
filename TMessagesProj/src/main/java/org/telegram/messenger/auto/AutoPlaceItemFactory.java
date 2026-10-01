@@ -23,13 +23,10 @@ final class AutoPlaceItemFactory {
 
     private final CarContext carContext;
     private final AutoAvatarProvider avatarProvider;
-    private final AutoSpeechController speechController;
 
-    AutoPlaceItemFactory(CarContext carContext, AutoAvatarProvider avatarProvider,
-                         AutoSpeechController speechController) {
+    AutoPlaceItemFactory(CarContext carContext, AutoAvatarProvider avatarProvider) {
         this.carContext = carContext;
         this.avatarProvider = avatarProvider;
-        this.speechController = speechController;
     }
 
     ItemList buildItemList(@NonNull Screen screen, @NonNull List<AutoPlaceItem> items,
@@ -55,7 +52,6 @@ final class AutoPlaceItemFactory {
         return buildRow(item.displaySenderTitle(), item.title, item.subtitle,
                 avatarProvider.getRowDialogIcon(avatarId),
                 icon(android.R.drawable.ic_menu_info_details),
-                speechController.isActive(item.key),
                 () -> navigate(screen, item),
                 () -> aboutListener.onAbout(item));
     }
@@ -65,7 +61,7 @@ final class AutoPlaceItemFactory {
      * host without an error, so navigation stays on the row click and the action reads the place.
      */
     static Row buildRow(@NonNull String title, @NonNull String firstLine, @NonNull String secondLine,
-                        CarIcon image, CarIcon aboutIcon, boolean speaking,
+                        CarIcon image, CarIcon aboutIcon,
                         @NonNull Runnable onTap, @NonNull Runnable onAbout) {
         Row.Builder row = new Row.Builder()
                 .setTitle(title)
@@ -74,7 +70,7 @@ final class AutoPlaceItemFactory {
                 .setOnClickListener(onTap::run);
         if (image != null) row.setImage(image, Row.IMAGE_TYPE_LARGE);
         Action.Builder about = new Action.Builder()
-                .setTitle(speaking ? "Stop" : "About")
+                .setTitle("About")
                 .setOnClickListener(onAbout::run);
         if (aboutIcon != null) about.setIcon(aboutIcon);
         row.addAction(about.build());
@@ -96,7 +92,7 @@ final class AutoPlaceItemFactory {
         return new CarIcon.Builder(IconCompat.createWithResource(carContext, resource)).build();
     }
 
-    private void navigate(Screen screen, AutoPlaceItem item) {
+    static void navigate(Screen screen, AutoPlaceItem item) {
         String uri = item.buildNavigationUri();
         if (uri == null) return;
         try {
