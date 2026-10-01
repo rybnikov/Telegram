@@ -5,8 +5,7 @@ fork. Keep local paths, device identifiers, signing passwords, and generated
 service files out of this file. Put machine-specific notes in `CLAUDE.local.md`.
 
 For upstream merges, do not duplicate the procedure here. Use
-`docs/UPSTREAM_MERGE.md`, `docs/FORK_FEATURES.md`, and
-`docs/MERGE_REPORT_TEMPLATE.md`.
+`docs/UPSTREAM_MERGE.md` and `docs/FORK_FEATURES.md`.
 
 ## Branching
 

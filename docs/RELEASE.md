@@ -11,7 +11,7 @@ pushes the tag itself**; you never create or push a release tag by hand.
 - The mandatory device test has passed from the application candidate being
   released via `com.rbnkv.foldogram.beta` (see "Required Device Test" in
   `docs/UPSTREAM_MERGE.md`). Every upstream merge must be beta-tested before it
-  is released. Documentation-only report/skill/runbook commits after that test
+  is released. Documentation-only skill/runbook commits after that test
   do not invalidate acceptance; application or build-input changes do. The
   Play-installed `com.rbnkv.foldogram` must not be replaced, cleared, or
   uninstalled for local testing.

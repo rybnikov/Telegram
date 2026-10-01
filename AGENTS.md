@@ -12,7 +12,6 @@ Detailed procedures live in tracked docs; this file only routes.
 - Internal Google Play release: `docs/RELEASE.md`.
 - Upstream DrKLO/Telegram merges: `docs/UPSTREAM_MERGE.md`.
 - Fork feature invariants and merge anchors: `docs/FORK_FEATURES.md`.
-- Merge reporting: `docs/MERGE_REPORT_TEMPLATE.md`.
 
 ## Always-On Rules
 

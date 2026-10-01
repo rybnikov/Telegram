@@ -182,13 +182,13 @@ The key scenario is the existing-user beta database upgrade path:
    clear or uninstall beta first; preserving beta data is what exercises the
    upgrade path.
 4. Verify with `adb shell dumpsys package com.rbnkv.foldogram.beta` that the
-   installed package, version name, and version code match the candidate. Record
-   the candidate commit and build/install command in the merge report to preserve
-   commit provenance.
+   installed package, version name, and version code match the candidate. Tell
+   the owner the candidate commit and build/install command to preserve commit
+   provenance.
 5. Launch beta and verify there is no startup crash and no database migration or
    native-library failure.
 6. Give the owner a concise manual checklist focused on the upstream delta and
-   the residual risks recorded in the merge report.
+   the merge's residual risks.
 7. Wait for the owner to test that installed beta. A response that the checklist
    passes, including an instruction such as "everything works, release it", is
    final device acceptance for the candidate.
@@ -205,8 +205,8 @@ full application runtime startup. Device testing covers that gap.
 Owner acceptance must happen after the current merged application candidate is
 installed and its package/version/provenance is verified. It becomes stale only
 if application or build inputs change afterward, or if the recorded verification
-is proven wrong. Documentation-only changes to merge reports, skills, or runbooks
-do not invalidate acceptance. A device disconnect after verified acceptance is
+is proven wrong. Documentation-only changes to skills or runbooks do not
+invalidate acceptance. A device disconnect after verified acceptance is
 not a blocker and must not trigger another install or an emulator.
 
 ## Stop Rules
@@ -293,8 +293,8 @@ Never resolve database migration conflicts with `ours` or `theirs`. Preserve
 released fork migration numbers, append new upstream migrations above them, and
 adapt the surrounding DDL explicitly.
 
-Every merge report must include a DB upgrade trace for each parked
-`user_version` that released users can have. For each parked version, list which
+Every merge that changes migrations must record a DB upgrade trace in the merge
+commit message for each parked `user_version` that released users can have. For each parked version, list which
 migrations run, which ones are skipped, and why the upgrade is safe.
 
 Worked example, upstream 12.8.1 `web_browser_settings`:
@@ -343,7 +343,7 @@ real API keys
 ```
 
 If upstream includes tracked sample or legacy config files, classify them in the
-merge report. Do not broaden tracked secrets/config surface without explicit
+merge commit message. Do not broaden tracked secrets/config surface without explicit
 review.
 
 Before accepting a merge, run:
@@ -357,55 +357,34 @@ The reviewed allowlist lives in `scripts/check-secrets-policy.sh`. Raw
 `git ls-files | grep -E '(^|/)google-services\.json$|\.keystore$|\.jks$|\.p12$'`
 is only a diagnostic aid.
 
-## Merge Report
+## Merge Record
 
-Every upstream merge must end with a report before it is merged back to
-`foldogram`. Use `docs/MERGE_REPORT_TEMPLATE.md` as the report skeleton.
+Do not write merge report files. Do not add files under `docs/` for a merge.
 
-Required fields:
+Before asking for device acceptance, give the owner a short summary in the
+conversation: refs (old/new upstream base, pre-merge `foldogram` tip), gate
+results, conflicts and how each was resolved, residual risks, and the device
+checklist.
+
+The merge commit message is the durable record. Keep it short and include only
+what the code cannot explain later:
 
 ```text
-Merge branch:
-Old upstream base:
-New upstream base:
-Foldogram tip before merge:
+Merge upstream <version> into foldogram
 
-merge-delta-audit:
-check-fork-anchors:
-check-secrets-policy:
-testHA_privateUnitTest:
-compileHA_privateJavaWithJavac:
+Merge DrKLO/Telegram <old>..<new> (<new-base-sha>).
 
-Feature matrix:
-ext-preview:
-nav-recovery:
-fold-tablet:
-cutout:
-android-auto:
-maps-live-location:
-places-index:
-db-preview:
-browser-iv:
-identity:
-share-shortcuts:
-ci-release:
-secrets-policy:
-
-Conflicts resolved:
-Known residual risks:
-Manual device smoke needed:
-Device test package and baseline:
-Installed beta verification and candidate provenance:
-Production Play package preservation:
+- <non-obvious conflict decision, by feature-id>
+- <DB migration renumbering and parked user_version trace, if any>
+- <deliberate deviation from upstream or from the plan, if any>
 ```
 
 Do not merge the branch into `foldogram` and do not push it until the owner
-accepts the report and the required device test.
+accepts the required device test.
 
 ## Final Acceptance
 
-After all gates pass, the required device test is accepted, and the report is
-accepted:
+After all gates pass and the required device test is accepted:
 
 ```bash
 git checkout foldogram

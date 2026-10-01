@@ -1,6 +1,6 @@
 ---
 name: upstream-merge
-description: "Use when merging upstream DrKLO/Telegram into the foldogram fork. Branch strategy, beta-only device acceptance, per-conflict feature-id resolution, DB migration rules, CI gates, and merge report. Do NOT use for normal feature work."
+description: "Use when merging upstream DrKLO/Telegram into the foldogram fork. Branch strategy, beta-only device acceptance, per-conflict feature-id resolution, DB migration rules, CI gates, and merge commit record. Do NOT use for normal feature work."
 ---
 
 # Upstream Merge Skill
@@ -40,8 +40,8 @@ Use this skill only for upstream DrKLO/Telegram sync work.
 10. After device acceptance, do not add another install, emulator, profile, or
     device check unless the owner explicitly requests it or application/build
     inputs changed. A disconnected device after verified acceptance is not a
-    blocker. Documentation-only merge-report or skill changes do not invalidate
-    acceptance; record them, but do not reinstall the unchanged application.
+    blocker. Documentation-only skill or runbook changes do not invalidate
+    acceptance; do not reinstall the unchanged application.
 
 ## Database Migration Rule
 
@@ -49,7 +49,12 @@ Released Foldogram migration numbers are frozen. New upstream migrations are
 appended above the released Foldogram floor. Fork DDL must be idempotent:
 `CREATE ... IF NOT EXISTS`, and `ADD COLUMN` through `executeNoException`.
 
-For every DB conflict, include a parked-user-version trace in the merge report:
+Git can auto-merge upstream migration blocks without a conflict and place them
+after the fork's last block, where they never run. Whenever upstream touches
+`DatabaseMigrationHelper` or `LAST_DB_VERSION`, inspect the merged chain even if
+git reported no conflict.
+
+For every DB change, put a parked-user-version trace in the merge commit message:
 which migrations run, which ones are skipped, and why the upgrade is safe.
 
 ## Stop Rules
@@ -90,4 +95,4 @@ loss detector; canary coverage and manual review verify hook survival.
 
 Full reference: `docs/UPSTREAM_MERGE.md`.
 Registry: `docs/FORK_FEATURES.md`.
-Report template: `docs/MERGE_REPORT_TEMPLATE.md`.
+Do not write merge report files; the merge commit message is the record.
