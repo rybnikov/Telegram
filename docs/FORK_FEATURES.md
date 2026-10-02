@@ -92,24 +92,24 @@ moved observer wiring.
 
 ## cutout
 
-Human explanation: Foldogram carries a display-cutout workaround for landscape
-rotation where a side cutout could expose an unwanted visual stripe. The current
-implementation tracks cutout presence in `DrawerLayoutContainer`, draws black
-side coverage for cutout insets, and keeps v31 themes in `shortEdges` cutout
-mode.
+Human explanation: In landscape, screen backgrounds remain visible in the side
+area around the camera cutout. The drawer forwards original system and cutout
+insets to screens so they can keep controls in the safe area. Navigation layouts
+already draw their inset backgrounds; the root must not cover them with a black
+side stripe. The v31 themes retain `shortEdges`; edge-to-edge window setup uses
+`always` where supported.
 
-Invariant: Display-cutout side insets remain explicitly handled in the drawer
-container and v31 styles keep the cutout mode expected by the current workaround.
-If upstream changes cutout handling, verify the rotation/cutout visual invariant
-instead of preserving these exact lines blindly.
+Invariant: `DrawerLayoutContainer` never paints opaque cutout coverage over child
+content. Safe cutout insets still reach child screens, while tappable navigation
+on the opposite edge keeps its own protection. Rotating between portrait and
+both landscape directions must not leave a black side stripe.
 
-Conflict policy: If upstream removes the manual cutout drawing or changes
-`windowLayoutInDisplayCutoutMode`, test the affected orientation/cutout scenario.
-Keep either the current workaround or an upstream-equivalent fix. Never commit
-hardcoded device-specific dimensions.
+Conflict policy: If upstream changes cutout handling, verify the rendered edge
+pixels and safe-inset dispatch. Preserve the visual invariant rather than the
+old black-paint workaround. Never commit hardcoded device-specific dimensions.
 
 ```json
-{"id":"cutout","criticality":"med","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"DisplayCutoutCompat"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"private boolean hasCutout"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"insets.getDisplayCutout()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"getBoundingRects().isEmpty()"},{"path":"TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java","contains":"if (hasCutout)"},{"path":"TMessagesProj/src/main/res/values-v31/styles.xml","contains":"android:windowLayoutInDisplayCutoutMode\">shortEdges","min_count":2}],"tests":["MergeRegressionCanaryTest"]}
+{"id":"cutout","criticality":"med","anchors":[{"path":"TMessagesProj/src/test/java/org/telegram/ui/ActionBar/DrawerLayoutContainerEdgeToEdgeTest.java","contains":"DisplayCutoutCompat"},{"path":"TMessagesProj/src/test/java/org/telegram/ui/ActionBar/DrawerLayoutContainerEdgeToEdgeTest.java","contains":"landscapeCutoutKeepsBothSideBackgroundsVisible"},{"path":"TMessagesProj/src/test/java/org/telegram/ui/ActionBar/DrawerLayoutContainerEdgeToEdgeTest.java","contains":"cutoutDoesNotOverwriteOppositeTappableNavigation"},{"path":"TMessagesProj/src/test/java/org/telegram/ui/ActionBar/DrawerLayoutContainerEdgeToEdgeTest.java","contains":"cutoutRotationDoesNotLeaveSideCoverageBehind"},{"path":"TMessagesProj/src/test/java/org/telegram/ui/ActionBar/DrawerLayoutContainerEdgeToEdgeTest.java","contains":"receivedInsets[0].getInsets(WindowInsetsCompat.Type.displayCutout())"},{"path":"TMessagesProj/src/main/res/values-v31/styles.xml","contains":"android:windowLayoutInDisplayCutoutMode\">shortEdges","min_count":2}],"tests":["MergeRegressionCanaryTest","DrawerLayoutContainerEdgeToEdgeTest"]}
 ```
 
 ## gesture-edge-to-edge

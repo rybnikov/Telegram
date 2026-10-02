@@ -6,10 +6,13 @@ import android.app.Application;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.view.View;
 import android.widget.FrameLayout;
 
 import androidx.core.graphics.Insets;
+import androidx.core.view.DisplayCutoutCompat;
+import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import org.junit.Before;
@@ -84,6 +87,56 @@ public final class DrawerLayoutContainerEdgeToEdgeTest {
     }
 
     @Test
+    public void landscapeCutoutKeepsBothSideBackgroundsVisible() {
+        DrawerLayoutContainer container = createContainer(160, 100);
+        View content = container.getChildAt(0);
+        WindowInsetsCompat[] receivedInsets = new WindowInsetsCompat[1];
+        ViewCompat.setOnApplyWindowInsetsListener(content, (view, insets) -> {
+            receivedInsets[0] = insets;
+            return insets;
+        });
+
+        for (boolean onLeft : new boolean[]{true, false}) {
+            WindowInsetsCompat insets = createCutoutInsets(onLeft, false);
+            container.onApplyWindowInsets(container, insets);
+            measureAndLayout(container, 160, 100);
+
+            assertEquals(CONTENT_COLOR, drawPixel(container, 1, 20));
+            assertEquals(CONTENT_COLOR, drawPixel(container, 158, 20));
+            // Screens still receive the safe area to keep controls out of the camera hole.
+            assertEquals(insets.getInsets(WindowInsetsCompat.Type.displayCutout()),
+                receivedInsets[0].getInsets(WindowInsetsCompat.Type.displayCutout()));
+        }
+    }
+
+    @Test
+    public void cutoutDoesNotOverwriteOppositeTappableNavigation() {
+        DrawerLayoutContainer container = createContainer(160, 100);
+        container.onApplyWindowInsets(container, createCutoutInsets(true, true));
+        measureAndLayout(container, 160, 100);
+
+        assertEquals(CONTENT_COLOR, drawPixel(container, 1, 20));
+        assertEquals(PROTECTION_COLOR, drawPixel(container, 158, 20));
+    }
+
+    @Test
+    public void cutoutRotationDoesNotLeaveSideCoverageBehind() {
+        DrawerLayoutContainer container = createContainer(160, 100);
+        container.onApplyWindowInsets(container, createCutoutInsets(true, false));
+        measureAndLayout(container, 160, 100);
+        assertEquals(CONTENT_COLOR, drawPixel(container, 1, 20));
+
+        applyInsets(container, 24, 0, 0);
+        measureAndLayout(container, 100, 160);
+        assertEquals(CONTENT_COLOR, drawPixel(container, 1, 20));
+        assertEquals(CONTENT_COLOR, drawBottomPixel(container));
+
+        container.onApplyWindowInsets(container, createCutoutInsets(false, false));
+        measureAndLayout(container, 160, 100);
+        assertEquals(CONTENT_COLOR, drawPixel(container, 158, 20));
+    }
+
+    @Test
     public void reappliedInsetsAfterRotationReplaceOldNavigationMode() {
         DrawerLayoutContainer container = createContainer(100, 160);
         applyInsets(container, 48, 48, 0);
@@ -136,6 +189,18 @@ public final class DrawerLayoutContainerEdgeToEdgeTest {
             Insets.of(0, 0, 0, tappableBottom),
             imeBottom
         );
+    }
+
+    private static WindowInsetsCompat createCutoutInsets(boolean onLeft, boolean withSideNavigation) {
+        Insets safeInsets = Insets.of(onLeft ? 12 : 0, 0, onLeft ? 0 : 12, 0);
+        Rect cutoutBounds = onLeft ? new Rect(0, 40, 12, 60) : new Rect(148, 40, 160, 60);
+        DisplayCutoutCompat cutout = new DisplayCutoutCompat(safeInsets,
+            onLeft ? cutoutBounds : null, null, onLeft ? null : cutoutBounds, null, Insets.NONE);
+        Insets navigation = withSideNavigation ? Insets.of(0, 0, 16, 0) : Insets.of(0, 0, 0, 8);
+        Insets tappable = withSideNavigation ? navigation : Insets.NONE;
+        return new WindowInsetsCompat.Builder(createInsets(navigation, tappable, 0))
+            .setDisplayCutout(cutout)
+            .build();
     }
 
     private static WindowInsetsCompat createInsets(Insets navigationInsets, Insets tappableInsets, int imeBottom) {

@@ -19,7 +19,6 @@ import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.graphics.Insets;
-import androidx.core.view.DisplayCutoutCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
@@ -32,8 +31,6 @@ public class DrawerLayoutContainer extends FrameLayout {
 
     private INavigationLayout parentActionBarLayout;
     private ActionBarLayout actionBarLayout;
-    private final Paint cutoutPaint = new Paint();
-    private boolean hasCutout;
     private boolean inLayout;
 
     public DrawerLayoutContainer(Context context) {
@@ -186,17 +183,6 @@ public class DrawerLayoutContainer extends FrameLayout {
             );
         }
 
-        if (hasCutout) {
-            cutoutPaint.setColor(0xff000000);
-            int left = systemAndCutoutInsets.left;
-            if (left != 0) {
-                canvas.drawRect(0, 0, left, getMeasuredHeight(), cutoutPaint);
-            }
-            int right = systemAndCutoutInsets.right;
-            if (right != 0) {
-                canvas.drawRect(getMeasuredWidth() - right, 0, getMeasuredWidth(), getMeasuredHeight(), cutoutPaint);
-            }
-        }
     }
 
     @Override
@@ -244,9 +230,6 @@ public class DrawerLayoutContainer extends FrameLayout {
     @NonNull
     WindowInsetsCompat onApplyWindowInsets(@NonNull View ignoredV, @NonNull WindowInsetsCompat insets) {
         lastWindowInsetsCompat = insets;
-
-        final DisplayCutoutCompat displayCutout = insets.getDisplayCutout();
-        hasCutout = displayCutout != null && !displayCutout.getBoundingRects().isEmpty();
 
         final Insets systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
         final Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
