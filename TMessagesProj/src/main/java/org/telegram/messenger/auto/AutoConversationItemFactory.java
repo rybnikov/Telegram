@@ -462,9 +462,7 @@ final class AutoConversationItemFactory {
             CarMessage.Builder messageBuilder = new CarMessage.Builder()
                     .setSender(sender)
                     .setReceivedTimeEpochMillis(previewState.timestamp)
-                    // EXPERIMENT: report every message unread to see whether the host then plays all of
-                    // them instead of only the last few of a read chat.
-                    .setRead(false);
+                    .setRead(previewState.read);
             boolean attached = attachIds.contains(previewState.messageObject.getId())
                     && attachMedia(messageBuilder, previewState.messageObject);
             if (!attached || !AutoExperiments.emptyMediaBody()) {
