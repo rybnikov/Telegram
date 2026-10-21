@@ -23,6 +23,7 @@ public class FoldogramAutoSession extends Session {
     private AutoDialogsRepository dialogsRepository;
     private AutoVoiceRecorderController voiceRecorderController;
     private AutoSpeechController speechController;
+    private AutoUnreadPlaybackController playbackController;
     private AutoPlacesRepository placesRepository;
     private AutoPlaceItemFactory placeItemFactory;
     private AutoConversationItemFactory conversationItemFactory;
@@ -43,6 +44,8 @@ public class FoldogramAutoSession extends Session {
             messagePreviewRepository.setOnStateChanged(() -> dialogsRepository.scheduleRebuild(0L));
             voiceRecorderController = new AutoVoiceRecorderController(getCarContext(), currentAccount);
             speechController = new AutoSpeechController(getCarContext(), voiceRecorderController);
+            playbackController = new AutoUnreadPlaybackController(
+                    getCarContext(), accountInstance, speechController, voiceRecorderController);
             PlaceDetailsResolver placeDetailsResolver = new PlaceDetailsResolver(
                     getCarContext().getApplicationContext(), currentAccount);
             placesRepository = new AutoPlacesRepository(
@@ -50,13 +53,14 @@ public class FoldogramAutoSession extends Session {
             placeItemFactory = new AutoPlaceItemFactory(getCarContext(), avatarProvider);
             conversationItemFactory = new AutoConversationItemFactory(
                     getCarContext(), currentAccount, accountInstance, avatarProvider, geoRepository,
-                    messagePreviewRepository, voiceRecorderController);
+                    messagePreviewRepository, voiceRecorderController, playbackController);
             connectionLease.acquire();
             dialogsRepository.start();
             placesRepository.start();
             getLifecycle().addObserver(new DefaultLifecycleObserver() {
                 @Override
                 public void onDestroy(@NonNull LifecycleOwner owner) {
+                    playbackController.destroy();
                     voiceRecorderController.destroy();
                     speechController.destroy();
                     placesRepository.destroy();

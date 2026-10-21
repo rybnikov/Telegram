@@ -30,6 +30,11 @@ final class AutoSpeechController {
         void setProgress(Progress progress);
         /** {@code flush} starts a new summary; later fragments queue behind it. */
         int speak(String text, String utteranceId, boolean flush);
+        /**
+         * Media routes speech through the car's media channel, the one voice messages play on; a
+         * switch to the guidance channel right after a voice message can drop the first words.
+         */
+        void setMediaUsage(boolean media);
         void stop();
         void shutdown();
     }
@@ -38,6 +43,9 @@ final class AutoSpeechController {
     interface RecordingGuard { boolean isRecording(); }
     interface ToastSink { void show(String text); }
     interface Clock { long now(); }
+    enum Outcome { DONE, FAILED, CANCELLED }
+    /** Reported once per {@link #say}, on the UI thread, after the state change. */
+    interface Completion { void onFinished(Outcome outcome); }
 
     private final EngineFactory engineFactory;
     private final Focus focus;
@@ -58,6 +66,14 @@ final class AutoSpeechController {
     private int utteranceCounter;
     private int initAttempts;
     private boolean destroyed;
+    private Completion completion;
+    /**
+     * A {@link #say} step: the caller holds audio focus for its whole sequence and speech goes to
+     * the media channel. Taking and dropping focus per step makes the car reopen its audio stream
+     * every time and drop what was buffered.
+     */
+    private boolean sequenceStep;
+    private boolean holdsFocus;
 
     AutoSpeechController(@NonNull CarContext carContext,
                          @NonNull AutoVoiceRecorderController recorderController) {
@@ -135,12 +151,31 @@ final class AutoSpeechController {
         }
         stopInternal(false);
         activeKey = key;
+        sequenceStep = false;
         update(State.PREPARING);
         return true;
     }
 
     void speak(String key, String text) {
         if (!prepare(key)) return;
+        speakPrepared(key, text);
+    }
+
+    /**
+     * Speaks one step of a longer sequence: no click debounce, no toggle, and the caller learns
+     * whether the text was read to the end, failed, or was cut off by Stop, focus loss or another
+     * read-aloud request.
+     */
+    void say(String key, List<AutoSpeechLanguage.Utterance> text, Completion onFinished) {
+        if (destroyed || key == null) {
+            report(onFinished, Outcome.CANCELLED);
+            return;
+        }
+        stopInternal(false);
+        activeKey = key;
+        completion = onFinished;
+        sequenceStep = true;
+        update(State.PREPARING);
         speakPrepared(key, text);
     }
 
@@ -152,9 +187,12 @@ final class AutoSpeechController {
 
     void speakPrepared(String key, List<AutoSpeechLanguage.Utterance> text) {
         if (destroyed || key == null || !key.equals(activeKey) || state != State.PREPARING) return;
-        if (!focus.request()) {
-            fail("Can't read aloud now");
-            return;
+        if (!sequenceStep && !holdsFocus) {
+            if (!focus.request()) {
+                fail("Can't read aloud now");
+                return;
+            }
+            holdsFocus = true;
         }
         if (engine != null) {
             speakNow(text);
@@ -233,6 +271,7 @@ final class AutoSpeechController {
             stopInternal(true);
             return;
         }
+        engine.setMediaUsage(sequenceStep);
         String prefix = "auto_place_" + (++utteranceCounter) + "_";
         activeBatchPrefix = prefix;
         for (int i = 0; i < utterances.size(); i++) {
@@ -263,26 +302,47 @@ final class AutoSpeechController {
             if (destroyed || activeBatchPrefix == null || utteranceId == null
                     || !utteranceId.startsWith(activeBatchPrefix)) return;
             if (error) fail("Can't read aloud");
-            else if (utteranceId.equals(activeUtteranceId)) stopInternal(true);
+            else if (utteranceId.equals(activeUtteranceId)) {
+                Completion done = completion;
+                completion = null;
+                stopInternal(true);
+                report(done, Outcome.DONE);
+            }
         });
     }
 
     private void fail(String text) {
+        Completion failed = completion;
+        completion = null;
         if (engine != null) engine.stop();
         activeUtteranceId = null;
         activeBatchPrefix = null;
-        focus.abandon();
+        releaseFocus();
         update(State.ERROR);
         toast.show(text);
+        report(failed, Outcome.FAILED);
     }
 
     private void stopInternal(boolean notify) {
+        Completion cancelled = completion;
+        completion = null;
         if (engine != null) engine.stop();
-        focus.abandon();
+        releaseFocus();
         activeUtteranceId = null;
         activeBatchPrefix = null;
         activeKey = null;
         if (notify || state != State.IDLE) update(State.IDLE);
+        report(cancelled, Outcome.CANCELLED);
+    }
+
+    private void releaseFocus() {
+        if (!holdsFocus) return;
+        holdsFocus = false;
+        focus.abandon();
+    }
+
+    private static void report(Completion target, Outcome outcome) {
+        if (target != null) AndroidUtilities.runOnUIThread(() -> target.onFinished(outcome));
     }
 
     private void update(State next) {
@@ -293,10 +353,18 @@ final class AutoSpeechController {
     private static final class AndroidEngine implements Engine {
         private final TextToSpeech tts;
 
+        private Boolean media;
+
         AndroidEngine(TextToSpeech tts) {
             this.tts = tts;
+            setMediaUsage(false);
+        }
+
+        @Override public void setMediaUsage(boolean useMedia) {
+            if (media != null && media == useMedia) return;
+            media = useMedia;
             tts.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setUsage(useMedia ? AudioAttributes.USAGE_MEDIA : AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
         }
 

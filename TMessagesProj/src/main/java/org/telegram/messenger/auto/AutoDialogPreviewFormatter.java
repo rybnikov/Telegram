@@ -13,6 +13,10 @@ final class AutoDialogPreviewFormatter {
 
     @Nullable
     String format(@NonNull MessageObject messageObject) {
+        String timed = formatTimedMedia(messageObject);
+        if (timed != null) {
+            return timed;
+        }
         CharSequence text = messageObject.messageTextShort;
         if (TextUtils.isEmpty(text)) {
             text = messageObject.caption;
@@ -30,6 +34,37 @@ final class AutoDialogPreviewFormatter {
             return "[media]";
         }
         return null;
+    }
+
+    /** Voice, round and video messages read as "<type>, m:ss" plus the caption, never "[media]". */
+    @Nullable
+    private static String formatTimedMedia(@NonNull MessageObject messageObject) {
+        String fallback;
+        if (messageObject.isVoice()) {
+            fallback = "Voice message";
+        } else if (messageObject.isRoundVideo()) {
+            fallback = "Video message";
+        } else if (messageObject.isVideo() && !messageObject.isGif()) {
+            fallback = "Video";
+        } else {
+            return null;
+        }
+        String caption = messageObject.caption != null ? messageObject.caption.toString().trim() : "";
+        CharSequence label = messageObject.messageText;
+        String type = !TextUtils.isEmpty(label) && !TextUtils.equals(label, caption) ? label.toString().trim() : fallback;
+        return timedLabel(type, (int) Math.round(messageObject.getDuration()), caption);
+    }
+
+    @NonNull
+    static String timedLabel(@NonNull String type, int durationSeconds, @Nullable String caption) {
+        StringBuilder builder = new StringBuilder(type);
+        if (durationSeconds > 0) {
+            builder.append(", ").append(AutoPlaybackQueue.formatDuration(durationSeconds));
+        }
+        if (!TextUtils.isEmpty(caption)) {
+            builder.append(". ").append(caption);
+        }
+        return builder.toString();
     }
 
     @NonNull

@@ -56,13 +56,16 @@ public class FolderChatListScreen extends Screen {
         AutoVoiceRecorderController.Listener recorderListener = () ->
                 templateController.onVisibleModelChanged(AutoDialogsRepository.getFilterListKey(this.filterIndex), getTemplateVersion());
         dialogsRepository.addListener(repositoryListener);
+        AutoUnreadPlaybackController.Listener playbackListener = recorderListener::onStateChanged;
         voiceRecorderController.addListener(recorderListener);
+        conversationItemFactory.addPlaybackListener(playbackListener);
         templateController.onForceRebuild(AutoDialogsRepository.getFilterListKey(this.filterIndex), getTemplateVersion());
         getLifecycle().addObserver(new DefaultLifecycleObserver() {
             @Override
             public void onDestroy(@NonNull LifecycleOwner owner) {
                 dialogsRepository.removeListener(repositoryListener);
                 voiceRecorderController.removeListener(recorderListener);
+                conversationItemFactory.removePlaybackListener(playbackListener);
                 templateController.destroy();
             }
         });
