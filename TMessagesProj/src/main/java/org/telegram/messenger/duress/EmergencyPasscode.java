@@ -134,6 +134,12 @@ public final class EmergencyPasscode {
         return PASSCODE_RESULT_NONE;
     }
 
+    // FOLDOGRAM-DURESS: Sensitive-action confirmations use only the current app credential.
+    // They must not accept alternate unlock codes or heal/change sticky emergency state.
+    public static int checkConfirmationType(String passcode) {
+        return SharedConfig.checkPasscode(passcode) ? PASSCODE_RESULT_CURRENT : PASSCODE_RESULT_NONE;
+    }
+
     // FOLDOGRAM-DURESS: Apply sticky mode changes after a successful passcode decision.
     public static void applyUnlock(int result) {
         if (result == PASSCODE_RESULT_EMERGENCY) {
