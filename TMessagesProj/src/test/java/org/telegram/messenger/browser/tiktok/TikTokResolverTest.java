@@ -53,6 +53,36 @@ public final class TikTokResolverTest {
     }
 
     @Test
+    public void currentOEmbedWithoutThumbnailGivesNoPoster() throws Exception {
+        // TikTok's oEmbed stopped returning thumbnail_url/title/author_name.
+        JSONObject json = new JSONObject(PreviewTestResources.readPreviewFixture("tt_oembed_no_thumbnail.json"));
+        ResolvedMedia media = TikTokMediaResolver.buildPreviewFromOEmbed("https://www.tiktok.com/@speaknroll/video/7690547962572803361", json);
+
+        assertTrue(media instanceof ResolvedMedia.Video);
+        assertTrue(TextUtils.isEmpty(((ResolvedMedia.Video) media).posterUrl));
+    }
+
+    @Test
+    public void rehydrationDataBuildsPreviewWhenHeadHasNoImage() throws Exception {
+        String html = PreviewTestResources.readPreviewFixture("tt_rehydration.html");
+        ResolvedMedia media = TikTokMediaResolver.buildPreviewFromRehydration("https://www.tiktok.com/@speaknroll/video/7690547962572803361", html);
+
+        assertTrue(media instanceof ResolvedMedia.Video);
+        ResolvedMedia.Video video = (ResolvedMedia.Video) media;
+        assertTrue(video.posterUrl.startsWith("https://p16-common-sign.tiktokcdn-eu.com/"));
+        assertEquals("Speak and roll test clip", video.title);
+        assertEquals("Speak’N’Roll 🇵🇱", video.description);
+        assertEquals(576, video.width);
+        assertEquals(1024, video.height);
+    }
+
+    @Test
+    public void rehydrationWithoutVideoGivesNoPreview() {
+        assertEquals(null, TikTokMediaResolver.buildPreviewFromRehydration("https://www.tiktok.com/@a/video/1", "<html><head></head></html>"));
+        assertEquals(null, TikTokMediaResolver.buildPreviewFromRehydration("https://www.tiktok.com/@a/video/1", null));
+    }
+
+    @Test
     public void parserExtractsDirectAndShortVideoIds() {
         TikTokMediaResolver resolver = new TikTokMediaResolver();
 
