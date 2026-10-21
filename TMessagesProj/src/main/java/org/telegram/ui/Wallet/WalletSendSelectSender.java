@@ -39,6 +39,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_wallet;
@@ -559,7 +560,9 @@ public class WalletSendSelectSender extends UniversalFragment {
     }
 
     private boolean isSelectableUser(TLRPC.User user) {
-        return user != null && !user.bot && !user.self && !UserObject.isDeleted(user) && !UserObject.isService(user.id);
+        // FOLDOGRAM-DURESS: Hidden chats never become wallet recipients (recent, hints, search).
+        return user != null && !user.bot && !user.self && !UserObject.isDeleted(user) && !UserObject.isService(user.id)
+                && !EmergencyPasscode.isHidden(currentAccount, user.id);
     }
 
     private void scheduleSearch(String query) {
@@ -724,6 +727,8 @@ public class WalletSendSelectSender extends UniversalFragment {
         }
         int count = 0;
         for (TLRPC.User user : users) {
+            // FOLDOGRAM-DURESS: Re-check at render time; cached lists may predate emergency unlock.
+            if (!isSelectableUser(user)) continue;
             if (count == 0) {
                 items.add(UItem.asSpace(dp(12)));
                 adapter.whiteSectionStart();

@@ -41,6 +41,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.WebFile;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_wallet;
@@ -251,7 +252,9 @@ public class TransactionCell extends FrameLayout implements Theme.Colorable {
             titleView.setText(getString(R.string.WalletKeyUpdate));
             subtitleView.setText(TextUtils.isEmpty(transaction.peer.address) ? getString(R.string.WalletUnknown) : addressFormatter.format(transaction.peer.address));
         } else if (transaction.peer instanceof TL_wallet.walletTransactionPeerUser) {
-            final TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(((TL_wallet.walletTransactionPeerUser) transaction.peer).user_id);
+            final long peerUserId = ((TL_wallet.walletTransactionPeerUser) transaction.peer).user_id;
+            // FOLDOGRAM-DURESS: Hidden counterparties fall back to the plain address row.
+            final TLRPC.User user = EmergencyPasscode.isHidden(currentAccount, peerUserId) ? null : MessagesController.getInstance(currentAccount).getUser(peerUserId);
             if (user != null) {
                 avatarView.setVisibility(View.VISIBLE);
                 avatarDrawable.setInfo(user);
