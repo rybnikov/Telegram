@@ -53,6 +53,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
@@ -924,7 +925,8 @@ public class WalletSendEnterAmount extends UniversalFragment implements Notifica
         GramWallet.getInstance(currentAccount).resolveWallet(address, (w, error) -> {
             loadingRecipient = false;
             recipient = w;
-            if (w != null && w.user_id != 0) {
+            // FOLDOGRAM-DURESS: An address owned by a hidden chat stays a plain address recipient.
+            if (w != null && w.user_id != 0 && !EmergencyPasscode.isHidden(currentAccount, w.user_id)) {
                 recipientUser = MessagesController.getInstance(currentAccount).getUser(w.user_id);
             }
             if (listView != null) {

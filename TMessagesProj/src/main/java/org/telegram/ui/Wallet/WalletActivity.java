@@ -83,6 +83,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.TelegramQRCodeWriter;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.duress.EmergencyPasscode;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
@@ -2695,7 +2696,8 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
             table.clear();
             if (t.peer instanceof TL_wallet.walletTransactionPeerUser) {
                 final TL_wallet.walletTransactionPeerUser peer = (TL_wallet.walletTransactionPeerUser) t.peer;
-                final TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(peer.user_id);
+                // FOLDOGRAM-DURESS: Hidden counterparties show only their address and cannot open the chat.
+                final TLRPC.User user = EmergencyPasscode.isHidden(currentAccount, peer.user_id) ? null : MessagesController.getInstance(currentAccount).getUser(peer.user_id);
                 if (user != null && !UserObject.isService(user.id)) {
                     table.addRowUser(incoming ? LocaleController.getString(R.string.WalletSender) : LocaleController.getString(R.string.WalletRecipient), currentAccount, peer.user_id, () -> {
                         if (onSend != null) return;
@@ -2753,7 +2755,8 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
 
             if (t.peer instanceof TL_wallet.walletTransactionPeerUser || t.peer instanceof TL_wallet.walletTransactionPeerAddress) {
                 final TL_wallet.WalletTransactionPeer peer = t.peer;
-                final boolean hasRecipientUser = peer instanceof TL_wallet.walletTransactionPeerUser && MessagesController.getInstance(currentAccount).getUser(peer.user_id) != null && !UserObject.isService(peer.user_id);
+                final boolean hasRecipientUser = peer instanceof TL_wallet.walletTransactionPeerUser && MessagesController.getInstance(currentAccount).getUser(peer.user_id) != null && !UserObject.isService(peer.user_id)
+                        && !EmergencyPasscode.isHidden(currentAccount, peer.user_id);
                 final boolean showAddressSend = onSend == null && !hasRecipientUser && TextUtils.isEmpty(peer.domain) && !TextUtils.isEmpty(peer.address);
                 table.addRowMonospaced(LocaleController.getString(R.string.WalletAddress), formatTransactionAddress(peer.address, () -> {
                     BulletinFactory.of(sheet[0].topBulletinContainer, resourceProvider)
