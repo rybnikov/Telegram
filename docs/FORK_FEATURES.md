@@ -147,7 +147,12 @@ including own sent places and new messages received with phone chats unopened, n
 one tap, and reads free-data summaries through session-scoped speech and
 enrichment controllers. The car tabs are Unread, Pinned, Bots and Places;
 Channels is not shown because TabTemplate allows four tabs (the CHANNELS section
-remains in code, but its dialog list is no longer rebuilt). It
+remains in code, but its dialog list is no longer rebuilt). Every chat card
+offers Listen: its unread incoming messages (or, with none, its last five
+messages in either direction) play oldest first,
+text read aloud, voice and round messages and the sound of ordinary videos
+played through Telegram's VideoPlayer (local file, tg:// stream, or a download
+for voice). It
 also depends on the paused-UI sort gate so Auto sessions can still update dialogs
 when the phone UI is paused.
 
@@ -157,7 +162,12 @@ available, and dialog sorting continues to work while the phone UI is fully
 paused. Places must keep hidden/spoiler filtering, broadcast-channel
 exclusion, the account-wide recent index seed and independent global URL/geo
 pagination, edit/delete response barriers, short-link resolution, key-free details, single-action
-navigation rows, and session-scoped speech teardown. About opens a place card
+navigation rows, and session-scoped speech teardown. Listen keeps the queue
+oldest-first and capped at 20, never plays view-once media, skips silent, GIF
+and over-five-minute videos with a spoken note, marks voice and round messages
+content-read after they play, marks the chat read only when the whole queue
+finished, and stops on Stop, recording, another read-aloud, focus loss or
+session end. About opens a place card
 (pane: name, type/rating, address, today's hours, description, sender; picture;
 Navigate and Read aloud); leaving the card stops reading. The spoken summary speaks the
 place, never URLs, coordinates or spoiler text; a caption is only a cleaned
@@ -182,7 +192,7 @@ removing local classes. Do not delete Auto classes as unused without checking
 manifest and DHU behavior.
 
 ```json
-{"id":"android-auto","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramCarAppService.java","contains":"public class FoldogramCarAppService extends CarAppService"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramAutoSession.java","contains":"public class FoldogramAutoSession extends Session"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/ChatListScreen.java","contains":"builder.addTab(buildTab(AutoPrimarySection.UNREAD"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPrimarySection.java","contains":"BOTS(\"tab_bots\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPrimarySection.java","contains":"PLACES(\"tab_places\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/ChatListScreen.java","contains":"buildTab(AutoPrimarySection.PLACES"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesRepository.java","contains":"PlacesStorage.queueLocalCopy"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesRepository.java","contains":"PlacesStorage.seedRecentDialogsBatch"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesHistory.java","contains":"offset_peer = offsetDialog == 0"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":".auto.FoldogramCarAppService"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":"androidx.car.app.CarAppService"},{"path":"TMessagesProj/build.gradle","contains":"androidx.car.app:app:1.7.0"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java","contains":"if (chatsDict == null && ApplicationLoader.isUiCompletelyPaused())"}],"tests":["MergeRegressionCanaryTest","AutoPlaceItemTest","AutoPlacesHistoryTest","PlacesStorageTest","PlaceDetailsResolverTest","AutoPlaceSummaryBuilderTest","AutoSpeechControllerTest","AutoPlaceTextTest","AutoOpeningHoursTest","PlacesUpstreamSchemaTest","AutoSpeechLanguageTest","AutoPlaceCardTest"]}
+{"id":"android-auto","criticality":"high","anchors":[{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramCarAppService.java","contains":"public class FoldogramCarAppService extends CarAppService"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramAutoSession.java","contains":"public class FoldogramAutoSession extends Session"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/ChatListScreen.java","contains":"builder.addTab(buildTab(AutoPrimarySection.UNREAD"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPrimarySection.java","contains":"BOTS(\"tab_bots\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPrimarySection.java","contains":"PLACES(\"tab_places\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/ChatListScreen.java","contains":"buildTab(AutoPrimarySection.PLACES"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoUnreadPlaybackController.java","contains":"final class AutoUnreadPlaybackController"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlaybackQueue.java","contains":"MAX_VIDEO_AUDIO_SECONDS = 5 * 60"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoMediaSource.java","contains":"Uri.parse(\"tg://\""},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/FoldogramAutoSession.java","contains":"playbackController.destroy()"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesRepository.java","contains":"PlacesStorage.queueLocalCopy"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesRepository.java","contains":"PlacesStorage.seedRecentDialogsBatch"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/auto/AutoPlacesHistory.java","contains":"offset_peer = offsetDialog == 0"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":".auto.FoldogramCarAppService"},{"path":"TMessagesProj/src/main/AndroidManifest.xml","contains":"androidx.car.app.CarAppService"},{"path":"TMessagesProj/build.gradle","contains":"androidx.car.app:app:1.7.0"},{"path":"TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java","contains":"if (chatsDict == null && ApplicationLoader.isUiCompletelyPaused())"}],"tests":["MergeRegressionCanaryTest","AutoPlaceItemTest","AutoPlacesHistoryTest","PlacesStorageTest","PlaceDetailsResolverTest","AutoPlaceSummaryBuilderTest","AutoSpeechControllerTest","AutoPlaceTextTest","AutoOpeningHoursTest","PlacesUpstreamSchemaTest","AutoSpeechLanguageTest","AutoPlaceCardTest","AutoPlaybackQueueTest"]}
 ```
 
 ## maps-live-location

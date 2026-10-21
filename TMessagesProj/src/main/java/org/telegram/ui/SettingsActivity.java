@@ -1422,6 +1422,17 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
     }
 
+    private void openAutoExperimentsMenu() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), resourceProvider);
+        builder.setTitle("Android Auto experiments");
+        builder.setItems(org.telegram.messenger.auto.AutoExperiments.menuItems(), (dialog, which) -> {
+            org.telegram.messenger.auto.AutoExperiments.cycle(which);
+            openAutoExperimentsMenu();
+        });
+        builder.setNegativeButton(getString(R.string.Close), null);
+        showDialog(builder.create());
+    }
+
     public void openDebugMenu() {
         AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), resourceProvider);
         builder.setTitle(getString(R.string.DebugMenu));
@@ -1471,7 +1482,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 BuildVars.DEBUG_PRIVATE_VERSION ? (SharedConfig.shadowsInSections ? "disable shadows in settings" : "enable shadows in settings") : null,
                 BuildVars.DEBUG_PRIVATE_VERSION ? (SharedConfig.debugViewMetrics ? "disable debug view metrics" : "enable debug view metrics") : null,
                 (SharedSettings.experimentalSettingsAllowed.get() ? "hide experimental settings" : "show experimental settings"),
-                BuildVars.DEBUG_PRIVATE_VERSION ? getString(R.string.DebugMenuResetBrokenLocalPreviews) : null
+                BuildVars.DEBUG_PRIVATE_VERSION ? getString(R.string.DebugMenuResetBrokenLocalPreviews) : null,
+                "Android Auto experiments"
         };
 
         builder.setItems(items, (dialog, which) -> {
@@ -1794,6 +1806,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                     }
                     Toast.makeText(getParentActivity(), "Reset local preview cache: metadata=" + result.clearedExternalPreviews + ", legacy=" + result.clearedLegacyRows, Toast.LENGTH_SHORT).show();
                 });
+            } else if (which == 45) {
+                openAutoExperimentsMenu();
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);

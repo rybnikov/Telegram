@@ -51,6 +51,8 @@ public class AutoSpeechControllerTest {
             this.utteranceId = utteranceId;
             return speakResult;
         }
+        final ArrayList<Boolean> mediaUsage = new ArrayList<>();
+        @Override public void setMediaUsage(boolean media) { mediaUsage.add(media); }
         @Override public void stop() { stopCount++; }
         @Override public void shutdown() { shutdownCount++; }
     }
@@ -60,12 +62,14 @@ public class AutoSpeechControllerTest {
         final ArrayList<String> toasts = new ArrayList<>();
         long now = 1000;
         boolean focus = true;
+        int focusRequests;
+        int focusAbandons;
         boolean recording;
         final AutoSpeechController controller = new AutoSpeechController(
                 callback -> callback.onInit(TextToSpeech.SUCCESS, engine),
                 new AutoSpeechController.Focus() {
-                    @Override public boolean request() { return focus; }
-                    @Override public void abandon() { }
+                    @Override public boolean request() { focusRequests++; return focus; }
+                    @Override public void abandon() { focusAbandons++; }
                 }, () -> recording, toasts::add, () -> now);
     }
 
@@ -221,5 +225,66 @@ public class AutoSpeechControllerTest {
         assertTrue(engine.spoken.toString(), engine.spoken.get(0).endsWith("Beta"));
         controller.destroy();
         assertEquals(1, engine.shutdownCount);
+    }
+
+    private static java.util.List<AutoSpeechLanguage.Utterance> words(String text) {
+        ArrayList<AutoSpeechLanguage.Utterance> list = new ArrayList<>();
+        list.add(new AutoSpeechLanguage.Utterance(text, Locale.ENGLISH));
+        return list;
+    }
+
+    @Test public void sayReportsDoneAndAllowsBackToBackSteps() {
+        Harness h = new Harness();
+        ArrayList<AutoSpeechController.Outcome> outcomes = new ArrayList<>();
+        h.controller.say("seq_1", words("One"), outcomes::add);
+        ShadowLooper.runUiThreadTasks();
+        h.engine.progress.onDone(h.engine.utteranceId);
+        ShadowLooper.runUiThreadTasks();
+        assertEquals(1, outcomes.size());
+        assertEquals(AutoSpeechController.Outcome.DONE, outcomes.get(0));
+        // No click debounce between sequence steps: same clock, next step still speaks.
+        h.controller.say("seq_2", words("Two"), outcomes::add);
+        ShadowLooper.runUiThreadTasks();
+        assertEquals(AutoSpeechController.State.SPEAKING, h.controller.getState());
+        assertEquals("en:Two", h.engine.spoken.get(h.engine.spoken.size() - 1));
+        // The sequence owner holds focus; steps never take or drop it.
+        assertEquals(0, h.focusRequests);
+        assertEquals(0, h.focusAbandons);
+        // Sequence steps share the media channel with voice messages; place cards keep guidance.
+        assertEquals(Boolean.TRUE, h.engine.mediaUsage.get(h.engine.mediaUsage.size() - 1));
+        h.controller.stop();
+        h.now += 301;
+        h.controller.speak("place", "Place");
+        ShadowLooper.runUiThreadTasks();
+        assertEquals(Boolean.FALSE, h.engine.mediaUsage.get(h.engine.mediaUsage.size() - 1));
+    }
+
+    @Test public void sayReportsCancelledWhenStoppedOrTakenOver() {
+        Harness h = new Harness();
+        ArrayList<AutoSpeechController.Outcome> outcomes = new ArrayList<>();
+        h.controller.say("seq_1", words("One"), outcomes::add);
+        ShadowLooper.runUiThreadTasks();
+        h.controller.stop();
+        ShadowLooper.runUiThreadTasks();
+        assertEquals(AutoSpeechController.Outcome.CANCELLED, outcomes.get(0));
+
+        h.controller.say("seq_2", words("Two"), outcomes::add);
+        ShadowLooper.runUiThreadTasks();
+        h.now += 301;
+        h.controller.speak("place", "Place");
+        ShadowLooper.runUiThreadTasks();
+        assertEquals(AutoSpeechController.Outcome.CANCELLED, outcomes.get(1));
+        assertEquals("place", h.controller.getActiveKey());
+    }
+
+    @Test public void sayReportsFailedOnEngineError() {
+        Harness h = new Harness();
+        ArrayList<AutoSpeechController.Outcome> outcomes = new ArrayList<>();
+        h.controller.say("seq_1", words("One"), outcomes::add);
+        ShadowLooper.runUiThreadTasks();
+        h.engine.progress.onError(h.engine.utteranceId);
+        ShadowLooper.runUiThreadTasks();
+        assertEquals(1, outcomes.size());
+        assertEquals(AutoSpeechController.Outcome.FAILED, outcomes.get(0));
     }
 }

@@ -88,7 +88,9 @@ public class ChatListScreen extends Screen {
         };
 
         dialogsRepository.addListener(repositoryListener);
+        AutoUnreadPlaybackController.Listener playbackListener = recorderListener::onStateChanged;
         voiceRecorderController.addListener(recorderListener);
+        conversationItemFactory.addPlaybackListener(playbackListener);
         placesRepository.addListener(placesListener);
         templateController.onForceRebuild(getActiveSection().listKey, getActiveTemplateVersion());
         getLifecycle().addObserver(new DefaultLifecycleObserver() {
@@ -106,6 +108,7 @@ public class ChatListScreen extends Screen {
             public void onDestroy(@NonNull LifecycleOwner owner) {
                 dialogsRepository.removeListener(repositoryListener);
                 voiceRecorderController.removeListener(recorderListener);
+                conversationItemFactory.removePlaybackListener(playbackListener);
                 placesRepository.removeListener(placesListener);
                 templateController.destroy();
             }

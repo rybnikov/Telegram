@@ -87,6 +87,7 @@ final class AutoConversationItemFactory {
     private final AutoDialogPreviewFormatter previewFormatter = new AutoDialogPreviewFormatter();
     private final AutoMessagePreviewRepository messagePreviewRepository;
     private final AutoVoiceRecorderController voiceRecorderController;
+    private final AutoUnreadPlaybackController playbackController;
 
     AutoConversationItemFactory(@NonNull CarContext carContext,
                                 int currentAccount,
@@ -94,7 +95,8 @@ final class AutoConversationItemFactory {
                                 @NonNull AutoAvatarProvider avatarProvider,
                                 @NonNull AutoGeoRepository geoRepository,
                                 @NonNull AutoMessagePreviewRepository messagePreviewRepository,
-                                @NonNull AutoVoiceRecorderController voiceRecorderController) {
+                                @NonNull AutoVoiceRecorderController voiceRecorderController,
+                                @NonNull AutoUnreadPlaybackController playbackController) {
         this.carContext = carContext;
         this.currentAccount = currentAccount;
         this.accountInstance = accountInstance;
@@ -102,6 +104,7 @@ final class AutoConversationItemFactory {
         this.geoRepository = geoRepository;
         this.messagePreviewRepository = messagePreviewRepository;
         this.voiceRecorderController = voiceRecorderController;
+        this.playbackController = playbackController;
     }
 
     ItemList buildItemList(@NonNull Screen screen,
@@ -153,7 +156,7 @@ final class AutoConversationItemFactory {
                 }
                 listBuilder.addItem(row);
             } else {
-                ConversationItem item = buildConversationItem(
+                List<ConversationItem> items = buildConversationItems(
                         screen,
                         messagesController,
                         dialog,
@@ -161,10 +164,12 @@ final class AutoConversationItemFactory {
                         avatar,
                         getPreviewMessageLimit(renderMode),
                         renderMode != AutoListRenderMode.FILTER_STANDARD);
-                if (item == null) {
+                if (items.isEmpty()) {
                     continue;
                 }
-                listBuilder.addItem(item);
+                for (int j = 0; j < items.size(); j++) {
+                    listBuilder.addItem(items.get(j));
+                }
             }
             count++;
         }
@@ -183,26 +188,58 @@ final class AutoConversationItemFactory {
         return listBuilder.build();
     }
 
-    long getVoiceSignature() {
-        return voiceRecorderController.getState().ordinal() * 31L + voiceRecorderController.getActiveDialogId();
+    void addPlaybackListener(@NonNull AutoUnreadPlaybackController.Listener listener) {
+        playbackController.addListener(listener);
     }
 
+    void removePlaybackListener(@NonNull AutoUnreadPlaybackController.Listener listener) {
+        playbackController.removeListener(listener);
+    }
+
+    long getVoiceSignature() {
+        long voice = voiceRecorderController.getState().ordinal() * 31L + voiceRecorderController.getActiveDialogId();
+        return voice * 31L + playbackController.getSignature();
+    }
+
+    /**
+     * One card per chat, or (experiment) one card per message so the host gets a single
+     * attachment per Play aloud.
+     */
+    @NonNull
+    private List<ConversationItem> buildConversationItems(@NonNull Screen screen,
+                                                          @NonNull MessagesController messagesController,
+                                                          @NonNull TLRPC.Dialog dialog,
+                                                          @NonNull String title,
+                                                          CarIcon avatar,
+                                                          int maxMessagesPerChat,
+                                                          boolean preferUnreadPreview) {
+        List<CarMessage> messages = buildCarMessages(messagesController, dialog, maxMessagesPerChat, preferUnreadPreview);
+        if (messages.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (!AutoExperiments.itemPerMessage()) {
+            return Collections.singletonList(buildConversationItem(screen, dialog, title, avatar, messages, String.valueOf(dialog.id)));
+        }
+        ArrayList<ConversationItem> items = new ArrayList<>(messages.size());
+        // Newest first, like the chat list itself.
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            items.add(buildConversationItem(screen, dialog, title, avatar,
+                    Collections.singletonList(messages.get(i)), dialog.id + "_" + i));
+        }
+        return items;
+    }
+
+    @NonNull
     private ConversationItem buildConversationItem(@NonNull Screen screen,
-                                                   @NonNull MessagesController messagesController,
                                                    @NonNull TLRPC.Dialog dialog,
                                                    @NonNull String title,
                                                    CarIcon avatar,
-                                                   int maxMessagesPerChat,
-                                                   boolean preferUnreadPreview) {
-        List<CarMessage> messages = buildCarMessages(messagesController, dialog, maxMessagesPerChat, preferUnreadPreview);
-        if (messages.isEmpty()) {
-            return null;
-        }
-
+                                                   @NonNull List<CarMessage> messages,
+                                                   @NonNull String itemId) {
         final long dialogId = dialog.id;
         final int topMessageId = dialog.top_message;
         ConversationItem.Builder builder = new ConversationItem.Builder(
-                String.valueOf(dialogId),
+                itemId,
                 CarText.create(title),
                 avatarProvider.getSelfPerson(),
                 messages,
@@ -223,7 +260,7 @@ final class AutoConversationItemFactory {
         if (avatar != null) {
             builder.setIcon(avatar);
         }
-        addPrimaryAction(screen, builder, dialogId);
+        addPrimaryAction(screen, builder, dialog);
         return builder.build();
     }
 
@@ -276,6 +313,11 @@ final class AutoConversationItemFactory {
     }
 
     private int getPreviewMessageLimit(@NonNull AutoListRenderMode renderMode) {
+        int limit = getModeMessageLimit(renderMode);
+        return AutoExperiments.fiveMessages() ? Math.min(limit, 5) : limit;
+    }
+
+    private int getModeMessageLimit(@NonNull AutoListRenderMode renderMode) {
         switch (renderMode) {
             case UNREAD_COMPACT:
                 return NO_MESSAGE_LIMIT;
@@ -315,26 +357,14 @@ final class AutoConversationItemFactory {
                                               boolean preferUnreadPreview) {
         AutoMessagePreviewRepository.Projection projection = messagePreviewRepository.getProjection(dialog.id);
         boolean usingPreviewRepository = !projection.messages.isEmpty();
-        ArrayList<MessageObject> sourceMessages = usingPreviewRepository ? new ArrayList<>(projection.messages) : messagesController.dialogMessage.get(dialog.id);
         if (!usingPreviewRepository) {
             messagePreviewRepository.requestIfVisible(dialog.id);
         }
-        if ((sourceMessages == null || sourceMessages.isEmpty()) && dialog.top_message != 0) {
-            MessageObject cachedTopMessage = messagesController.dialogMessagesByIds.get(dialog.top_message);
-            if (cachedTopMessage != null) {
-                sourceMessages = new ArrayList<>(1);
-                sourceMessages.add(cachedTopMessage);
-            } else {
-                TLRPC.Message storedMessage = accountInstance.getMessagesStorage().getMessage(dialog.id, dialog.top_message);
-                if (storedMessage != null) {
-                    sourceMessages = new ArrayList<>(1);
-                    sourceMessages.add(new MessageObject(currentAccount, storedMessage, false, false));
-                }
-            }
-        }
+        ArrayList<MessageObject> sourceMessages = resolveSourceMessages(messagesController, dialog);
         if (sourceMessages == null || sourceMessages.isEmpty()) {
             return buildFallbackMessages(dialog);
         }
+        sourceMessages = new ArrayList<>(sourceMessages);
         sourceMessages.sort((first, second) -> {
             int firstDate = first != null && first.messageOwner != null ? first.messageOwner.date : 0;
             int secondDate = second != null && second.messageOwner != null ? second.messageOwner.date : 0;
@@ -424,20 +454,110 @@ final class AutoConversationItemFactory {
             }
         }
 
+        java.util.HashSet<Integer> attachIds = pickAttachments(previewStates);
         ArrayList<CarMessage> built = new ArrayList<>(previewStates.size());
         for (int i = 0; i < previewStates.size(); i++) {
             AutoPreviewMessageState previewState = previewStates.get(i);
             Person sender = buildSenderPerson(messagesController, previewState.messageObject);
-            built.add(new CarMessage.Builder()
+            CarMessage.Builder messageBuilder = new CarMessage.Builder()
                     .setSender(sender)
-                    .setBody(CarText.create(previewState.body))
                     .setReceivedTimeEpochMillis(previewState.timestamp)
-                    .setRead(previewState.read)
-                    .build());
+                    // EXPERIMENT: report every message unread to see whether the host then plays all of
+                    // them instead of only the last few of a read chat.
+                    .setRead(false);
+            boolean attached = attachIds.contains(previewState.messageObject.getId())
+                    && attachMedia(messageBuilder, previewState.messageObject);
+            if (!attached || !AutoExperiments.emptyMediaBody()) {
+                messageBuilder.setBody(CarText.create(previewState.body));
+            }
+            built.add(messageBuilder.build());
         }
 
         Collections.reverse(built);
         return built;
+    }
+
+    /** Newest messages known for the chat: preview cache, then dialog cache, then the top message. */
+    private ArrayList<MessageObject> resolveSourceMessages(@NonNull MessagesController messagesController,
+                                                           @NonNull TLRPC.Dialog dialog) {
+        AutoMessagePreviewRepository.Projection projection = messagePreviewRepository.getProjection(dialog.id);
+        ArrayList<MessageObject> sourceMessages = !projection.messages.isEmpty()
+                ? new ArrayList<>(projection.messages)
+                : messagesController.dialogMessage.get(dialog.id);
+        if ((sourceMessages == null || sourceMessages.isEmpty()) && dialog.top_message != 0) {
+            MessageObject cachedTopMessage = messagesController.dialogMessagesByIds.get(dialog.top_message);
+            if (cachedTopMessage != null) {
+                sourceMessages = new ArrayList<>(1);
+                sourceMessages.add(cachedTopMessage);
+            } else {
+                TLRPC.Message storedMessage = accountInstance.getMessagesStorage().getMessage(dialog.id, dialog.top_message);
+                if (storedMessage != null) {
+                    sourceMessages = new ArrayList<>(1);
+                    sourceMessages.add(new MessageObject(currentAccount, storedMessage, false, false));
+                }
+            }
+        }
+        return sourceMessages;
+    }
+
+    /** Messages (newest first) whose voice or round file is handed to the host, per the experiment mode. */
+    @NonNull
+    private static java.util.HashSet<Integer> pickAttachments(@NonNull List<AutoPreviewMessageState> newestFirst) {
+        java.util.HashSet<Integer> ids = new java.util.HashSet<>();
+        int mode = AutoExperiments.attachMode();
+        if (mode == AutoExperiments.ATTACH_OFF) return ids;
+        long runSender = Long.MIN_VALUE;
+        boolean runHasMedia = false;
+        for (int i = 0; i < newestFirst.size(); i++) {
+            MessageObject messageObject = newestFirst.get(i).messageObject;
+            boolean media = messageObject.isVoice() || messageObject.isRoundVideo();
+            long sender = messageObject.getSenderId();
+            if (sender != runSender) {
+                runSender = sender;
+                runHasMedia = false;
+            }
+            if (!media) continue;
+            if (mode == AutoExperiments.ATTACH_ALL) {
+                ids.add(messageObject.getId());
+            } else if (mode == AutoExperiments.ATTACH_NEWEST_PER_CHAT) {
+                ids.add(messageObject.getId());
+                return ids;
+            } else if (!runHasMedia) {
+                ids.add(messageObject.getId());
+                runHasMedia = true;
+            }
+        }
+        return ids;
+    }
+
+    /** Hands a local voice or round file to the host; starts a download when it is not on the phone yet. */
+    private boolean attachMedia(@NonNull CarMessage.Builder builder, @NonNull MessageObject messageObject) {
+        try {
+            java.io.File file = AutoMediaSource.localFile(messageObject);
+            TLRPC.Document document = messageObject.getDocument();
+            if (document == null) return false;
+            if (file == null) {
+                android.util.Log.d("AutoAttach", "missing msg=" + messageObject.getId() + " download=" + AutoExperiments.downloadMissing());
+                if (AutoExperiments.downloadMissing()) AutoMediaSource.download(messageObject);
+                return false;
+            }
+            Uri uri = androidx.core.content.FileProvider.getUriForFile(carContext,
+                    org.telegram.messenger.ApplicationLoader.getApplicationId() + ".provider", file);
+            // The bound host reads the file (Nagram does the same); Assistant may play it too.
+            String hostPackage = carContext.getHostInfo() != null ? carContext.getHostInfo().getPackageName() : null;
+            if (hostPackage != null) {
+                carContext.grantUriPermission(hostPackage, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
+            carContext.grantUriPermission("com.google.android.projection.gearhead", uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            carContext.grantUriPermission("com.google.android.googlequicksearchbox", uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            String mime = messageObject.isVoice() ? AutoExperiments.voiceMime() : AutoExperiments.roundMime();
+            builder.setMultimediaUri(uri).setMultimediaMimeType(mime);
+            android.util.Log.d("AutoAttach", "attached msg=" + messageObject.getId() + " mime=" + mime);
+            return true;
+        } catch (Throwable t) {
+            android.util.Log.e("AutoAttach", "attach failed msg=" + messageObject.getId(), t);
+            return false;
+        }
     }
 
     @NonNull
@@ -489,11 +609,68 @@ final class AutoConversationItemFactory {
         return new Person.Builder().setName("Unknown").setKey("unknown_0").build();
     }
 
-    private void addPrimaryAction(Screen screen, ConversationItem.Builder builder, long dialogId) {
-        if (addVoiceAction(builder, dialogId)) {
-            return;
+    private void addPrimaryAction(Screen screen, ConversationItem.Builder builder, TLRPC.Dialog dialog) {
+        // Listen always owns the card's single custom action: unread messages when there are
+        // any, otherwise the last few. Recording lives in the compose flow.
+        if (AutoExperiments.voiceButton()) {
+            addVoiceAction(builder, dialog.id);
+        } else {
+            addListenAction(builder, dialog);
         }
-        addNavigateAction(screen, builder, dialogId);
+    }
+
+    private void addVoiceAction(ConversationItem.Builder builder, long dialogId) {
+        String title = voiceRecorderController.isRecordingForDialog(dialogId) ? "Stop" : "Voice";
+        CarIcon micIcon = new CarIcon.Builder(
+                IconCompat.createWithResource(carContext, android.R.drawable.ic_btn_speak_now))
+                .build();
+        builder.addAction(new Action.Builder()
+                .setTitle(title)
+                .setIcon(micIcon)
+                .setOnClickListener(() -> voiceRecorderController.toggleRecording(dialogId))
+                .build());
+    }
+
+    private void addListenAction(ConversationItem.Builder builder, TLRPC.Dialog dialog) {
+        final long dialogId = dialog.id;
+        boolean playing = playbackController.isPlaying(dialogId);
+        CarIcon icon = new CarIcon.Builder(IconCompat.createWithResource(carContext,
+                playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play))
+                .build();
+        builder.addAction(new Action.Builder()
+                .setTitle(playing ? "Stop" : "Listen")
+                .setIcon(icon)
+                .setOnClickListener(() -> playbackController.toggle(
+                        dialogId, dialog.top_message, DialogObject.isChatDialog(dialogId), buildPlaybackEntries(dialog)))
+                .build());
+    }
+
+    @NonNull
+    private List<AutoPlaybackQueue.Entry> buildPlaybackEntries(@NonNull TLRPC.Dialog dialog) {
+        MessagesController messagesController = accountInstance.getMessagesController();
+        ArrayList<MessageObject> sourceMessages = resolveSourceMessages(messagesController, dialog);
+        if (sourceMessages == null || sourceMessages.isEmpty()) {
+            return Collections.emptyList();
+        }
+        AutoConversationUnreadState unreadState = new AutoConversationUnreadState(
+                dialog.unread_count, resolveReadInboxMaxId(messagesController, dialog));
+        ArrayList<AutoPlaybackQueue.Entry> entries = new ArrayList<>(sourceMessages.size());
+        for (int i = 0; i < sourceMessages.size(); i++) {
+            MessageObject messageObject = sourceMessages.get(i);
+            if (messageObject == null || messageObject.messageOwner == null) {
+                continue;
+            }
+            String senderName;
+            if (messageObject.isOut()) {
+                senderName = "You";
+            } else {
+                CharSequence name = buildSenderPerson(messagesController, messageObject).getName();
+                senderName = name != null ? name.toString() : null;
+            }
+            entries.add(AutoUnreadPlaybackController.entryOf(
+                    messageObject, isUnreadCandidate(messageObject, unreadState), senderName));
+        }
+        return entries;
     }
 
     private void addNavigateAction(Screen screen, ConversationItem.Builder builder, long dialogId) {
@@ -521,19 +698,6 @@ final class AutoConversationItemFactory {
                     screen.getCarContext().startCarApp(navIntent);
                 })
                 .build());
-    }
-
-    private boolean addVoiceAction(ConversationItem.Builder builder, long dialogId) {
-        String title = voiceRecorderController.isRecordingForDialog(dialogId) ? "Stop" : "Voice";
-        CarIcon micIcon = new CarIcon.Builder(
-                IconCompat.createWithResource(carContext, android.R.drawable.ic_btn_speak_now))
-                .build();
-        builder.addAction(new Action.Builder()
-                .setTitle(title)
-                .setIcon(micIcon)
-                .setOnClickListener(() -> voiceRecorderController.toggleRecording(dialogId))
-                .build());
-        return true;
     }
 
     private void sendReply(long dialogId, int maxId, String text, Runnable onSent) {
