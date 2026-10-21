@@ -65,11 +65,7 @@ public final class TikTokMediaResolver implements ExternalMediaResolver, Playbac
                 return null;
             }
 
-            JSONObject root = new JSONObject(scriptContent);
-            JSONObject detail = root.optJSONObject("__DEFAULT_SCOPE__");
-            if (detail != null) detail = detail.optJSONObject("webapp.video-detail");
-            JSONObject itemInfo = detail != null ? detail.optJSONObject("itemInfo") : null;
-            JSONObject itemStruct = itemInfo != null ? itemInfo.optJSONObject("itemStruct") : null;
+            JSONObject itemStruct = findItemStruct(scriptContent);
             JSONObject video = itemStruct != null ? itemStruct.optJSONObject("video") : null;
             if (video == null) {
                 logPlaybackResult(canonicalUrl, html, true, false, "null");
@@ -181,6 +177,24 @@ public final class TikTokMediaResolver implements ExternalMediaResolver, Playbac
         String branch = !TextUtils.isEmpty(posterUrl) ? "oembed" : null;
 
         if (TextUtils.isEmpty(posterUrl)) {
+            // TikTok's oEmbed no longer carries thumbnail_url and the page head has no og:image;
+            // the cover lives in the page's rehydration data.
+            String pageHtml = ExternalHttpClient.fetchHtml(previewUrl, REHYDRATION_SCRIPT_ID, "</script>", MAX_SCRIPT_CHARS);
+            ResolvedMedia rehydrated = buildPreviewFromRehydration(previewUrl, pageHtml);
+            if (rehydrated instanceof ResolvedMedia.Video) {
+                ResolvedMedia.Video video = (ResolvedMedia.Video) rehydrated;
+                posterUrl = video.posterUrl;
+                title = firstNonEmpty(title, video.title);
+                description = firstNonEmpty(description, video.description);
+                if (width == 0) width = video.width;
+                if (height == 0) height = video.height;
+                branch = "rehydration";
+            } else if (previewHtml == null) {
+                previewHtml = pageHtml;
+            }
+        }
+
+        if (TextUtils.isEmpty(posterUrl)) {
             if (previewHtml == null) {
                 ExternalHtmlUtils.FetchResult fetchResult = ExternalHttpClient.fetchHtmlWithFinalUrl(previewUrl, null, "</head>", MAX_HEAD_CHARS);
                 previewHtml = fetchResult.html;
@@ -215,6 +229,45 @@ public final class TikTokMediaResolver implements ExternalMediaResolver, Playbac
         FileLog.d(TAG + ": oEmbed preview " + ExternalHtmlUtils.trimForLog(posterUrl));
         logPreviewResult(link.canonicalUrl, previewUrl, previewHtml, branch, posterUrl, true);
         return new ResolvedMedia.Video(previewUrl, posterUrl, title, description, width, height);
+    }
+
+    /** Preview from the page's rehydration JSON: cover, size, caption and author. */
+    static ResolvedMedia buildPreviewFromRehydration(String previewUrl, String html) {
+        if (TextUtils.isEmpty(html)) {
+            return null;
+        }
+        try {
+            JSONObject itemStruct = findItemStruct(ExternalHtmlUtils.findScriptContentById(html, REHYDRATION_SCRIPT_ID));
+            JSONObject video = itemStruct != null ? itemStruct.optJSONObject("video") : null;
+            if (video == null) {
+                return null;
+            }
+            String posterUrl = firstNonEmpty(optString(video, "cover"),
+                    firstNonEmpty(optString(video, "originCover"), optString(video, "dynamicCover")));
+            if (TextUtils.isEmpty(posterUrl)) {
+                return null;
+            }
+            JSONObject author = itemStruct.optJSONObject("author");
+            String description = author != null
+                    ? firstNonEmpty(optString(author, "nickname"), optString(author, "uniqueId"))
+                    : null;
+            return new ResolvedMedia.Video(previewUrl, posterUrl, optString(itemStruct, "desc"), description,
+                    video.optInt("width", 0), video.optInt("height", 0));
+        } catch (Exception e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    private static JSONObject findItemStruct(String scriptContent) throws org.json.JSONException {
+        if (TextUtils.isEmpty(scriptContent)) {
+            return null;
+        }
+        JSONObject root = new JSONObject(scriptContent);
+        JSONObject detail = root.optJSONObject("__DEFAULT_SCOPE__");
+        if (detail != null) detail = detail.optJSONObject("webapp.video-detail");
+        JSONObject itemInfo = detail != null ? detail.optJSONObject("itemInfo") : null;
+        return itemInfo != null ? itemInfo.optJSONObject("itemStruct") : null;
     }
 
     static ResolvedMedia buildPreviewFromOEmbed(String previewUrl, JSONObject json) {
