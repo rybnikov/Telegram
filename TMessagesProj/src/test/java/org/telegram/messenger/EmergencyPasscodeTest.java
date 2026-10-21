@@ -73,6 +73,36 @@ public final class EmergencyPasscodeTest {
     }
 
     @Test
+    public void confirmationRejectsAlternateUnlockCodesWithoutEnteringEmergencyMode() {
+        setCurrent("current", salt(1), SharedConfig.PASSCODE_TYPE_PIN);
+        setOwner("owner", salt(2), SharedConfig.PASSCODE_TYPE_PIN);
+        setEmergency("duress", salt(3));
+
+        assertEquals(EmergencyPasscode.PASSCODE_RESULT_CURRENT, EmergencyPasscode.checkConfirmationType("current"));
+        assertEquals(EmergencyPasscode.PASSCODE_RESULT_NONE, EmergencyPasscode.checkConfirmationType("owner"));
+        assertEquals(EmergencyPasscode.PASSCODE_RESULT_NONE, EmergencyPasscode.checkConfirmationType("duress"));
+        assertEquals(EmergencyPasscode.PASSCODE_RESULT_NONE, EmergencyPasscode.checkConfirmationType("wrong"));
+        assertFalse(EmergencyPasscode.emergencyModeActive);
+    }
+
+    @Test
+    public void confirmationDoesNotRecoverOwnerOrClearStickyEmergencyMode() {
+        byte[] currentSalt = salt(1);
+        setCurrent("current", currentSalt, SharedConfig.PASSCODE_TYPE_PIN);
+        setOwner("owner", salt(2), SharedConfig.PASSCODE_TYPE_PASSWORD);
+        setEmergency("duress", salt(3));
+        EmergencyPasscode.emergencyModeActive = true;
+
+        assertEquals(EmergencyPasscode.PASSCODE_RESULT_NONE, EmergencyPasscode.checkConfirmationType("owner"));
+        assertEquals(EmergencyPasscode.PASSCODE_RESULT_NONE, EmergencyPasscode.checkConfirmationType("duress"));
+        assertEquals(EmergencyPasscode.PASSCODE_RESULT_CURRENT, EmergencyPasscode.checkConfirmationType("current"));
+        assertTrue(EmergencyPasscode.emergencyModeActive);
+        assertEquals(EmergencyPasscode.computeHash(currentSalt, "current"), SharedConfig.passcodeHash);
+        assertArrayEquals(currentSalt, SharedConfig.passcodeSalt);
+        assertEquals(SharedConfig.PASSCODE_TYPE_PIN, SharedConfig.passcodeType);
+    }
+
+    @Test
     public void applyUnlockKeepsCurrentStickyAndOwnerClearsAndHealsGate() {
         byte[] ownerSalt = salt(7);
         setCurrent("attacker", salt(1), SharedConfig.PASSCODE_TYPE_PIN);
