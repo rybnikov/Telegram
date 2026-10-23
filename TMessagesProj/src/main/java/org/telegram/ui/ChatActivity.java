@@ -192,6 +192,7 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.browser.external.ExternalLinkRouter;
+import org.telegram.messenger.browser.external.ExternalPreviewCellBinder;
 import org.telegram.messenger.browser.external.ExternalMediaOpenHelper;
 import org.telegram.messenger.camera.CameraView;
 import org.telegram.messenger.support.LongSparseIntArray;
@@ -41647,6 +41648,12 @@ public class ChatActivity extends BaseFragment implements
                 return;
             }
             if (ExternalLinkRouter.openCachedPreview(getContext(), message.messageOwner)) {
+                return;
+            }
+            // FOLDOGRAM-EXT-PREVIEW: Foldogram-built YouTube previews open in Telegram's YouTube player, like server ones.
+            if (ExternalPreviewCellBinder.isFoldogramYouTubePreview(message)) {
+                TLRPC.WebPage webPage = message.messageOwner.media.webpage;
+                EmbedBottomSheet.show(ChatActivity.this, message, photoViewerProvider, webPage.site_name, webPage.title, webPage.url, webPage.embed_url, webPage.embed_width, webPage.embed_height, isKeyboardVisible());
                 return;
             }
             if (fullPreview && message != null && message.messageOwner != null && message.messageOwner.media != null && message.messageOwner.media.webpage != null && !TextUtils.isEmpty(message.messageOwner.media.webpage.url)) {
