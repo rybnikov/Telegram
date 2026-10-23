@@ -54,6 +54,7 @@ public final class PreviewMapper {
             webpage.embed_url = posterUrl;
             webpage.embed_width = video.width;
             webpage.embed_height = video.height;
+            applyServerStyleEmbed(webpage, video.videoUrl);
         } else if (previewVideo != null) {
             String posterUrl = !TextUtils.isEmpty(previewVideo.posterUrl) ? previewVideo.posterUrl : previewVideo.videoUrl;
             if (TextUtils.isEmpty(posterUrl)) {
@@ -412,11 +413,26 @@ public final class PreviewMapper {
         }
         webPage.type = "photo";
         webPage.document = null;
+        applyServerStyleEmbed(webPage, preview.mediaUrl);
         ExternalMediaPreviewStore.putVideo(
             preview.webPageId, preview.platform, preview.canonicalUrl,
             preview.mediaUrl, preview.posterUrl, preview.width, preview.height,
             preview.title, preview.description
         );
+    }
+
+    // Sites that normally keep Telegram's server preview (YouTube) play through Telegram's own
+    // embed player, which reads webpage.embed_url. The poster is drawn from the video store.
+    static void applyServerStyleEmbed(TLRPC.WebPage webPage, String embedUrl) {
+        if (webPage == null || TextUtils.isEmpty(embedUrl) || TextUtils.isEmpty(webPage.url)) {
+            return;
+        }
+        ExternalMediaResolver resolver = ResolverRegistry.findResolver(android.net.Uri.parse(webPage.url));
+        if (resolver == null || resolver.overridesServerPreview()) {
+            return;
+        }
+        webPage.type = "video";
+        webPage.embed_url = embedUrl;
     }
 
     static boolean hasRenderableExternalPreview(TLRPC.WebPage webPage) {

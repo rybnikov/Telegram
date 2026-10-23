@@ -370,7 +370,8 @@ public final class PreviewRepository {
 
     private static boolean hasServerWebPage(TLRPC.MessageMedia messageMedia) {
         return messageMedia instanceof TLRPC.TL_messageMediaWebPage
-            && messageMedia.webpage instanceof TLRPC.TL_webPage;
+            && messageMedia.webpage instanceof TLRPC.TL_webPage
+            && !ExternalPreviewCellBinder.isFoldogramWebPage(messageMedia.webpage);
     }
 
     private static boolean shouldSkipExistingMedia(TLRPC.MessageMedia messageMedia, ParsedLink link, ExternalMediaResolver resolver) {

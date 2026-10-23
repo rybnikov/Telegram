@@ -3218,13 +3218,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     } else if (currentMessageObject != null && !currentMessageObject.preview) {
                         TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
                         // FOLDOGRAM-EXT-PREVIEW: external previews should not open as generic embedded webviews.
-                        if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && !isCustomExternalPreviewSite(webPage.site_name)/* && TextUtils.isEmpty(WebPlayerView.getYouTubeVideoId(webPage.embed_url))*/) {
+                        if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && !isCustomExternalPreviewClick(webPage.site_name)/* && TextUtils.isEmpty(WebPlayerView.getYouTubeVideoId(webPage.embed_url))*/) {
                             if (delegate != null) {
                                 delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.title, webPage.url, webPage.embed_width, webPage.embed_height);
                             }
                         } else if (webPage != null) {
                             if (delegate != null) {
-                                boolean safe = MessageObject.getMedia(currentMessageObject.messageOwner).safe || isCustomExternalPreviewSite(webPage.site_name);
+                                boolean safe = MessageObject.getMedia(currentMessageObject.messageOwner).safe || isCustomExternalPreviewClick(webPage.site_name);
                                 delegate.didPressWebPage(this, webPage, webPage.url, safe);
                             } else {
                                 Browser.openUrl(getContext(), webPage.url);
@@ -3295,7 +3295,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         } else if (!currentMessageObject.preview) {
                             TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
                             // FOLDOGRAM-EXT-PREVIEW: keep custom previews out of the generic embed-webview branch.
-                            if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && !isCustomExternalPreviewSite(webPage.site_name)) {
+                            if (webPage != null && !TextUtils.isEmpty(webPage.embed_url) && !isCustomExternalPreviewClick(webPage.site_name)) {
                                 delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.title, webPage.url, webPage.embed_width, webPage.embed_height);
                             } else if (buttonState == -1 || buttonState == 3) {
                                 delegate.didPressImage(this, lastTouchX, lastTouchY, false);
@@ -6098,7 +6098,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
                 if (webPage != null) {
                     // FOLDOGRAM-EXT-PREVIEW: custom previews bypass generic GIF embed handling.
-                    if (webPage.embed_url != null && webPage.embed_url.length() != 0 && !isCustomExternalPreviewSite(webPage.site_name)) {
+                    if (webPage.embed_url != null && webPage.embed_url.length() != 0 && !isCustomExternalPreviewClick(webPage.site_name)) {
                         delegate.needOpenWebView(currentMessageObject, webPage.embed_url, webPage.site_name, webPage.description, webPage.url, webPage.embed_width, webPage.embed_height);
                     } else {
                         Browser.openUrl(getContext(), webPage.url);
@@ -7462,7 +7462,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 drawInstantView = hasLinkPreview && webpage.cached_page != null;
                 String siteName = hasLinkPreview ? webpage.site_name : null;
                 // FOLDOGRAM-EXT-PREVIEW: external preview sites reuse the instant button slot and disable generic embeds.
-                if (!drawInstantView && hasLinkPreview && isCustomExternalPreviewSite(siteName)) {
+                if (!drawInstantView && hasLinkPreview && isCustomExternalPreviewClick(siteName)) {
                     String btnText = ExternalLinkRouter.getInstantButtonText(siteName, webpage);
                     if (btnText != null) {
                         drawInstantView = true;
@@ -17472,6 +17472,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private boolean isCustomExternalPreviewSite(CharSequence siteName) {
+        return ExternalPreviewCellBinder.isExternalPreviewSite(siteName, currentMessageObject);
+    }
+
+    // Click routing stays site-based: Foldogram-built YouTube previews open in Telegram's YouTube player.
+    private boolean isCustomExternalPreviewClick(CharSequence siteName) {
         return ExternalPreviewCellBinder.isExternalPreviewSite(siteName);
     }
 

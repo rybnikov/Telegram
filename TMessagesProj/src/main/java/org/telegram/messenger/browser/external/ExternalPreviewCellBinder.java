@@ -12,6 +12,7 @@ import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.MessageObject;
 import org.telegram.tgnet.TLObject;
+import org.telegram.ui.Components.WebPlayerView;
 import org.telegram.tgnet.TLRPC;
 
 public final class ExternalPreviewCellBinder {
@@ -56,6 +57,35 @@ public final class ExternalPreviewCellBinder {
 
     public static boolean isExternalPreviewSite(CharSequence siteName) {
         return siteName != null && ExternalLinkRouter.isExternalPreviewSite(siteName.toString());
+    }
+
+    // A Foldogram-built webpage renders through the custom poster path even for sites that
+    // normally keep Telegram's server preview (YouTube): the server sent none in that case.
+    public static boolean isExternalPreviewSite(CharSequence siteName, MessageObject messageObject) {
+        TLRPC.WebPage webPage = null;
+        if (messageObject != null && messageObject.messageOwner != null
+                && messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage) {
+            webPage = messageObject.messageOwner.media.webpage;
+        }
+        return isExternalPreviewSite(siteName, webPage);
+    }
+
+    static boolean isExternalPreviewSite(CharSequence siteName, TLRPC.WebPage webPage) {
+        return isExternalPreviewSite(siteName) || isFoldogramWebPage(webPage);
+    }
+
+    // A Foldogram-built preview for a site Telegram plays itself (YouTube): open it with the upstream player.
+    public static boolean isFoldogramYouTubePreview(MessageObject messageObject) {
+        return messageObject != null && messageObject.isYouTubeVideo()
+                && isFoldogramWebPage(messageObject.messageOwner.media.webpage)
+                && WebPlayerView.getYouTubeVideoId(messageObject.messageOwner.media.webpage.embed_url) != null;
+    }
+
+    // Fork webpages carry PreviewMapper's id derived from their canonical URL; server ids never match.
+    static boolean isFoldogramWebPage(TLRPC.WebPage webPage) {
+        return webPage instanceof TLRPC.TL_webPage
+                && !TextUtils.isEmpty(webPage.url)
+                && webPage.id == PreviewMapper.computeStableId(webPage.url);
     }
 
     public static String getPosterFilter(TLRPC.PhotoSize currentPhotoObject, String currentPhotoFilter, String currentPhotoFilterThumb) {
