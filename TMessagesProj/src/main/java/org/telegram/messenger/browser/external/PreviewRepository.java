@@ -99,7 +99,7 @@ public final class PreviewRepository {
         }
         CachedPreview cachedPreview;
         synchronized (lock) {
-            cachedPreview = cache.get(link.canonicalUrl);
+            cachedPreview = getFreshCachedPreviewLocked(link.canonicalUrl);
         }
         if (cachedPreview != null && cachedPreview.webPage != null) {
             applyPreviewToMessage(messageObject.messageOwner, cachedPreview.webPage);
@@ -146,7 +146,7 @@ public final class PreviewRepository {
         boolean shouldLookupPersisted = false;
         boolean shouldDispatch = false;
         synchronized (lock) {
-            cachedPreview = cache.get(link.canonicalUrl);
+            cachedPreview = getFreshCachedPreviewLocked(link.canonicalUrl);
             if (cachedPreview == null) {
                 ArrayList<PendingMessage> pending = pendingMessages.get(link.canonicalUrl);
                 if (pending == null) {
@@ -281,7 +281,7 @@ public final class PreviewRepository {
         }
         CachedPreview cachedPreview;
         synchronized (lock) {
-            cachedPreview = cache.get(link.canonicalUrl);
+            cachedPreview = getFreshCachedPreviewLocked(link.canonicalUrl);
         }
         if (cachedPreview == null || cachedPreview.media == null) {
             log("openCachedPreview miss", link, resolver, null, null);
@@ -306,7 +306,7 @@ public final class PreviewRepository {
         }
         CachedPreview cachedPreview;
         synchronized (lock) {
-            cachedPreview = cache.get(link.canonicalUrl);
+            cachedPreview = getFreshCachedPreviewLocked(link.canonicalUrl);
         }
         if (cachedPreview == null || cachedPreview.media == null) {
             log("openCachedPreview(message) miss", link, resolver, null, null);
@@ -488,6 +488,16 @@ public final class PreviewRepository {
             return true;
         }
         return TextUtils.isEmpty(webPage.embed_url);
+    }
+
+    // Called under lock for rendering and opening: URLs can expire during a long session.
+    private static CachedPreview getFreshCachedPreviewLocked(String canonicalUrl) {
+        CachedPreview preview = cache.get(canonicalUrl);
+        if (preview != null && ExternalPreviewExpiry.isExpired(preview.media)) {
+            cache.remove(canonicalUrl);
+            return null;
+        }
+        return preview;
     }
 
     private static void trimCache() {

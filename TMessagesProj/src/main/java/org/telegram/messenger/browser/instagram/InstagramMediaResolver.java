@@ -10,6 +10,7 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.browser.external.ExternalHtmlUtils;
 import org.telegram.messenger.browser.external.ExternalHttpClient;
 import org.telegram.messenger.browser.external.ExternalMediaResolver;
+import org.telegram.messenger.browser.external.ExternalPreviewExpiry;
 import org.telegram.messenger.browser.external.ParsedLink;
 import org.telegram.messenger.browser.external.Playback;
 import org.telegram.messenger.browser.external.PlaybackResolver;
@@ -91,7 +92,7 @@ public final class InstagramMediaResolver implements ExternalMediaResolver, Play
 
     @Override
     public Playback resolvePlayback(ParsedLink link, ResolvedMedia.Video video) throws Exception {
-        if (video != null && !TextUtils.isEmpty(video.videoUrl)) {
+        if (video != null && !TextUtils.isEmpty(video.videoUrl) && !ExternalPreviewExpiry.isExpired(video.videoUrl)) {
             return resolvePlayback(video);
         }
         return resolvePlayback(link);

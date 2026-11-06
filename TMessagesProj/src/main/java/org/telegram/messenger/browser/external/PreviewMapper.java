@@ -155,21 +155,27 @@ public final class PreviewMapper {
         if (preview == null) {
             return null;
         }
-        TLRPC.WebPage webPage = ensureRenderableStoredWebPage(preview);
-        if (webPage == null) {
-            return null;
-        }
         ResolvedMedia media;
         if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_VIDEO) {
             ResolvedMedia.Video video = new ResolvedMedia.Video(preview.mediaUrl, preview.posterUrl, preview.title, preview.description, preview.width, preview.height);
             media = video;
-            ExternalMediaPreviewStore.putVideo(preview.webPageId, preview.platform, preview.canonicalUrl, preview.mediaUrl, preview.posterUrl, preview.width, preview.height, preview.title, preview.description);
         } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_CAROUSEL) {
             media = hydrateCarouselPreview(preview);
         } else if (preview.previewKind == MessagesStorage.EXTERNAL_PREVIEW_KIND_IMAGE) {
             media = new ResolvedMedia.Image(preview.mediaUrl, preview.title, preview.description, preview.width, preview.height);
         } else {
             media = new ResolvedMedia.Preview(preview.mediaUrl, preview.posterUrl, preview.title, preview.description, preview.width, preview.height);
+        }
+        // An old CDN signature must trigger a resolve, not repopulate the video store.
+        if (ExternalPreviewExpiry.isExpired(media)) {
+            return null;
+        }
+        TLRPC.WebPage webPage = ensureRenderableStoredWebPage(preview);
+        if (webPage == null) {
+            return null;
+        }
+        if (media instanceof ResolvedMedia.Video) {
+            ExternalMediaPreviewStore.putVideo(preview.webPageId, preview.platform, preview.canonicalUrl, preview.mediaUrl, preview.posterUrl, preview.width, preview.height, preview.title, preview.description);
         }
         return new HydratedPreview(webPage, media);
     }

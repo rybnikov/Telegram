@@ -37,6 +37,34 @@ public final class PreviewMapperTest {
     }
 
     @Test
+    public void expiredPersistedVideoDoesNotRepopulateStore() {
+        assertExpiredRecordRejected(new ResolvedMedia.Video(
+            "https://cdn.example/video.mp4", "https://scontent.fbcdn.net/poster.jpg?oe=1", null, null, 720, 1280));
+        assertExpiredRecordRejected(new ResolvedMedia.Video(
+            "https://scontent.cdninstagram.com/video.mp4?oe=1", "https://cdn.example/poster.jpg", null, null, 720, 1280));
+    }
+
+    @Test
+    public void expiredPersistedImagesAndCarouselItemsRequireResolve() {
+        ResolvedMedia.Image expired = new ResolvedMedia.Image("https://scontent.fbcdn.net/poster.jpg?oe=1", null, null, 720, 1280);
+        assertExpiredRecordRejected(expired);
+        ArrayList<ResolvedMedia.Single> items = new ArrayList<>();
+        items.add(new ResolvedMedia.Image("https://cdn.example/first.jpg", null, null, 720, 1280));
+        items.add(expired);
+        assertExpiredRecordRejected(new ResolvedMedia.Carousel(items, null, null));
+    }
+
+    private void assertExpiredRecordRejected(ResolvedMedia media) {
+        ParsedLink link = new ParsedLink("https://www.instagram.com/reel/test/", "https://www.instagram.com/reel/test/", "test", "Instagram");
+        TLRPC.WebPage webPage = PreviewMapper.buildWebPage(link, null, media);
+        MessagesStorage.ExternalPreviewRecord record = PreviewMapper.createExternalPreviewRecord(link, webPage, media);
+        ExternalMediaPreviewStore.clearDebugState();
+
+        assertNull(PreviewMapper.hydrateCachedPreview(record));
+        assertNull(ExternalMediaPreviewStore.getVideoPreview(webPage.id));
+    }
+
+    @Test
     public void videoPreviewRoundTripPreservesRecordFields() {
         ParsedLink link = new ParsedLink(
             "https://www.instagram.com/reel/DZNeXBhxq6H/",
