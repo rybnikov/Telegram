@@ -1700,7 +1700,6 @@ public class DatabaseMigrationHelper {
             database.executeFast("PRAGMA user_version = 179").stepThis().dispose();
             version = 179;
         }
-
         if (version == 179) {
             org.telegram.messenger.places.PlacesStorage.createSchema(database);
             database.executeFast("PRAGMA user_version = 180").stepThis().dispose();
@@ -1745,7 +1744,41 @@ public class DatabaseMigrationHelper {
             version = 185;
         }
 
+        // Upstream widget migrations are appended after the released Foldogram floor.
+        if (version == 185) {
+            database.executeFast("CREATE TABLE IF NOT EXISTS widget_state(uid INTEGER, mid INTEGER, local TEXT, PRIMARY KEY(uid, mid));").stepThis().dispose();
+            database.executeFast("CREATE TABLE IF NOT EXISTS widget_heights(uid INTEGER, mid INTEGER, width INTEGER, height INTEGER, date INTEGER, PRIMARY KEY(uid, mid, width));").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 186").stepThis().dispose();
+            version = 186;
+        }
+        if (version == 186) {
+            if (hasColumn(database, "widget_state", "height")) {
+                database.executeFast("DROP TABLE widget_state").stepThis().dispose();
+            }
+            database.executeFast("CREATE TABLE IF NOT EXISTS widget_state(uid INTEGER, mid INTEGER, local TEXT, PRIMARY KEY(uid, mid));").stepThis().dispose();
+            database.executeFast("CREATE TABLE IF NOT EXISTS widget_heights(uid INTEGER, mid INTEGER, width INTEGER, height INTEGER, date INTEGER, anchor INTEGER default 0, PRIMARY KEY(uid, mid, width));").stepThis().dispose();
+            if (!hasColumn(database, "widget_heights", "anchor")) {
+                executeNoException(database, "ALTER TABLE widget_heights ADD COLUMN anchor INTEGER default 0");
+            }
+            database.executeFast("PRAGMA user_version = 187").stepThis().dispose();
+            version = 187;
+        }
+
         return version;
+    }
+
+    private static boolean hasColumn(SQLiteDatabase database, String table, String column) throws Exception {
+        SQLiteCursor cursor = database.queryFinalized("PRAGMA table_info(" + table + ")");
+        try {
+            while (cursor.next()) {
+                if (column.equals(cursor.stringValue(1))) {
+                    return true;
+                }
+            }
+            return false;
+        } finally {
+            cursor.dispose();
+        }
     }
 
     private static void executeNoException(SQLiteDatabase database, String query) {

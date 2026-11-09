@@ -53,6 +53,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_chatlists;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeBind;
 import org.telegram.ui.Cells.ArchiveHintCell;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Cells.DialogMeUrlCell;
@@ -643,6 +644,36 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
                 viewType != VIEW_TYPE_REQUIREMENTS && viewType != VIEW_TYPE_REQUIRED_EMPTY && viewType != VIEW_TYPE_STORIES && viewType != VIEW_TYPE_ARCHIVE_FULLSCREEN && viewType != VIEW_TYPE_GRAY_SECTION;
     }
 
+    private static final int SLOT_SHADOW_BACKGROUND = 101;
+
+    // keeps a gray CombinedDrawable(ColorDrawable, greydivider) background following the theme
+    private static void bindShadowBackground(View view, Drawable shadowDrawable) {
+        try {
+            if (shadowDrawable != null) {
+                ThemeBind.drawableColorFilter(view, shadowDrawable, Theme.key_windowBackgroundGrayShadow, PorterDuff.Mode.MULTIPLY);
+            }
+            ThemeBind.custom(view, SLOT_SHADOW_BACKGROUND, Theme.key_windowBackgroundGray, null, DialogsAdapter::getShadowBackgroundColor, DialogsAdapter::setShadowBackgroundColor);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+    }
+
+    private static int getShadowBackgroundColor(View view) {
+        final Drawable background = view.getBackground();
+        if (background instanceof CombinedDrawable && ((CombinedDrawable) background).getBackgroundDrawable() instanceof ColorDrawable) {
+            return ((ColorDrawable) ((CombinedDrawable) background).getBackgroundDrawable()).getColor();
+        }
+        return 0;
+    }
+
+    private static void setShadowBackgroundColor(View view, int color) {
+        final Drawable background = view.getBackground();
+        if (background instanceof CombinedDrawable && ((CombinedDrawable) background).getBackgroundDrawable() instanceof ColorDrawable) {
+            ((ColorDrawable) ((CombinedDrawable) background).getBackgroundDrawable()).setColor(color);
+            view.invalidate();
+        }
+    }
+
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup viewGroup, int viewType) {
         View view;
@@ -678,7 +709,7 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
                     view = dialogCell;
                 }
                 if (dialogsType == DialogsActivity.DIALOGS_TYPE_BOT_REQUEST_PEER) {
-                    view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    ThemeBind.backgroundColor(view, Theme.key_windowBackgroundWhite);
                 }
                 break;
             case VIEW_TYPE_REQUIREMENTS:
@@ -705,7 +736,7 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
                 TextView textView = new TextView(mContext);
                 textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
                 textView.setTypeface(AndroidUtilities.bold());
-                textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader));
+                ThemeBind.textColor(textView, Theme.key_windowBackgroundWhiteBlueHeader);
                 textView.setText(getString(R.string.RecentlyViewedHide));
                 textView.setGravity((LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
                 headerCell.addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 17, 15, 17, 0));
@@ -726,9 +757,9 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
                         super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(12), MeasureSpec.EXACTLY));
                     }
                 };
-                frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+                ThemeBind.backgroundColor(frameLayout, Theme.key_windowBackgroundGray);
                 View v = new View(mContext);
-                v.setBackgroundDrawable(Theme.getThemedDrawableByKey(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
+                ThemeBind.themedBackground(v, mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow);
                 frameLayout.addView(v, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
                 view = frameLayout;
                 break;
@@ -773,6 +804,7 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
                 CombinedDrawable combinedDrawable = new CombinedDrawable(new ColorDrawable(Theme.getColor(Theme.key_windowBackgroundGray)), drawable);
                 combinedDrawable.setFullsize(true);
                 view.setBackgroundDrawable(combinedDrawable);
+                bindShadowBackground(view, drawable);
                 break;
             }
             case VIEW_TYPE_ARCHIVE_FULLSCREEN:
@@ -840,6 +872,7 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
                 CombinedDrawable combinedDrawable = new CombinedDrawable(new ColorDrawable(Theme.getColor(Theme.key_windowBackgroundGray)), drawable);
                 combinedDrawable.setFullsize(true);
                 view.setBackgroundDrawable(combinedDrawable);
+                bindShadowBackground(view, drawable);
                 break;
             }
             case VIEW_TYPE_FOLDER_UPDATE_HINT:
@@ -858,7 +891,7 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
             default: {
                 view = new TextCell(mContext);
                 if (dialogsType == DialogsActivity.DIALOGS_TYPE_BOT_REQUEST_PEER) {
-                    view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    ThemeBind.backgroundColor(view, Theme.key_windowBackgroundWhite);
                 }
                 break;
             }
@@ -1098,8 +1131,12 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
             case VIEW_TYPE_HEADER_2: {
                 HeaderCell cell = (HeaderCell) holder.itemView;
                 cell.setTextSize(14);
-                cell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-                cell.setBackgroundColor(Theme.getColor(Theme.key_graySection));
+                if (cell.getTextView() != null) {
+                    ThemeBind.textColor(cell.getTextView(), Theme.key_windowBackgroundWhiteGrayText);
+                } else {
+                    cell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                }
+                ThemeBind.backgroundColor(cell, Theme.key_graySection);
                 switch (((DialogsActivity.DialogsHeader) getItem(i)).headerType) {
                     case DialogsActivity.DialogsHeader.HEADER_TYPE_MY_CHANNELS:
                         cell.setText(getString(R.string.MyChannels));
@@ -1138,6 +1175,9 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
                     arrowDrawable.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText4), PorterDuff.Mode.MULTIPLY));
                 }
                 TextView textView = cell.getTextView();
+                if (textView != null) {
+                    ThemeBind.drawableColorFilter(textView, arrowDrawable, Theme.key_windowBackgroundWhiteGrayText4, PorterDuff.Mode.MULTIPLY);
+                }
                 textView.setCompoundDrawablePadding(AndroidUtilities.dp(4));
                 textView.setCompoundDrawablesWithIntrinsicBounds(null, null, parentFragment != null && parentFragment.storiesEnabled ? null : arrowDrawable, null);
                 textView.getLayoutParams().width = LayoutHelper.WRAP_CONTENT;
