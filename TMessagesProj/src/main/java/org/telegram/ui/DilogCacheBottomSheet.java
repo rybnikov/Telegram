@@ -214,13 +214,13 @@ public class DilogCacheBottomSheet extends BottomSheetWithRecyclerListView {
             lastCreatedCheckbox.setNeedDivider(false);
         }
         circleDiagramView.setData(cacheModel, clearViewData);
-        cachedMediaLayout = new CachedMediaLayout(getContext(), baseFragment) {
+        cachedMediaLayout = new CachedMediaLayout(getContext(), baseFragment, null) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
                 super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(contentHeight - ActionBar.getCurrentActionBarHeight() - AndroidUtilities.statusBarHeight, MeasureSpec.EXACTLY));
             }
         };
-        cachedMediaLayout.setBottomPadding(AndroidUtilities.dp(80));
+        cachedMediaLayout.setListPadding(0, AndroidUtilities.dp(80));
         cachedMediaLayout.setCacheModel(cacheModel);
         cachedMediaLayout.setDelegate(new CachedMediaLayout.Delegate() {
             @Override
